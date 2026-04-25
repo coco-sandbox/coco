@@ -18,11 +18,13 @@ type Config struct {
 
 	// Data directories
 	DataDir      string
-	ImagesDir   string
-	StoreDir    string
-	Checkpoints string
-	Hibernation string
-	Replays    string
+	ImagesDir    string
+	StoreDir     string
+	Checkpoints  string
+	Hibernation  string
+	Replays      string
+	Templates    string
+	SnapshotDir  string
 
 	// Runtime
 	RuntimeDir string
@@ -66,6 +68,8 @@ func Default() *Config {
 		Checkpoints:       "/var/lib/coco/checkpoints",
 		Hibernation:       "/var/lib/coco/hibernation",
 		Replays:           "/var/lib/coco/replays",
+		Templates:         "/var/lib/coco/templates",
+		SnapshotDir:       "/var/lib/coco/snapshots",
 		RuntimeDir:         "/run/coco",
 		VisorSocket:       "/run/coco/visor.sock",
 		NetSocket:         "/run/coco/net.sock",
@@ -97,6 +101,8 @@ func Load() *Config {
 		cfg.Checkpoints = dir + "/checkpoints"
 		cfg.Hibernation = dir + "/hibernation"
 		cfg.Replays = dir + "/replays"
+		cfg.Templates = dir + "/templates"
+		cfg.SnapshotDir = dir + "/snapshots"
 	}
 	if socket := os.Getenv("COCO_VISOR_SOCKET"); socket != "" {
 		cfg.VisorSocket = socket
