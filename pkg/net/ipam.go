@@ -21,7 +21,10 @@ type IPAM struct {
 }
 
 func NewIPAM() *IPAM {
-    ip := parseIP(SubnetStart)
+    ip, err := parseIP(SubnetStart)
+    if err != nil {
+        panic("invalid SubnetStart: " + err.Error())
+    }
     maxHosts := (1 << (24 - SubnetMask)) - 2 // Reserve .0 and .255
     return &IPAM{
         allocated: make(map[string]bool),
@@ -70,13 +73,20 @@ func indexByte(s string, c byte) int {
     return -1
 }
 
-func parseIP(s string) []byte {
-    var a, b, c, d byte
-    parts := make([]int, 4)
-    for i, p := range split(s, '.') {
-        parts[i], _ = strconv.Atoi(p)
+func parseIP(s string) ([]byte, error) {
+    parts := split(s, '.')
+    if len(parts) != 4 {
+        return nil, fmt.Errorf("invalid IP format: %s", s)
     }
-    return []byte{byte(parts[0]), byte(parts[1]), byte(parts[2]), byte(parts[3])}
+    result := make([]byte, 4)
+    for i, p := range parts {
+        v, err := strconv.Atoi(p)
+        if err != nil || v < 0 || v > 255 {
+            return nil, fmt.Errorf("invalid octet at position %d: %s", i, p)
+        }
+        result[i] = byte(v)
+    }
+    return result, nil
 }
 
 func split(s string, c byte) []string {
@@ -91,13 +101,16 @@ func split(s string, c byte) []string {
     return result
 }
 
+// incrementIP adds offset to base IP
+// For /24 subnet design, we only use last octet for host allocation
+// This means all IPs are 169.254.68.x where x is the host number
 func incrementIP(base []byte, offset uint32) []byte {
-    val := uint32(base[0])<<24 | uint32(base[1])<<16 | uint32(base[2])<<8 | uint32(base[3])
-    val += offset
-    return []byte{
-        byte(val >> 24),
-        byte(val >> 16),
-        byte(val >> 8),
-        byte(val),
+    // Only increment within last octet for /24
+    // For simplicity, we treat IP as a 32-bit integer
+    // This works because we only allocate from 169.254.68.1-254
+    host := uint32(base[3]) + offset
+    if host > 254 {
+        host = 254 // Cap at max hosts
     }
+    return []byte{base[0], base[1], base[2], byte(host)}
 }

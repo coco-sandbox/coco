@@ -17,6 +17,7 @@ const (
 type TAPManager struct {
     mu      sync.RWMutex
     devices map[string]*TAPDevice
+    counter uint32 // Counter for unique MAC generation
 }
 
 type TAPDevice struct {
@@ -29,6 +30,7 @@ type TAPDevice struct {
 func NewTAPManager() *TAPManager {
     return &TAPManager{
         devices: make(map[string]*TAPDevice),
+        counter: 0,
     }
 }
 
@@ -66,14 +68,15 @@ func (m *TAPManager) Create(name string) (*TAPDevice, error) {
         return nil, fmt.Errorf("TUNSETIFF failed: %v", errno)
     }
 
-    // Generate MAC address
+    // Generate MAC address using counter to avoid collisions after destroy
     mac := make(net.HardwareAddr, 6)
     mac[0] = 0x02 // Local admin bit
     mac[1] = 0x00
     mac[2] = 0x00
     mac[3] = 0x00
-    mac[4] = byte(len(m.devices) >> 8)
-    mac[5] = byte(len(m.devices) & 0xff)
+    mac[4] = byte(m.counter >> 8)
+    mac[5] = byte(m.counter & 0xff)
+    m.counter++
 
     dev := &TAPDevice{
         Name: name,
@@ -109,7 +112,11 @@ func (m *TAPManager) SetIP(name string, ipStr string, maskLen int) error {
         return fmt.Errorf("device %s not found", name)
     }
 
-    dev.IP = net.ParseIP(ipStr)
+    ip := net.ParseIP(ipStr)
+    if ip == nil {
+        return fmt.Errorf("invalid IP address: %s", ipStr)
+    }
+    dev.IP = ip
     return nil
 }
 
