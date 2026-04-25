@@ -37,43 +37,68 @@ cd ../ctl && go fmt ./... && go vet ./... && go build -o cococtl .
 
 ## Scope (SPEC.md — must implement)
 
-- [ ] **core/** — Go HTTP/gRPC API server (port 4747)
-  - [ ] POST /v1/sandboxes
-  - [ ] GET /v1/sandboxes/:id
-  - [ ] DELETE /v1/sandboxes/:id
-  - [ ] POST /v1/sandboxes/:id/exec (streaming)
-  - [ ] GET /health
-  - [ ] GET /v1/sandboxes/:id/fs/ls (list directory)
-  - [ ] GET /v1/sandboxes/:id/fs/tree (recursive tree)
-  - [ ] GET /v1/sandboxes/:id/fs/cat (read file)
-  - [ ] PUT /v1/sandboxes/:id/fs/write (write file)
-  - [ ] POST /v1/sandboxes/:id/fs/mkdir (create dir)
-  - [ ] DELETE /v1/sandboxes/:id/fs/rm (remove)
+### core/ — Go HTTP/gRPC API server (port 4747)
+- [ ] POST /v1/sandboxes
+- [ ] GET /v1/sandboxes/:id
+- [ ] DELETE /v1/sandboxes/:id
+- [ ] POST /v1/sandboxes/:id/exec (streaming)
+- [ ] POST /v1/sandboxes/:id/fork
+- [ ] POST /v1/sandboxes/:id/hibernate
+- [ ] POST /v1/sandboxes/:id/resume
+- [ ] POST /v1/sandboxes/:id/replay/start
+- [ ] POST /v1/sandboxes/:id/replay/stop
+- [ ] POST /v1/sandboxes/:id/checkpoint
+- [ ] GET /v1/sandboxes/:id/checkpoints
+- [ ] POST /v1/sandboxes/:id/undo
+- [ ] POST /v1/sandboxes/:id/redo
+- [ ] GET /health + /ready
+- [ ] GET /v1/sandboxes/:id/fs/{ls,tree,cat,write,mkdir,rm}
+- [ ] BadgerDB state store
+- [ ] Prometheus metrics (port 9090)
+- [ ] OpenTelemetry tracing
+- [ ] mTLS + RBAC auth
 
-- [ ] **ctl/** — Go CLI tool
-  - [ ] sandbox create/list/destroy
-  - [ ] exec command
+### ctl/ — Go CLI tool
+- [ ] sandbox create/list/destroy/get
+- [ ] exec command
+- [ ] fs ls/tree/cat/write/mkdir/rm
+- [ ] checkpoint/undo/redo commands
 
-- [ ] **src/cocovisor/** — Zig hypervisor wrapper
-  - [ ] Unix socket RPC server (/run/coco/visor.sock)
-  - [ ] Boot/Exec/Destroy/GetState protocol
-  - [ ] Cloud Hypervisor integration
+### src/cocovisor/ — Zig hypervisor wrapper
+- [ ] Unix socket RPC server (/run/coco/visor.sock)
+- [ ] Binary frame protocol (Boot/Exec/Destroy/GetState/Pause/Resume/Fork/Hibernate)
+- [ ] Cloud Hypervisor integration via ch-remote
+- [ ] vsock CID allocation
+- [ ] Memory ballooning
 
-- [ ] **src/coconet/** — Zig + eBPF networking
-  - [ ] from_sandbox.bpf.c (egress SNAT)
-  - [ ] from_world.bpf.c (ingress DNAT)
-  - [ ] AF_XDP fast path
-  - [ ] Bloom + LPM policy
+### src/coconet/ — Zig + eBPF networking
+- [ ] from_sandbox.bpf.c (egress SNAT, TC egress hook)
+- [ ] from_world.bpf.c (ingress DNAT, TC ingress hook)
+- [ ] AF_XDP fast path (Intel E810)
+- [ ] Bloom + LPM policy engine
+- [ ] Sandbox network namespace creation
 
-- [ ] **src/cocofork/** — Zig fork/hibernate
-  - [ ] Snapshot-fork with CoW
-  - [ ] Hibernate to NVMe < 4s
-  - [ ] Resume from NVMe < 200ms
+### src/cocofork/ — Zig fork/hibernate/checkpoints
+- [ ] Snapshot-fork with CoW (reflink)
+- [ ] Hibernate to NVMe < 4s
+- [ ] Resume from NVMe < 200ms
+- [ ] Checkpoints (undo/redo) < 5ms
+- [ ] Replay event recording
 
-- [ ] **src/cocod/** — Zig guest agent
-  - [ ] PID 1 inside MicroVM
-  - [ ] vsock listener
-  - [ ] stdout/stderr streaming
+### src/cocod/ — Zig guest agent
+- [ ] PID 1 inside MicroVM
+- [ ] vsock listener (port 4747)
+- [ ] exec handler (stdout/stderr streaming)
+- [ ] fs operations (read/write/mkdir/rm)
+
+### proto/ — Protocol Buffers
+- [ ] proto/v1/sandbox.proto (REST + gRPC API)
+- [ ] proto/internal/visor.proto (internal visor RPC)
+
+### c/ — eBPF C programs
+- [ ] from_sandbox.bpf.c
+- [ ] from_world.bpf.c
+- [ ] common.h, maps.h
 
 ---
 
@@ -88,4 +113,26 @@ cd ../ctl && go fmt ./... && go vet ./... && go build -o cococtl .
 | Fork latency | < 30ms |
 | Hibernate (512 MiB) | < 4s |
 | Resume from NVMe | < 200ms |
+| Undo latency | < 5ms |
 | RAM per 100 sandboxes | < 7 GB |
+
+---
+
+## Doc Drift Check
+
+- [ ] `SPEC.md` matches architecture?
+- [ ] Phase status updated?
+- [ ] TODO items checked off?
+- [ ] Blockers updated?
+
+---
+
+## Phase Change Checklist
+
+Saat transisi ke phase baru:
+1. Semua benchmark sudah hit?
+2. Semua acceptance tests pass?
+3. SPEC.md updated?
+4. Phase status updated?
+5. Release tag dibuat? (`v0.x.0-pN`)
+6. Demo / community update published?

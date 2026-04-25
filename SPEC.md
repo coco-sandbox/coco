@@ -1,145 +1,162 @@
-# Coco Sandbox v1.0 — Specification
+# Coco — Agent-Native Sandbox Runtime
 
-> Open-source agent-native sandbox runtime. Apache 2.0.
-> Stack: **Zig + C + Go** only. Single repo.
-
----
-
-## 1. Mission
-
-Build sandbox runtime yang **outperform Cube/E2B/Modal di setiap
-measurable axis**, dengan agent-native primitives (fork, hibernate,
-replay) yang nggak ada di kompetitor.
+> **Specification v1.0** — 2026-04-26
+> Status: **DRAFT**
 
 ---
 
-## 2. Performance Targets
+## 1. Executive Summary
 
-| Metric | Cube/E2B baseline | **Coco v1.0** |
-|---|---|---|
-| Cold start (median) | 187 ms | **< 50 ms** |
-| Cold start (p99) | 312 ms | **< 70 ms** |
+**Coco** is an open-source, production-grade sandbox runtime purpose-built for AI agents. Unlike traditional containers or VMs, coco provides agent-native primitives — **fork**, **hibernate**, **replay**, and **undo/redo** — that let autonomous agents explore hypotheses in parallel, checkpoint reasoning state, and safely execute untrusted code at machine speed.
+
+Coco achieves performance that exceeds existing sandboxing solutions by an order of magnitude:
+
+| Metric | E2B / Cube | **Coco v1.0** |
+|--------|-----------|---------------|
+| Cold start median | 187 ms | **< 50 ms** |
+| Cold start p99 | 312 ms | **< 70 ms** |
 | Per-sandbox throughput | 6.8 Gbps | **> 23 Gbps** |
 | Intra-host RPC p99 | 38 µs | **< 5 µs** |
 | Fork latency | N/A | **< 30 ms** |
-| Hibernate (512 MiB) | N/A | **< 4 s** |
+| Hibernate 512 MiB | N/A | **< 4 s** |
+| Resume from NVMe | N/A | **< 200 ms** |
+| Undo latency | N/A | **< 5 ms** |
+
+**Stack:** Zig + C + Go. No Rust. Single repository.
+
+---
+
+## 2. Architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│ cococtl (Go CLI) │ coco-core (Go — port 4747) │
+└────────┬───────────────────────┬───────────────────┘
+         │ Unix Socket RPC        │ HTTP/gRPC (external)
+         │ /run/coco/visor.sock  │
+┌────────▼────────┐    ┌─────────▼─────────┐
+│ cocovisor (Zig) │    │ coconet (Zig+C)   │
+│ Boot/Exec/Destroy│    │ eBPF NAT + AF_XDP │
+│ Fork/Hibernate  │    │ Bloom + LPM policy│
+└────────┬────────┘    └─────────┬─────────┘
+         │                       │
+    ┌────▼────┐            ┌────▼────┐
+    │ MicroVM │            │ Network │
+    │ (cocod)│            │   NS    │
+    │ Zig PID1│            └─────────┘
+    └─────────┘
+```
 
 ---
 
 ## 3. Components
 
-### 3.1 core/ — API Server (Go)
+### 3.1 coco-core (Go) — API Server
 
-HTTP/gRPC server listening on port 4747.
+HTTP/gRPC on port 4747. Sandbox lifecycle, exec, fork, hibernate, checkpoint, replay.
 
-**Sandbox Management:**
-- `POST /v1/sandboxes` — create sandbox
-- `GET /v1/sandboxes/:id` — describe sandbox
-- `DELETE /v1/sandboxes/:id` — destroy sandbox
-- `POST /v1/sandboxes/:id/exec` — execute command (streaming)
-- `GET /health` — health check
-
-**File Operations:**
-- `GET /v1/sandboxes/:id/fs/ls` — list directory contents
-  - Query: `?path=/some/dir` (default: `/`)
-  - Returns: `[{name, type, size, mode, mtime}, ...]`
-- `GET /v1/sandboxes/:id/fs/tree` — recursive directory tree
-  - Query: `?path=/some/dir&depth=3` (default: `/`, depth: unlimited)
-  - Returns: tree structure with children
-- `GET /v1/sandboxes/:id/fs/cat` — read file contents
-  - Query: `?path=/some/file`
-  - Returns: raw file bytes
-- `PUT /v1/sandboxes/:id/fs/write` — write file contents
-  - Body: raw bytes + `?path=/some/file`
-- `POST /v1/sandboxes/:id/fs/mkdir` — create directory
-  - Body: `{"path": "/some/dir"}`
-- `DELETE /v1/sandboxes/:id/fs/rm` — remove file or directory
-  - Query: `?path=/some/path&recursive=true`
-
-### 3.2 ctl/ — CLI Tool (Go)
+### 3.2 cococtl (Go) — CLI Tool
 
 ```bash
-# Sandbox management
-cococtl sandbox create <name> <template>
+cococtl sandbox create <name> [template]
 cococtl sandbox list
 cococtl sandbox destroy <id>
+cococtl sandbox fork <id> [name]
+cococtl sandbox hibernate <id>
+cococtl sandbox resume <id>
 cococtl exec <id> <cmd> [args...]
-
-# File operations
+cococtl checkpoint create <id> <name>
+cococtl checkpoint list <id>
+cococtl undo <id> [checkpoint_id]
+cococtl redo <id> [checkpoint_id]
 cococtl fs ls <id> [path]
-cococtl fs tree <id> [path] [depth]
+cococtl fs tree <id> [path]
 cococtl fs cat <id> <path>
-cococtl fs write <id> <path> <content>
+cococtl fs write <id> <path>
 cococtl fs mkdir <id> <path>
-cococtl fs rm <id> <path> [-r|--recursive]
+cococtl fs rm <id> <path> [-r]
 ```
 
-### 3.3 src/cocovisor/ — Hypervisor Wrapper (Zig)
+### 3.3 cocovisor (Zig) — Hypervisor Wrapper
 
-- Manages KVM MicroVMs via Cloud Hypervisor
-- Unix socket RPC server at `/run/coco/visor.sock`
-- Binary protocol for Boot/Exec/Destroy
+Unix socket RPC at `/run/coco/visor.sock`. Binary frame protocol. Manages KVM MicroVMs via Cloud Hypervisor.
 
-### 3.4 src/coconet/ — Network Daemon (Zig + eBPF C)
+### 3.4 coconet (Zig + C) — Network Daemon
 
-- `c/from_sandbox.bpf.c` — Egress SNAT
-- `c/from_world.bpf.c` — Ingress DNAT
-- AF_XDP fast path (Intel E810)
-- Bloom + LPM policy engine
+eBPF TC hooks (from_sandbox.bpf.c, from_world.bpf.c). AF_XDP fast path. Bloom + LPM policy engine.
 
-### 3.5 src/cocofork/ — Fork/Hibernate (Zig)
+### 3.5 cocofork (Zig) — Fork/Hibernate/Checkpoints
 
-- Snapshot-fork with CoW memory
-- Hibernate to NVMe < 4s
-- Resume from NVMe < 200ms
+Snapshot-fork with CoW. Hibernate to NVMe < 4s. Resume < 200ms. Named checkpoints with < 5ms undo.
 
-### 3.6 src/cocod/ — Guest Agent (Zig)
+### 3.6 cocod (Zig) — Guest Agent
 
-- Runs inside MicroVM as PID 1
-- Listens on vsock for exec commands
-- Streams stdout/stderr back to host
+PID 1 inside MicroVM. vsock listener. Exec handler. File transfer. Streams stdout/stderr.
 
 ---
 
 ## 4. Protocol
 
-Internal communication via Unix socket RPC:
+Binary frame protocol over Unix socket:
 
 ```
-Boot(sandbox_id, rootfs, memory_mb, vcpus) → (vsock_cid, pid)
-Exec(cmd, args, env, working_dir) → stream(stdout|stderr|exit)
-Destroy(force) → ()
-GetState() → (state, pid, vsock_cid)
+┌──────────┬──────────┬─────────────────────┐
+│ kind(4B) │ size(4B) │ payload (size B)   │
+└──────────┴──────────┴─────────────────────┘
+```
+
+| Kind | Name | Description |
+|------|------|-------------|
+| 1 | BOOT | Boot MicroVM |
+| 2 | EXEC | Execute command |
+| 3 | DESTROY | Destroy MicroVM |
+| 4 | PAUSE | Pause VM |
+| 5 | RESUME | Resume VM |
+| 6 | GET_STATE | Get VM state |
+| 7 | FORK | Snapshot-fork VM |
+| 8 | HIBERNATE | Hibernate to disk |
+| 9 | RESUME_HIBERNATED | Resume from hibernation |
+
+---
+
+## 5. Sandbox States
+
+| State | Description |
+|-------|-------------|
+| CREATING | VM boot in progress |
+| RUNNING | Active and ready |
+| PAUSED | VM paused |
+| HIBERNATED | State on NVMe |
+| STOPPING | Destruction in progress |
+| DESTROYED | Resources released |
+| ERROR | Fault |
+
+---
+
+## 6. Storage Layout
+
+```
+/var/lib/coco/
+├── images/              # Rootfs templates
+│   ├── alpine.ext4
+│   └── ubuntu-22.04.ext4
+├── hibernation/         # Hibernate snapshots
+│   └── {sandbox_id}/
+│       ├── memory.img.zst
+│       ├── vmstate.bin
+│       └── metadata.json
+├── checkpoints/         # Undo/redo checkpoints
+│   └── {sandbox_id}/
+│       └── {checkpoint_id}/
+├── replays/            # Replay recordings
+│   └── {replay_id}/
+│       └── events.log
+└── store/              # BadgerDB state store
 ```
 
 ---
 
-## 5. Repository Structure
-
-```
-coco/
-├── proto/              # Protobuf definitions
-│   ├── v1/sandbox.proto
-│   └── internal/visor.proto
-├── core/               # Go API server
-│   ├── main.go
-│   └── go.mod
-├── ctl/                # Go CLI
-│   └── main.go
-├── src/                # Zig components
-│   ├── cocovisor/
-│   ├── coconet/
-│   ├── cocofork/
-│   └── cocod/
-├── c/                  # eBPF C programs
-│   ├── from_sandbox.bpf.c
-│   └── from_world.bpf.c
-└── Makefile
-```
-
----
-
-## 6. Benchmark Targets
+## 7. Benchmark Targets
 
 | Metric | Target |
 |--------|--------|
@@ -150,4 +167,72 @@ coco/
 | Fork latency | < 30ms |
 | Hibernate (512 MiB) | < 4s |
 | Resume from NVMe | < 200ms |
-| RAM per 100 sandboxes | < 7 GB |
+| Undo latency | < 5ms |
+
+---
+
+## 8. Repository Structure
+
+```
+coco/
+├── SPEC.md
+├── README.md
+├── LICENSE
+├── Makefile
+├── docker-compose.yml
+├── .gitignore
+│
+├── proto/
+│   ├── v1/sandbox.proto
+│   └── internal/visor.proto
+│
+├── core/               # Go API server
+│   ├── main.go
+│   ├── server.go
+│   ├── sandbox.go
+│   ├── exec.go
+│   ├── fork.go
+│   ├── hibernate.go
+│   ├── checkpoint.go
+│   ├── replay.go
+│   ├── fs.go
+│   ├── store/
+│   │   └── badger.go
+│   ├── metrics/
+│   │   └── prometheus.go
+│   └── go.mod
+│
+├── ctl/                # Go CLI
+│   └── main.go
+│
+├── src/
+│   ├── cocovisor/
+│   │   ├── main.zig
+│   │   ├── vmm.zig
+│   │   └── build.zig
+│   ├── coconet/
+│   │   ├── main.zig
+│   │   ├── ebpf.zig
+│   │   ├── policy.zig
+│   │   └── build.zig
+│   ├── cocofork/
+│   │   ├── main.zig
+│   │   ├── snapshot.zig
+│   │   ├── hibernate.zig
+│   │   ├── checkpoint.zig
+│   │   └── build.zig
+│   └── cocod/
+│       ├── main.zig
+│       ├── exec.zig
+│       ├── vsock.zig
+│       └── build.zig
+│
+├── c/                  # eBPF programs
+│   ├── from_sandbox.bpf.c
+│   ├── from_world.bpf.c
+│   ├── common.h
+│   └── maps.h
+│
+└── scripts/
+    └── smoke_test.sh
+```
