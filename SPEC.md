@@ -31,11 +31,30 @@ replay) yang nggak ada di kompetitor.
 ### 3.1 core/ — API Server (Go)
 
 HTTP/gRPC server listening on port 4747.
+
+**Sandbox Management:**
 - `POST /v1/sandboxes` — create sandbox
 - `GET /v1/sandboxes/:id` — describe sandbox
 - `DELETE /v1/sandboxes/:id` — destroy sandbox
 - `POST /v1/sandboxes/:id/exec` — execute command (streaming)
 - `GET /health` — health check
+
+**File Operations:**
+- `GET /v1/sandboxes/:id/fs/ls` — list directory contents
+  - Query: `?path=/some/dir` (default: `/`)
+  - Returns: `[{name, type, size, mode, mtime}, ...]`
+- `GET /v1/sandboxes/:id/fs/tree` — recursive directory tree
+  - Query: `?path=/some/dir&depth=3` (default: `/`, depth: unlimited)
+  - Returns: tree structure with children
+- `GET /v1/sandboxes/:id/fs/cat` — read file contents
+  - Query: `?path=/some/file`
+  - Returns: raw file bytes
+- `PUT /v1/sandboxes/:id/fs/write` — write file contents
+  - Body: raw bytes + `?path=/some/file`
+- `POST /v1/sandboxes/:id/fs/mkdir` — create directory
+  - Body: `{"path": "/some/dir"}`
+- `DELETE /v1/sandboxes/:id/fs/rm` — remove file or directory
+  - Query: `?path=/some/path&recursive=true`
 
 ### 3.2 ctl/ — CLI Tool (Go)
 
