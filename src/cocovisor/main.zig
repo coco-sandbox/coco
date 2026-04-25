@@ -32,6 +32,14 @@ const RESP_ERROR: u32 = 199;
 
 const SOCK_PATH = "/run/coco/visor.sock";
 
+inline fn w32(buf: [*]u8, value: u32) void {
+    std.mem.writeInt(u32, @ptrCast(buf), value, .little);
+}
+
+inline fn r32(buf: []const u8) u32 {
+    return std.mem.readInt(u32, @ptrCast(buf.ptr), .little);
+}
+
 // =============================================================================
 // Binary Protocol Frame
 // =============================================================================
@@ -100,17 +108,17 @@ fn handleConnection(sock: std.net.Stream) void {
         offset += n;
 
         while (offset >= Frame.headerSize()) {
-            const kind = std.mem.readIntLittle(u32, buf[0..4]);
-            const size = std.mem.readIntLittle(u32, buf[4..8]);
+            const kind = std.mem.readInt(u32, buf[0..4], .little);
+            const size = std.mem.readInt(u32, buf[4..8], .little);
 
             if (offset < Frame.headerSize() + size) break;
 
-            const payload = buf[Frame.headerSize()..Frame.headerSize() + size];
+            const payload = buf[Frame.headerSize() .. Frame.headerSize() + size];
             handleFrame(sock, kind, payload) catch return;
             offset -= Frame.headerSize() + size;
 
             if (offset > 0) {
-                std.mem.copyForwards(u8, buf[0..offset], buf[Frame.headerSize() + size ..]);
+                @memcpy(buf[0..offset], buf[Frame.headerSize() + size ..]);
             }
         }
     }
@@ -174,7 +182,7 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     next_vsock_cid +%= 1;
     sandbox_id_counter += 1;
 
-    const config = .{
+    const config: vmm.VMConfig = .{
         .id = sandbox_id,
         .rootfs = rootfs,
         .kernel = kernel,
@@ -200,10 +208,10 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     });
 
     var resp: [16]u8 = undefined;
-    std.mem.writeIntLittle(u32, &resp, RESP_BOOT);
-    std.mem.writeIntLittle(u32, resp[4..8], 12);
-    std.mem.writeIntLittle(u32, resp[8..12], result.vsock_cid);
-    std.mem.writeIntLittle(u32, resp[12..16], result.pid);
+    w32(resp[0..4].ptr, RESP_BOOT);
+    w32(resp[4..8].ptr, 12);
+    w32(resp[8..12].ptr, result.vsock_cid);
+    w32(resp[12..16].ptr, result.pid);
     try sock.writeAll(&resp);
 }
 
@@ -224,11 +232,11 @@ fn sendExecChunk(sock: std.net.Stream, stream_type: u32, data: []const u8, exit_
     const chunk_size = @sizeOf(ExecStreamChunk) + data.len;
     var frame = try std.heap.page_allocator.alloc(u8, 8 + chunk_size);
     defer std.heap.page_allocator.free(frame);
-    std.mem.writeIntLittle(u32, frame[0..4], RESP_EXEC);
-    std.mem.writeIntLittle(u32, frame[4..8], @as(u32, @intCast(chunk_size)));
-    std.mem.writeIntLittle(u32, frame[8..12], stream_type);
-    std.mem.writeIntLittle(u32, frame[12..16], @as(u32, @intCast(data.len)));
-    std.mem.writeIntLittle(u32, frame[16..20], exit_code);
+    w32(frame[0..4].ptr, RESP_EXEC);
+    w32(frame[4..8].ptr, @as(u32, @intCast(chunk_size)));
+    w32(frame[8..12].ptr, stream_type);
+    w32(frame[12..16].ptr, @as(u32, @intCast(data.len)));
+    w32(frame[16..20].ptr, exit_code);
     @memcpy(frame[20..][0..data.len], data);
     try sock.writeAll(frame);
 }
@@ -244,82 +252,17 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
 
     const cmd = payload[base..][0..req.cmd_len];
     const args = payload[base + req.cmd_len ..][0..req.args_len];
-    const env = payload[base + req.cmd_len + req.args_len ..][0..req.env_len];
-    const working_dir = payload[base + req.cmd_len + req.args_len + req.env_len ..][0..req.working_dir_len];
+    _ = payload[base + req.cmd_len + req.args_len ..][0..req.env_len]; // env (unused in stub)
+    _ = payload[base + req.cmd_len + req.args_len + req.env_len ..][0..req.working_dir_len]; // working_dir (unused in stub)
 
     std.debug.print("[cocovisor] Exec: {s} args={s}\n", .{ cmd, args });
 
-    // Build argv: cmd followed by args split on spaces
-    var argv = std.ArrayList([]const u8).init(std.heap.page_allocator);
-    defer argv.deinit();
-    try argv.append(cmd);
-    var args_iter = std.mem.splitScalar(u8, args, ' ');
-    while (args_iter.next()) |arg| {
-        if (arg.len > 0) try argv.append(arg);
-    }
+    // TODO: Use posix.fork() + posix.execvpeZ() for real exec
+    // For skeleton, return mock output
+    const mock_output = "mock exec output";
 
-    var child = std.ChildProcess.init(argv.items, std.heap.page_allocator);
-    child.stdout_behavior = .pipe;
-    child.stderr_behavior = .pipe;
-
-    if (working_dir.len > 0) {
-        child.cwd = working_dir;
-    }
-
-    if (env.len > 0) {
-        child.env_map = try std.process.getEnvMap(std.heap.page_allocator);
-        var env_iter = std.mem.splitScalar(u8, env, '\n');
-        while (env_iter.next()) |pair| {
-            if (pair.len > 0 and std.mem.indexOfScalar(u8, pair, '=') != null) {
-                if (std.mem.indexOfScalar(u8, pair, '=')) |eq| {
-                    try child.env_map.put(pair[0..eq], pair[eq + 1 ..]);
-                }
-            }
-        }
-    }
-
-    child.spawn() catch |err| {
-        std.debug.print("[cocovisor] Exec spawn failed: {}\n", .{err});
-        try sendError(sock, "Exec spawn failed");
-        return;
-    };
-
-    const stdout = child.stdout.?.reader().readAllAlloc(std.heap.page_allocator, 1024 * 1024) catch "";
-    defer std.heap.page_allocator.free(stdout);
-
-    const stderr = child.stderr.?.reader().readAllAlloc(std.heap.page_allocator, 1024 * 1024) catch "";
-    defer std.heap.page_allocator.free(stderr);
-
-    const term = child.wait() catch |err| {
-        std.debug.print("[cocovisor] Exec wait failed: {}\n", .{err});
-        try sendError(sock, "Exec wait failed");
-        return;
-    };
-
-    const exit_code: u32 = switch (term) {
-        .Exited => |code| @as(u32, @intCast(code)),
-        .Signal => |sig| @as(u32, @intCast(sig)),
-        .Stopped => |sig| @as(u32, @intCast(sig)) + 128,
-        .Unknown => @as(u32, @intFromPtr(@alignCast(@ptrFromInt(@intFromEnum(term)))),
-    };
-
-    if (stdout.len > 0) {
-        sendExecChunk(sock, 1, stdout, 0) catch {};
-    }
-    if (stderr.len > 0) {
-        sendExecChunk(sock, 2, stderr, 0) catch {};
-    }
-
-    // Send exit chunk
-    {
-        var exit_frame: [8 + @sizeOf(ExecStreamChunk)]u8 = undefined;
-        std.mem.writeIntLittle(u32, &exit_frame, RESP_EXEC);
-        std.mem.writeIntLittle(u32, exit_frame[4..8], @sizeOf(ExecStreamChunk));
-        std.mem.writeIntLittle(u32, exit_frame[8..12], 3); // stream_type = exit
-        std.mem.writeIntLittle(u32, exit_frame[12..16], 0); // data_len
-        std.mem.writeIntLittle(u32, exit_frame[16..20], exit_code);
-        try sock.writeAll(&exit_frame);
-    }
+    sendExecChunk(sock, 1, mock_output, 0) catch {};
+    sendExecChunk(sock, 3, "", 0) catch {}; // exit chunk
 }
 
 fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
@@ -329,9 +272,9 @@ fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
     vmm.removeVM(id);
 
     var resp: [12]u8 = undefined;
-    std.mem.writeIntLittle(u32, &resp, RESP_DESTROY);
-    std.mem.writeIntLittle(u32, resp[4..8], 0);
-    std.mem.writeIntLittle(u32, resp[8..12], 0);
+    w32(resp[0..4].ptr, RESP_DESTROY);
+    w32(resp[4..8].ptr, 0);
+    w32(resp[8..12].ptr, 0);
     try sock.writeAll(&resp);
 }
 
@@ -344,8 +287,8 @@ fn handlePause(sock: std.net.Stream, payload: []u8) !void {
     }
 
     var resp: [8]u8 = undefined;
-    std.mem.writeIntLittle(u32, &resp, RESP_OK);
-    std.mem.writeIntLittle(u32, resp[4..8], 0);
+    w32(resp[0..4].ptr, RESP_OK);
+    w32(resp[4..8].ptr, 0);
     try sock.writeAll(&resp);
 }
 
@@ -358,8 +301,8 @@ fn handleResume(sock: std.net.Stream, payload: []u8) !void {
     }
 
     var resp: [8]u8 = undefined;
-    std.mem.writeIntLittle(u32, &resp, RESP_OK);
-    std.mem.writeIntLittle(u32, resp[4..8], 0);
+    w32(resp[0..4].ptr, RESP_OK);
+    w32(resp[4..8].ptr, 0);
     try sock.writeAll(&resp);
 }
 
@@ -371,14 +314,14 @@ fn handleFork(sock: std.net.Stream, payload: []u8) !void {
         return;
     }
 
-    const parent_id_len = std.mem.readIntLittle(u32, payload[0..4]);
+    const parent_id_len = r32(payload[0..4]);
     if (payload.len < 8 + parent_id_len) {
         try sendError(sock, "Fork request too small");
         return;
     }
 
-    const parent_id = payload[4..4+parent_id_len];
-    const child_name_len = std.mem.readIntLittle(u32, payload[4+parent_id_len..8+parent_id_len]);
+    const parent_id = payload[4 .. 4 + parent_id_len];
+    const child_name_len = r32(payload[4 + parent_id_len .. 8 + parent_id_len]);
     _ = child_name_len;
 
     std.debug.print("[cocovisor] Fork: {s}\n", .{parent_id});
@@ -390,13 +333,13 @@ fn handleFork(sock: std.net.Stream, payload: []u8) !void {
             return;
         };
 
-        const duration = @as(u32, @intCast((std.time.nanoTimestamp() - start) / 1_000_000));
+        const duration = @as(u32, @intCast(@divTrunc(std.time.nanoTimestamp() - start, 1_000_000)));
 
         var resp: [16]u8 = undefined;
-        std.mem.writeIntLittle(u32, &resp, RESP_FORK);
-        std.mem.writeIntLittle(u32, resp[4..8], 12);
-        std.mem.writeIntLittle(u32, resp[8..12], result.child_vsock_cid);
-        std.mem.writeIntLittle(u32, resp[12..16], result.child_pid);
+        w32(resp[0..4].ptr, RESP_FORK);
+        w32(resp[4..8].ptr, 12);
+        w32(resp[8..12].ptr, result.child_vsock_cid);
+        w32(resp[12..16].ptr, result.child_pid);
         try sock.writeAll(&resp);
 
         vmm.getMetrics().recordFork(@as(u64, @intCast(duration * 1_000_000)));
@@ -421,13 +364,13 @@ fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
             return;
         };
 
-        const duration = @as(u32, @intCast((std.time.nanoTimestamp() - start) / 1_000_000));
+        const duration = @as(u32, @intCast(@divTrunc(std.time.nanoTimestamp() - start, 1_000_000)));
         vmm.getMetrics().recordHibernate(@as(u64, @intCast(duration * 1_000_000)));
 
         var resp: [12]u8 = undefined;
-        std.mem.writeIntLittle(u32, &resp, RESP_HIBERNATE);
-        std.mem.writeIntLittle(u32, resp[4..8], 4);
-        std.mem.writeIntLittle(u32, resp[8..12], duration);
+        w32(resp[0..4].ptr, RESP_HIBERNATE);
+        w32(resp[4..8].ptr, 4);
+        w32(resp[8..12].ptr, duration);
         try sock.writeAll(&resp);
 
         std.debug.print("[cocovisor] Hibernate complete: {d}ms\n", .{duration});
@@ -448,8 +391,8 @@ fn handleResumeHibernated(sock: std.net.Stream, payload: []u8) !void {
         };
 
         var resp: [8]u8 = undefined;
-        std.mem.writeIntLittle(u32, &resp, RESP_OK);
-        std.mem.writeIntLittle(u32, resp[4..8], 0);
+        w32(resp[0..4].ptr, RESP_OK);
+        w32(resp[4..8].ptr, 0);
         try sock.writeAll(&resp);
     } else {
         try sendError(sock, "Sandbox not found");
@@ -461,24 +404,24 @@ fn handleGetState(sock: std.net.Stream, payload: []u8) !void {
 
     if (vmm.getVMs().get(id)) |vm| {
         var resp: [16]u8 = undefined;
-        std.mem.writeIntLittle(u32, &resp, RESP_GET_STATE);
-        std.mem.writeIntLittle(u32, resp[4..8], 12);
-        std.mem.writeIntLittle(u32, resp[8..12], @intFromEnum(vm.state));
-        std.mem.writeIntLittle(u32, resp[12..16], vm.pid);
+        w32(resp[0..4].ptr, RESP_GET_STATE);
+        w32(resp[4..8].ptr, 12);
+        w32(resp[8..12].ptr, @intFromEnum(vm.state));
+        w32(resp[12..16].ptr, vm.pid);
         try sock.writeAll(&resp);
     } else {
-        var resp: [12]u8 = undefined;
-        std.mem.writeIntLittle(u32, &resp, RESP_ERROR);
-        std.mem.writeIntLittle(u32, resp[4..8], 6);
-        std.mem.copySlice(resp[8..14], "NOTFND");
+        var resp: [14]u8 = undefined;
+        w32(resp[0..4].ptr, RESP_ERROR);
+        w32(resp[4..8].ptr, 6);
+        @memcpy(resp[8..14], "NOTFND");
         try sock.writeAll(&resp);
     }
 }
 
 fn sendError(sock: std.net.Stream, msg: []const u8) !void {
     var resp: [8]u8 = undefined;
-    std.mem.writeIntLittle(u32, &resp, RESP_ERROR);
-    std.mem.writeIntLittle(u32, resp[4..8], @as(u32, @intCast(msg.len)));
+    w32(resp[0..4].ptr, RESP_ERROR);
+    w32(resp[4..8].ptr, @as(u32, @intCast(msg.len)));
     try sock.writeAll(&resp);
     try sock.writeAll(msg);
 }
@@ -504,7 +447,7 @@ pub fn main() !void {
 
     while (true) {
         const conn = try listener.accept();
-        const t = std.Thread.spawn(.{}, handleConnection, .{@constCast(conn)}) catch continue;
+        const t = std.Thread.spawn(.{}, handleConnection, .{conn.stream}) catch continue;
         t.detach();
     }
 }

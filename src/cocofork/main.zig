@@ -221,7 +221,7 @@ pub fn hibernate(vm_id: []const u8, opts: HibernateOptions) !HibernateResult {
     return HibernateResult{
         .snapshot_path = snapshot_path,
         .memory_mb = memory_mb,
-        .duration_ns = duration,
+        .duration_ns = @as(u64, @intCast(duration)),
         .compression_ratio = compression_ratio,
         .success = true,
     };
@@ -365,11 +365,11 @@ pub fn main() !void {
         .verify_checksum = true,
     });
 
-    std.debug.print("[cocofork] Hibernate result: path={s}, {d}MB in {d}ms, ratio={.1}\n", .{
+    std.debug.print("[cocofork] Hibernate result: path={s}, {d}MB in {d}ms, ratio={d:.1}\n", .{
         hibernate_result.snapshot_path,
         hibernate_result.memory_mb,
         @divFloor(hibernate_result.duration_ns, NS_PER_SEC * 1000),
-        hibernate_result.compression_ratio,
+        @as(f64, hibernate_result.compression_ratio),
     });
 
     // Block forever (daemon mode)
