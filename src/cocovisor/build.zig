@@ -6,17 +6,16 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "cocovisor",
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    // Add vmm and api modules
     const vmm_module = b.addModule("vmm", .{
-        .root_source_file = b.path("src/vmm.zig"),
+        .root_source_file = b.path("vmm.zig"),
     });
     const api_module = b.addModule("api", .{
-        .root_source_file = b.path("src/api.zig"),
+        .root_source_file = b.path("api.zig"),
     });
 
     exe.root_module.addImport("vmm", vmm_module);
@@ -34,7 +33,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("main.zig"),
         .target = target,
         .optimize = optimize,
     });
