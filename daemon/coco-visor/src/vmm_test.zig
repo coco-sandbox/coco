@@ -18,7 +18,7 @@ test "VM init creates VM with correct config" {
         .tap_name = "",
     };
 
-    var vm = vmm.VM.init(config);
+    const vm = vmm.VM.init(config);
     try std.testing.expect(vm.config.memory_mb == 512);
     try std.testing.expect(vm.state == .created);
 }
