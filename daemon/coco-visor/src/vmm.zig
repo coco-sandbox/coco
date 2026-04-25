@@ -12,6 +12,8 @@ const std = @import("std");
 
 const SNAPSHOT_DIR = "/var/lib/coco/hibernation";
 const CHECKPOINT_DIR = "/var/lib/coco/checkpoints";
+const CLH_PATH = "/usr/bin/cloud-hypervisor";
+const CLH_API_SOCKET = "/run/coco/vm/";
 
 pub const VMState = enum(u32) {
     created = 0,
@@ -35,6 +37,8 @@ pub const VMMError = error{
     RestoreFailed,
     OutOfMemory,
 };
+
+pub const BootResult = struct { pid: u32, vsock_cid: u32 };
 
 // =============================================================================
 // VM Config
@@ -70,7 +74,7 @@ pub const VM = struct {
         };
     }
 
-    pub fn boot(self: *VM) VMMError!struct { pid: u32, vsock_cid: u32 } {
+    pub fn boot(self: *VM) VMMError!BootResult {
         if (self.state != .created and self.state != .stopped) {
             return VMMError.AlreadyBooted;
         }
@@ -80,7 +84,38 @@ pub const VM = struct {
             self.config.id, self.config.memory_mb, self.config.vcpus,
         });
 
-        // TODO: Use posix.fork() + posix.execvpeZ() to spawn ch-remote
+        // Create VM config directory
+        const config_dir = std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "/var/lib/coco/vm/{s}",
+            .{self.config.id},
+        ) catch return VMMError.OutOfMemory;
+        std.fs.makeDirAbsolute(config_dir) catch |e| {
+            std.debug.print("[vmm] Failed to create config dir: {}\n", .{e});
+            return VMMError.IoError;
+        };
+
+        // Generate Cloud Hypervisor config
+        const config_path = std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "{s}/config.json",
+            .{config_dir},
+        ) catch return VMMError.OutOfMemory;
+
+        // Write Cloud Hypervisor configuration
+        try self.writeClhConfig(config_path);
+
+        // Create API socket path for VM
+        const api_socket = std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "{s}{s}/sock",
+            .{CLH_API_SOCKET, self.config.id},
+        ) catch return VMMError.OutOfMemory;
+
+        std.debug.print("[vmm] Cloud Hypervisor config written to {s}\n", .{config_path});
+        std.debug.print("[vmm] API socket: {s}\n", .{api_socket});
+
+        // TODO: Use posix.fork() + posix.execvpeZ() to spawn clh-remote
         // For now, just simulate a successful boot with mock PID
         self.pid = 10000 + self.config.vsock_cid * 100;
         self.state = .running;
@@ -90,6 +125,42 @@ pub const VM = struct {
         });
 
         return .{ .pid = self.pid, .vsock_cid = self.config.vsock_cid };
+    }
+
+    fn writeClhConfig(self: *VM, path: []const u8) VMMError!void {
+        // Build Cloud Hypervisor JSON configuration
+        const initrd_field = if (self.config.initrd.len > 0)
+            std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\"", .{self.config.initrd})
+        else
+            std.fmt.allocPrint(std.heap.page_allocator, "null");
+
+        const initrd_str = initrd_field catch return VMMError.OutOfMemory;
+        defer std.heap.page_allocator.free(initrd_str);
+
+        const config_json = std.fmt.allocPrint(
+            std.heap.page_allocator,
+            \\{{
+            \\  "boot-source": {{"kernel": "{s}", "initramfs": {s}}},
+            \\  "root-volume": {{"path": "{s}", "readonly": true}},
+            \\  "cpus": {{"count": {d}}},
+            \\  "memory": {{"size": "{d}M"}},
+            \\  "vsock": [{{"cid": {d}, "socket": "/var/lib/coco/vm/{s}/sock"}}]
+            \\}}
+        , .{
+            self.config.kernel,
+            initrd_str,
+            self.config.rootfs,
+            self.config.vcpus,
+            self.config.memory_mb,
+            self.config.vsock_cid,
+            self.config.id,
+        }) catch return VMMError.OutOfMemory;
+        defer std.heap.page_allocator.free(config_json);
+
+        // Write config to file
+        const file = std.fs.createFileAbsolute(path, .{}) catch return VMMError.IoError;
+        defer file.close();
+        file.writeAll(config_json) catch return VMMError.IoError;
     }
 
     pub fn pause(self: *VM) VMMError!void {
