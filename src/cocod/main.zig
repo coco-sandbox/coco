@@ -13,7 +13,7 @@ const posix = std.posix;
 // =============================================================================
 
 const DEFAULT_VSOCK_CID: u32 = 2;
-const DEFAULT_VSOCK_PORT: u32 = 4747;
+const DEFAULT_VSOCK_PORT: u16 = 4747;
 const RECV_BUF_SIZE: usize = 65536;
 const CHUNK_SIZE: usize = 32768;
 
@@ -52,7 +52,7 @@ fn logError(comptime fmt: []const u8, args: anytype) void {
 
 fn setupSignalHandlers() void {
     // Setup sigaction for SIGTERM
-    var sa_term: posix.struct_sigaction = .{
+    var sa_term: posix.sigaction = .{
         .handler = .{ .handler = &handleSigterm },
         .mask = posix.empty_sigset,
         .flags = 0,
@@ -60,7 +60,7 @@ fn setupSignalHandlers() void {
     posix.sigaction(posix.SIG.TERM, &sa_term, null);
 
     // Setup sigaction for SIGINT
-    var sa_int: posix.struct_sigaction = .{
+    var sa_int: posix.sigaction = .{
         .handler = .{ .handler = &handleSigterm },
         .mask = posix.empty_sigset,
         .flags = 0,
@@ -68,7 +68,7 @@ fn setupSignalHandlers() void {
     posix.sigaction(posix.SIG.INT, &sa_int, null);
 
     // Setup sigaction for SIGHUP
-    var sa_hup: posix.struct_sigaction = .{
+    var sa_hup: posix.sigaction = .{
         .handler = .{ .handler = &handleSigterm },
         .mask = posix.empty_sigset,
         .flags = 0,
@@ -76,7 +76,7 @@ fn setupSignalHandlers() void {
     posix.sigaction(posix.SIG.HUP, &sa_hup, null);
 
     // SIGPIPE: ignore (we handle closed sockets explicitly)
-    var sa_pipe: posix.struct_sigaction = .{
+    var sa_pipe: posix.sigaction = .{
         .handler = .{ .handler = posix.SIG.IGN },
         .mask = posix.empty_sigset,
         .flags = 0,
@@ -84,7 +84,7 @@ fn setupSignalHandlers() void {
     posix.sigaction(posix.SIG.PIPE, &sa_pipe, null);
 
     // Setup sigaction for child signals
-    var sa_chld: posix.struct_sigaction = .{
+    var sa_chld: posix.sigaction = .{
         .handler = .{ .handler = &handleSigchld },
         .mask = posix.empty_sigset,
         .flags = posix.SA.NOCLDSTOP,
@@ -384,9 +384,9 @@ pub fn main() !void {
     allocator = gpa.allocator();
 
     // Parse environment for vsock port (CID is not used in TCP fallback)
-    var vsock_port_val: u32 = DEFAULT_VSOCK_PORT;
+    var vsock_port_val: u16 = DEFAULT_VSOCK_PORT;
     if (std.posix.getenv("COCO_VSOCK_PORT")) |port_str| {
-        vsock_port_val = std.fmt.parseInt(u32, std.mem.sliceTo(port_str, 0), 10) catch DEFAULT_VSOCK_PORT;
+        vsock_port_val = std.fmt.parseInt(u16, std.mem.sliceTo(port_str, 0), 10) catch DEFAULT_VSOCK_PORT;
     }
 
     log("Guest agent starting (PID 1)", .{});

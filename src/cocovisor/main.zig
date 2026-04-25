@@ -143,25 +143,42 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
 
     const req = @as(*align(1) const BootRequest, @ptrCast(payload.ptr));
     const start = std.time.nanoTimestamp();
+    const base = @sizeOf(BootRequest);
 
+    // Extract variable-length string fields in protocol order
     const sandbox_id = try std.fmt.allocPrint(
         std.heap.page_allocator,
         "{s}",
-        .{payload[@sizeOf(BootRequest)..@sizeOf(BootRequest) + req.sandbox_id_len]},
+        .{payload[base..][0..req.sandbox_id_len]},
     );
     const rootfs = try std.fmt.allocPrint(
         std.heap.page_allocator,
         "{s}",
-        .{payload[@sizeOf(BootRequest) + req.sandbox_id_len..][0..req.rootfs_path_len]},
+        .{payload[base + req.sandbox_id_len ..][0..req.rootfs_path_len]},
     );
+    const kernel = try std.fmt.allocPrint(
+        std.heap.page_allocator,
+        "{s}",
+        .{payload[base + req.sandbox_id_len + req.rootfs_path_len ..][0..req.kernel_path_len]},
+    );
+    const initrd = if (req.initrd_path_len > 0)
+        try std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "{s}",
+            .{payload[base + req.sandbox_id_len + req.rootfs_path_len + req.kernel_path_len ..][0..req.initrd_path_len]},
+        )
+    else
+        "";
 
     const vsock_cid = next_vsock_cid;
-    next_vsock_cid += 1;
+    next_vsock_cid +%= 1;
     sandbox_id_counter += 1;
 
     const config = .{
         .id = sandbox_id,
         .rootfs = rootfs,
+        .kernel = kernel,
+        .initrd = initrd,
         .memory_mb = req.memory_mb,
         .vcpus = req.vcpu_count,
         .vsock_cid = vsock_cid,
