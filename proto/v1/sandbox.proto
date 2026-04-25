@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
+syntax = "proto3";
+package coco.v1;
+
+message Sandbox {
+  string id = 1;
+  string template = 2;
+  SandboxState state = 3;
+  string node_id = 4;
+  int64 created_at = 5;
+  map<string, string> labels = 6;
+}
+
+enum SandboxState {
+  STATE_UNSPECIFIED = 0;
+  STATE_CREATING = 1;
+  STATE_RUNNING = 2;
+  STATE_HIBERNATED = 3;
+  STATE_DESTROYING = 4;
+  STATE_DESTROYED = 5;
+}
+
+message CreateSandboxRequest {
+  string template = 1;
+  uint32 vcpus = 2;
+  uint64 memory_mb = 3;
+  map<string, string> labels = 4;
+}
+
+message CreateSandboxResponse {
+  string id = 1;
+  SandboxState state = 2;
+}
+
+message ExecRequest {
+  string sandbox_id = 1;
+  string command = 2;
+  repeated string args = 3;
+  map<string, string> env = 4;
+}
+
+message ExecChunk {
+  oneof payload {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    int32 exit_code = 3;
+  }
+}
+
+message DestroySandboxRequest {
+  string id = 1;
+  bool force = 2;
+}
+
+message DestroySandboxResponse {
+  bool success = 1;
+}

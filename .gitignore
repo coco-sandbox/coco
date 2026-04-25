@@ -1,0 +1,13 @@
+*.o
+*.bin
+*.elf
+zig-cache/
+zig-out/
+*.exe
+*.test
+*.out
+.vscode/
+.idea/
+*.swp
+zig-cache/
+zig-out/

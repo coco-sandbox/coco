@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Go fmt
+        run: |
+          cd core && go fmt ./...
+          cd ../ctl && go fmt ./...
+
+      - name: Go vet
+        run: |
+          cd core && go vet ./...
+          cd ../ctl && go vet ./...
+
+      - name: Build
+        run: |
+          cd core && go build -o coco-core .
+          cd ../ctl && go build -o cococtl .
+
+  zig:
+    runs-on: ubuntu-latest
+    container: ghcr.io/ziglang/rig:0.14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check formatting
+        run: |
+          zig fmt --check src/cocovisor/
+          zig fmt --check src/coconet/
+          zig fmt --check src/cocofork/
+          zig fmt --check src/cocod/
+
+      - name: Build
+        run: |
+          cd src/cocovisor && zig build
+          cd src/coconet && zig build
+          cd src/cocofork && zig build
+          cd src/cocod && zig build
+
+      - name: Test
+        run: |
+          cd src/cocovisor && zig build test
+          cd src/coconet && zig build test
+          cd src/cocofork && zig build test
+          cd src/cocod && zig build test
