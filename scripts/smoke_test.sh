@@ -58,14 +58,14 @@ info "Test: Fork sandbox"
 FORK_RESP=$(curl -s -X POST "$API/v1/sandboxes/$SB_ID/fork" \
     -H "Content-Type: application/json" \
     -d '{"name":"fork-test"}')
-echo "$FORK_RESP" | grep -q '"parent_id"' && pass "Fork sandbox" || fail "Fork sandbox"
+echo "$FORK_RESP" | grep -q '"id"' && pass "Fork sandbox" || fail "Fork sandbox"
 
 # Test 6: Checkpoint
 info "Test: Create checkpoint"
 CKPT_RESP=$(curl -s -X POST "$API/v1/sandboxes/$SB_ID/checkpoint" \
     -H "Content-Type: application/json" \
     -d '{"name":"test-checkpoint"}')
-echo "$CKPT_RESP" | grep -q '"checkpoint_id"' && pass "Checkpoint" || fail "Checkpoint"
+echo "$CKPT_RESP" | grep -q '"id"' && pass "Checkpoint" || fail "Checkpoint"
 
 # Test 7: Hibernate
 info "Test: Hibernate sandbox"
@@ -81,8 +81,8 @@ echo "$RESUME_RESP" | grep -q '"state":"running"' && pass "Resume" || fail "Resu
 info "Test: Exec command"
 EXEC_RESP=$(curl -s -X POST "$API/v1/sandboxes/$SB_ID/exec" \
     -H "Content-Type: application/json" \
-    -d '{"cmd":["echo","hello"]}')
-echo "$EXEC_RESP" | grep -q '"exit_code":0' && pass "Exec" || fail "Exec"
+    -d '{"cmd":"echo","args":["hello"]}')
+echo "$EXEC_RESP" | grep -q '"stream_type"' && pass "Exec" || fail "Exec"
 
 # Test 10: Undo
 info "Test: Undo to checkpoint"

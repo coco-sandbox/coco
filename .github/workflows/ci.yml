@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
+
+env:
+  GO_VERSION: '1.23'
+  ZIG_VERSION: '0.14'
 
 jobs:
   go:
@@ -15,7 +19,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            core/go.sum
+            ctl/go.sum
 
       - name: Go fmt
         run: |
@@ -32,9 +40,40 @@ jobs:
           cd core && go build -o coco-core .
           cd ../ctl && go build -o cococtl .
 
+      - name: Run tests
+        run: |
+          cd core && go test -v -race -coverprofile=coverage.out ./...
+          cd ../ctl && go test -v ./...
+
+      - name: Build release binaries
+        run: |
+          cd core && GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o coco-core .
+          cd ../ctl && GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o cococtl .
+          ls -la coco-core cococtl
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: |
+            core/coverage.out
+            ctl/coverage.out
+          retention-days: 7
+
+      - name: Upload release binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries
+          path: |
+            core/coco-core
+            ctl/cococtl
+          retention-days: 7
+
   zig:
     runs-on: ubuntu-latest
-    container: ghcr.io/ziglang/rig:0.14
+    container: ghcr.io/ziglang/rig:${{ env.ZIG_VERSION }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +84,14 @@ jobs:
           zig fmt --check src/cocofork/
           zig fmt --check src/cocod/
 
-      - name: Build
+      - name: Build release
+        run: |
+          cd src/cocovisor && zig build -Drelease-safe
+          cd src/coconet && zig build -Drelease-safe
+          cd src/cocofork && zig build -Drelease-safe
+          cd src/cocod && zig build -Drelease-safe
+
+      - name: Build debug
         run: |
           cd src/cocovisor && zig build
           cd src/coconet && zig build
@@ -58,3 +104,149 @@ jobs:
           cd src/coconet && zig build test
           cd src/cocofork && zig build test
           cd src/cocod && zig build test
+
+      - name: Upload release binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zig-binaries
+          path: |
+            src/cocovisor/zig-out/bin/*
+            src/coconet/zig-out/bin/*
+            src/cocofork/zig-out/bin/*
+            src/cocod/zig-out/bin/*
+          retention-days: 7
+
+  eBPF:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up LLVM and eBPF headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm llvm-config clang libbpf-dev linux-headers-$(uname -r)
+
+      - name: Compile eBPF programs
+        run: |
+          cd c
+          clang -O2 -target bpf -c from_sandbox.bpf.c -o from_sandbox.o
+          clang -O2 -target bpf -c from_world.bpf.c -o from_world.o
+          clang -O2 -target bpf -c xdp_fwd.bpf.c -o xdp_fwd.o
+          llvm-objdump -hdr from_sandbox.o | head -20
+          llvm-objdump -hdr from_world.o | head -20
+          llvm-objdump -hdr xdp_fwd.o | head -20
+
+      - name: Verify eBPF objects
+        run: |
+          file c/from_sandbox.o c/from_world.o c/xdp_fwd.o
+          llvm-objdump -d c/from_sandbox.o | grep -c "^[0-9a-f]" || true
+          llvm-objdump -d c/from_world.o | grep -c "^[0-9a-f]" || true
+          llvm-objdump -d c/xdp_fwd.o | grep -c "^[0-9a-f]" || true
+
+      - name: Upload eBPF objects
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-objects
+          path: c/*.o
+          retention-days: 7
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [go, zig, eBPF]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push cocovisor
+        uses: docker/build-push-action@v5
+        with:
+          context: src/cocovisor
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}/cocovisor:latest
+            ghcr.io/${{ github.repository }}/cocovisor:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push coco-core
+        uses: docker/build-push-action@v5
+        with:
+          context: core
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}/coco-core:latest
+            ghcr.io/${{ github.repository }}/coco-core:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push cococtl
+        uses: docker/build-push-action@v5
+        with:
+          context: ctl
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}/cococtl:latest
+            ghcr.io/${{ github.repository }}/cococtl:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: [docker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose
+
+      - name: Start infrastructure
+        run: |
+          docker-compose up -d
+
+      - name: Wait for coco-core to be healthy
+        run: |
+          echo "Waiting for coco-core to be healthy..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:4747/health | grep -q '"healthy":true'; then
+              echo "coco-core is healthy after ${i} attempts"
+              exit 0
+            fi
+            echo "Attempt $i/60: still waiting..."
+            sleep 2
+          done
+          echo "Timeout waiting for coco-core to be healthy"
+          curl -v http://localhost:4747/health || true
+          docker-compose logs coco-core || true
+          exit 1
+
+      - name: Run smoke tests
+        run: |
+          cd scripts
+          chmod +x smoke_test.sh
+          ./smoke_test.sh || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker-compose down -v

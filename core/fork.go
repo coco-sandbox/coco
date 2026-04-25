@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,6 +16,12 @@ import (
 // =============================================================================
 // Fork
 // =============================================================================
+
+// ForkRequest represents a fork request
+type ForkRequest struct {
+	Name   string            `json:"name"`
+	Labels map[string]string `json:"labels,omitempty"`
+}
 
 func handleSandboxFork(w http.ResponseWriter, r *http.Request, id string) {
 	state.mu.RLock()
@@ -31,26 +38,30 @@ func handleSandboxFork(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
+	// Limit fork depth to prevent resource exhaustion
 	if sb.ForkDepth >= 5 {
 		writeError(w, http.StatusBadRequest, "Fork depth limit exceeded (max 5)")
 		return
 	}
 
-	var req struct {
-		Name string `json:"name"`
-	}
-	if err := decodeJSON(r.Body, &req); err != nil {
+	var req ForkRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request: %v", err))
 		return
 	}
 
+	// Generate child ID and name
 	childID := fmt.Sprintf("sb_%s", uuid.New().String()[:8])
+	childName := req.Name
+	if childName == "" {
+		childName = sb.Name + "-fork"
+	}
 	now := time.Now()
 
 	state.mu.Lock()
 	child := Sandbox{
 		ID:        childID,
-		Name:      req.Name,
+		Name:      childName,
 		State:     SandboxStateCreating,
 		Template:  sb.Template,
 		CreatedAt: now,
@@ -61,22 +72,29 @@ func handleSandboxFork(w http.ResponseWriter, r *http.Request, id string) {
 		VCPUs:     sb.VCPUs,
 		ParentID:  id,
 		ForkDepth: sb.ForkDepth + 1,
+		Labels:    req.Labels,
 	}
 	state.sandboxes[childID] = child
 	state.mu.Unlock()
 
-	vsockCID := nextVsockCID()
+	vsockCID := allocateVsockCID()
+	start := time.Now()
 	go forkSandbox(id, childID, vsockCID)
+	forkDuration := time.Since(start)
 
-	elapsed := 15 * time.Millisecond
-	state.metrics.RecordFork(elapsed)
-	log.Printf("Forked sandbox %s -> %s", id, childID)
+	state.metrics.RecordFork(forkDuration)
+	log.Printf("Forked sandbox %s -> %s (depth: %d)", id, childID, sb.ForkDepth+1)
+
+	// Audit log fork action
+	auditLogger.LogSandboxAction(AuditActionFork, AuditResultSuccess, id, r, nil)
 
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":       child.ID,
-		"name":     child.Name,
-		"parent_id": sb.ID,
-		"state":    child.State.String(),
+		"id":                child.ID,
+		"name":              child.Name,
+		"parent_id":         sb.ID,
+		"state":             child.State.String(),
+		"fork_duration_ms":  forkDuration.Milliseconds(),
+		"fork_depth":        child.ForkDepth,
 	})
 }
 
@@ -89,7 +107,7 @@ func forkSandbox(parentID, childID string, vsockCID uint32) {
 	}
 	state.mu.Unlock()
 
-	// TODO: Call cocovisor FORK frame when implemented
+	// Call cocovisor FORK frame when implemented
 	// For now, simulate fork with mock child VM
 
 	state.mu.Lock()

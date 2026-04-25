@@ -6,6 +6,9 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
+
+	"github.com/coco-sandbox/coco/core/middleware"
 )
 
 // =============================================================================
@@ -22,9 +25,46 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/sandboxes", handleSandbox)
 	mux.HandleFunc("/v1/sandboxes/", handleSandboxByID)
 
+	// Cluster
+	mux.HandleFunc("/cluster/nodes", handleClusterNodes)
+	mux.HandleFunc("/cluster/nodes/", handleClusterNodeByID)
+	mux.HandleFunc("/cluster/health", handleClusterHealth)
+
+	// Raft
+	mux.HandleFunc("/raft/status", handleRaftStatus)
+	mux.HandleFunc("/raft/log", handleRaftLog)
+	mux.HandleFunc("/raft/propose", handleRaftPropose)
+
+	// Vsock Router (cross-node)
+	mux.HandleFunc("/vsock/peers", handleVsockPeers)
+	mux.HandleFunc("/vsock/peers/", handleVsockPeersByID)
+	mux.HandleFunc("/vsock/connections", handleVsockConnections)
+	mux.HandleFunc("/vsock/status", handleVsockStatus)
+
 	// Note: /v1/sandboxes/{id}/exec, /fork, /hibernate, /resume,
 	// /checkpoint, /checkpoints, /undo, /redo, /replay/start, /replay/stop
 	// are handled by handleSandboxByID which strips the action suffix
+}
+
+// wrapMiddleware applies middleware chain to a handler
+func wrapMiddleware(handler http.Handler) http.Handler {
+	// 1. Request ID middleware (first - generates ID for tracing)
+	handler = middleware.RequestID(handler)
+
+	// 2. CORS middleware (handles preflight)
+	handler = middleware.CORS(handler)
+
+	// 3. Compression middleware (gzip)
+	handler = middleware.Compression(handler)
+
+	// 4. Timeout middleware (30 second default)
+	handler = middleware.Timeout(30 * time.Second)(handler)
+
+	// 5. Request logging (last - logs after request completes)
+	logger := log.Default()
+	handler = middleware.RequestLogging(logger)(handler)
+
+	return handler
 }
 
 func handleSandbox(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +116,7 @@ func handleSandboxByID(w http.ResponseWriter, r *http.Request) {
 			}
 		case "resume":
 			if r.Method == http.MethodPost {
-				handleSandboxResume(w, r, id)
+				handleHibernateResume(w, r, id)
 				return
 			}
 		case "checkpoint":
@@ -109,6 +149,20 @@ func handleSandboxByID(w http.ResponseWriter, r *http.Request) {
 				handleReplayStop(w, r, id)
 				return
 			}
+		case "replay/events":
+			if r.Method == http.MethodGet {
+				handleReplayEvents(w, r, id)
+				return
+			}
+		}
+
+		// Check for checkpoints/{checkpoint_id} subpath
+		if len(action) > 11 && action[:11] == "checkpoints/" {
+			cpID := action[11:]
+			if r.Method == http.MethodDelete {
+				handleCheckpointDelete(w, r, id, cpID)
+				return
+			}
 		}
 
 		// Check for fs subpaths
@@ -125,6 +179,8 @@ func handleSandboxByID(w http.ResponseWriter, r *http.Request) {
 		handleSandboxGet(w, r, id)
 	case http.MethodDelete:
 		handleSandboxDestroy(w, r, id)
+	case http.MethodPatch:
+		handleSandboxUpdate(w, r, id)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}

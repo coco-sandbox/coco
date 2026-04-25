@@ -2,51 +2,174 @@
 // Copyright (C) 2026 The Coco Sandbox Authors
 
 syntax = "proto3";
+
 package coco.v1;
+
+option go_package = "github.com/coco-sandbox/coco/proto/v1";
+
+import "google/protobuf/timestamp.proto";
+
+// =============================================================================
+// Sandbox Service
+// =============================================================================
+
+service SandboxService {
+  // Sandbox CRUD
+  rpc CreateSandbox(CreateSandboxRequest) returns (CreateSandboxResponse);
+  rpc GetSandbox(GetSandboxRequest) returns (GetSandboxResponse);
+  rpc ListSandboxes(ListSandboxesRequest) returns (ListSandboxesResponse);
+  rpc UpdateSandbox(UpdateSandboxRequest) returns (UpdateSandboxResponse);
+  rpc DestroySandbox(DestroySandboxRequest) returns (DestroySandboxResponse);
+
+  // Lifecycle
+  rpc PauseSandbox(PauseSandboxRequest) returns (PauseSandboxResponse);
+  rpc ResumeSandbox(ResumeSandboxRequest) returns (ResumeSandboxResponse);
+  rpc ForkSandbox(ForkSandboxRequest) returns (ForkSandboxResponse);
+  rpc HibernateSandbox(HibernateSandboxRequest) returns (HibernateSandboxResponse);
+  rpc ResumeHibernatedSandbox(ResumeHibernatedSandboxRequest) returns (ResumeHibernatedSandboxResponse);
+
+  // Execution
+  rpc Exec(ExecRequest) returns (stream ExecChunk);
+  rpc ExecInteractive(stream ExecRequest) returns (stream ExecChunk);
+
+  // Checkpoints
+  rpc CreateCheckpoint(CreateCheckpointRequest) returns (CreateCheckpointResponse);
+  rpc ListCheckpoints(ListCheckpointsRequest) returns (ListCheckpointsResponse);
+  rpc UndoCheckpoint(UndoCheckpointRequest) returns (UndoCheckpointResponse);
+  rpc RedoCheckpoint(RedoCheckpointRequest) returns (RedoCheckpointResponse);
+  rpc DeleteCheckpoint(DeleteCheckpointRequest) returns (DeleteCheckpointResponse);
+
+  // Replay
+  rpc StartReplay(StartReplayRequest) returns (StartReplayResponse);
+  rpc StopReplay(StopReplayRequest) returns (StopReplayResponse);
+  rpc ListReplayEvents(ListReplayEventsRequest) returns (ListReplayEventsResponse);
+
+  // File Operations
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+  rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
+  rpc CreateDirectory(CreateDirectoryRequest) returns (CreateDirectoryResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+
+  // Health
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+}
+
+// =============================================================================
+// Common Types
+// =============================================================================
 
 message Sandbox {
   string id = 1;
-  string template = 2;
-  SandboxState state = 3;
-  string node_id = 4;
-  int64 created_at = 5;
-  map<string, string> labels = 6;
+  string name = 2;
+  string template = 3;
+  SandboxState state = 4;
+  string host_node = 5;
+  int64 created_at = 6;
+  int64 updated_at = 7;
+  uint32 vsock_cid = 8;
+  int32 pid = 9;
+  string rootfs = 10;
+  int32 memory_mb = 11;
+  int32 vcpus = 12;
+  string parent_id = 13;
+  string hibernate_path = 14;
+  map<string, string> labels = 15;
+  int32 fork_depth = 16;
 }
 
 enum SandboxState {
   STATE_UNSPECIFIED = 0;
   STATE_CREATING = 1;
   STATE_RUNNING = 2;
-  STATE_HIBERNATED = 3;
-  STATE_DESTROYING = 4;
-  STATE_DESTROYED = 5;
+  STATE_PAUSED = 3;
+  STATE_HIBERNATED = 4;
+  STATE_STOPPING = 5;
+  STATE_STOPPED = 6;
+  STATE_ERROR = 7;
 }
 
+message Checkpoint {
+  string id = 1;
+  string name = 2;
+  string sandbox_id = 3;
+  int64 created_at = 4;
+  string path = 5;
+  int64 size_bytes = 6;
+}
+
+message Replay {
+  string id = 1;
+  string sandbox_id = 2;
+  string state = 3;
+  int32 events = 4;
+  int64 start_time = 5;
+  int64 stop_time = 6;
+  string path = 7;
+}
+
+message ReplayEvent {
+  string type = 1;
+  int64 timestamp = 2;
+  string data = 3;
+}
+
+message FileEntry {
+  string name = 1;
+  string type = 2;  // "file" or "directory"
+  int64 size = 3;
+  int64 mtime = 4;
+}
+
+// =============================================================================
+// Sandbox CRUD
+// =============================================================================
+
 message CreateSandboxRequest {
-  string template = 1;
-  uint32 vcpus = 2;
-  uint64 memory_mb = 3;
-  map<string, string> labels = 4;
+  string name = 1;
+  string template = 2;
+  int32 memory_mb = 3;
+  int32 vcpus = 4;
+  map<string, string> labels = 5;
 }
 
 message CreateSandboxResponse {
+  Sandbox sandbox = 1;
+}
+
+message GetSandboxRequest {
   string id = 1;
-  SandboxState state = 2;
 }
 
-message ExecRequest {
-  string sandbox_id = 1;
-  string command = 2;
-  repeated string args = 3;
-  map<string, string> env = 4;
+message GetSandboxResponse {
+  Sandbox sandbox = 1;
 }
 
-message ExecChunk {
-  oneof payload {
-    bytes stdout = 1;
-    bytes stderr = 2;
-    int32 exit_code = 3;
-  }
+message ListSandboxesRequest {
+  int32 offset = 1;
+  int32 limit = 2;
+  SandboxState state_filter = 3;
+  string label_key = 4;
+  string label_value = 5;
+}
+
+message ListSandboxesResponse {
+  repeated Sandbox items = 1;
+  int32 total_count = 2;
+  int32 offset = 3;
+  int32 limit = 4;
+  bool has_more = 5;
+}
+
+message UpdateSandboxRequest {
+  string id = 1;
+  string name = 2;
+  map<string, string> labels = 3;
+}
+
+message UpdateSandboxResponse {
+  Sandbox sandbox = 1;
 }
 
 message DestroySandboxRequest {
@@ -56,4 +179,246 @@ message DestroySandboxRequest {
 
 message DestroySandboxResponse {
   bool success = 1;
+  string message = 2;
+}
+
+// =============================================================================
+// Lifecycle
+// =============================================================================
+
+message PauseSandboxRequest {
+  string id = 1;
+}
+
+message PauseSandboxResponse {
+  string id = 1;
+  SandboxState state = 2;
+}
+
+message ResumeSandboxRequest {
+  string id = 1;
+}
+
+message ResumeSandboxResponse {
+  string id = 1;
+  SandboxState state = 2;
+}
+
+message ForkSandboxRequest {
+  string id = 1;
+  string name = 2;
+  map<string, string> labels = 3;
+}
+
+message ForkSandboxResponse {
+  Sandbox sandbox = 1;
+  int64 duration_ms = 2;
+}
+
+message HibernateSandboxRequest {
+  string id = 1;
+  bool compress = 2;
+}
+
+message HibernateSandboxResponse {
+  string id = 1;
+  SandboxState state = 2;
+  string hibernate_path = 3;
+  int64 size_bytes = 4;
+  int64 duration_ms = 5;
+}
+
+message ResumeHibernatedSandboxRequest {
+  string id = 1;
+}
+
+message ResumeHibernatedSandboxResponse {
+  string id = 1;
+  SandboxState state = 2;
+  int64 duration_ms = 3;
+}
+
+// =============================================================================
+// Execution
+// =============================================================================
+
+message ExecRequest {
+  string sandbox_id = 1;
+  string command = 2;
+  repeated string args = 3;
+  map<string, string> env = 4;
+  string working_dir = 5;
+  int32 timeout_seconds = 6;
+}
+
+message ExecChunk {
+  oneof payload {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    int32 exit_code = 3;
+    int32 signal = 4;
+  }
+}
+
+// =============================================================================
+// Checkpoints
+// =============================================================================
+
+message CreateCheckpointRequest {
+  string sandbox_id = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message CreateCheckpointResponse {
+  Checkpoint checkpoint = 1;
+  int64 duration_ms = 2;
+}
+
+message ListCheckpointsRequest {
+  string sandbox_id = 1;
+}
+
+message ListCheckpointsResponse {
+  repeated Checkpoint items = 1;
+  int32 total_count = 2;
+}
+
+message UndoCheckpointRequest {
+  string sandbox_id = 1;
+}
+
+message UndoCheckpointResponse {
+  string id = 1;
+  string checkpoint_id = 2;
+  SandboxState state = 3;
+  int64 duration_ms = 4;
+}
+
+message RedoCheckpointRequest {
+  string sandbox_id = 1;
+}
+
+message RedoCheckpointResponse {
+  string id = 1;
+  string checkpoint_id = 2;
+  SandboxState state = 3;
+  int64 duration_ms = 4;
+}
+
+message DeleteCheckpointRequest {
+  string sandbox_id = 1;
+  string checkpoint_id = 2;
+}
+
+message DeleteCheckpointResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// =============================================================================
+// Replay
+// =============================================================================
+
+message StartReplayRequest {
+  string sandbox_id = 1;
+  string name = 2;
+}
+
+message StartReplayResponse {
+  Replay replay = 1;
+}
+
+message StopReplayRequest {
+  string sandbox_id = 1;
+}
+
+message StopReplayResponse {
+  Replay replay = 1;
+}
+
+message ListReplayEventsRequest {
+  string sandbox_id = 1;
+}
+
+message ListReplayEventsResponse {
+  string replay_id = 1;
+  string sandbox_id = 2;
+  repeated ReplayEvent events = 3;
+  int32 total_count = 4;
+}
+
+// =============================================================================
+// File Operations
+// =============================================================================
+
+message ListFilesRequest {
+  string sandbox_id = 1;
+  string path = 2;
+}
+
+message ListFilesResponse {
+  repeated FileEntry items = 1;
+  string path = 2;
+}
+
+message ReadFileRequest {
+  string sandbox_id = 1;
+  string path = 2;
+}
+
+message ReadFileResponse {
+  string path = 1;
+  int64 size = 2;
+  bytes content = 3;
+}
+
+message WriteFileRequest {
+  string sandbox_id = 1;
+  string path = 2;
+  bytes content = 3;
+}
+
+message WriteFileResponse {
+  bool success = 1;
+  string path = 2;
+  int64 size = 3;
+}
+
+message CreateDirectoryRequest {
+  string sandbox_id = 1;
+  string path = 2;
+}
+
+message CreateDirectoryResponse {
+  bool success = 1;
+  string path = 2;
+}
+
+message DeleteFileRequest {
+  string sandbox_id = 1;
+  string path = 2;
+  bool recursive = 3;
+}
+
+message DeleteFileResponse {
+  bool success = 1;
+  string path = 2;
+}
+
+// =============================================================================
+// Health
+// =============================================================================
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool healthy = 1;
+}
+
+message ReadyRequest {}
+
+message ReadyResponse {
+  bool ready = 1;
+  repeated string unavailable_components = 2;
 }

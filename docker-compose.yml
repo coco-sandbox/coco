@@ -7,6 +7,8 @@ services:
       dockerfile: core/Dockerfile
     ports:
       - "4747:4747"
+      - "4748:4748"
+      - "9090:9090"
     volumes:
       - coco-run:/run/coco
       - coco-lib:/var/lib/coco
@@ -18,8 +20,14 @@ services:
     devices:
       - /dev/kvm:/dev/kvm
     environment:
-      - RUST_LOG=info
+      - COCO_LOG_LEVEL=info
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4747/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   cocovisor:
     build:
@@ -35,6 +43,7 @@ services:
       - SYS_ADMIN
     devices:
       - /dev/kvm:/dev/kvm
+    restart: unless-stopped
 
 volumes:
   coco-run:

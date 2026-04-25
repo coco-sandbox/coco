@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/coco-sandbox/coco/core/visor"
 )
 
 // =============================================================================
@@ -72,11 +73,14 @@ func handleSandboxCreate(w http.ResponseWriter, r *http.Request) {
 	state.sandboxes[id] = sb
 	state.mu.Unlock()
 
-	vsockCID := nextVsockCID()
+	vsockCID := allocateVsockCID()
 	go bootSandbox(id, sb.Rootfs, uint32(sb.MemoryMB), uint32(sb.VCPUs), vsockCID)
 
 	state.metrics.RecordCreate(req.Template, 47*time.Millisecond)
 	log.Printf("Created sandbox %s (template: %s)", id, req.Template)
+
+	// Audit log sandbox creation
+	auditLogger.LogSandboxAction(AuditActionCreate, AuditResultSuccess, id, r, nil)
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":     sb.ID,
@@ -87,17 +91,84 @@ func handleSandboxCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSandboxList(w http.ResponseWriter, r *http.Request) {
+	// Parse pagination parameters
+	offset := 0
+	limit := 100
+
+	if offStr := r.URL.Query().Get("offset"); offStr != "" {
+		if n, err := parseInt(offStr); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	if limStr := r.URL.Query().Get("limit"); limStr != "" {
+		if n, err := parseInt(limStr); err == nil && n > 0 && n <= 1000 {
+			limit = n
+		}
+	}
+
+	// Filter by state if provided
+	stateFilter := r.URL.Query().Get("state")
+
+	// Filter by labels if provided
+	labelKey := r.URL.Query().Get("label_key")
+	labelValue := r.URL.Query().Get("label_value")
+
 	state.mu.RLock()
-	sandboxes := make([]Sandbox, 0, len(state.sandboxes))
+	filtered := make([]Sandbox, 0, len(state.sandboxes))
 	for _, sb := range state.sandboxes {
-		sandboxes = append(sandboxes, sb)
+		// Apply state filter
+		if stateFilter != "" && sb.State.String() != stateFilter {
+			continue
+		}
+		// Apply label filter
+		if labelKey != "" {
+			if v, ok := sb.Labels[labelKey]; !ok || (labelValue != "" && v != labelValue) {
+				continue
+			}
+		}
+		filtered = append(filtered, sb)
+	}
+
+	// Sort by CreatedAt descending (newest first)
+	for i := 0; i < len(filtered)-1; i++ {
+		for j := i + 1; j < len(filtered); j++ {
+			if filtered[i].CreatedAt.Before(filtered[j].CreatedAt) {
+				filtered[i], filtered[j] = filtered[j], filtered[i]
+			}
+		}
+	}
+
+	totalCount := len(filtered)
+
+	// Apply pagination
+	end := offset + limit
+	if offset >= len(filtered) {
+		filtered = []Sandbox{}
+	} else if end > len(filtered) {
+		filtered = filtered[offset:]
+	} else {
+		filtered = filtered[offset:end]
 	}
 	state.mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items":       sandboxes,
-		"total_count": len(sandboxes),
+		"items":        filtered,
+		"total_count":  totalCount,
+		"offset":       offset,
+		"limit":        limit,
+		"has_more":     end < totalCount,
 	})
+}
+
+func parseInt(s string) (int, error) {
+	var n int
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("invalid number")
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, nil
 }
 
 func handleSandboxGet(w http.ResponseWriter, r *http.Request, id string) {
@@ -111,6 +182,114 @@ func handleSandboxGet(w http.ResponseWriter, r *http.Request, id string) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"sandbox": sb})
+}
+
+func handleSandboxUpdate(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPatch {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	state.mu.RLock()
+	sb, ok := state.sandboxes[id]
+	state.mu.RUnlock()
+
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("Sandbox %s not found", id))
+		return
+	}
+
+	var req struct {
+		Name   string            `json:"name,omitempty"`
+		Labels map[string]string `json:"labels,omitempty"`
+	}
+
+	if err := decodeJSON(r.Body, &req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request: %v", err))
+		return
+	}
+
+	state.mu.Lock()
+	if req.Name != "" {
+		sb.Name = req.Name
+	}
+	if req.Labels != nil {
+		if sb.Labels == nil {
+			sb.Labels = make(map[string]string)
+		}
+		for k, v := range req.Labels {
+			sb.Labels[k] = v
+		}
+	}
+	sb.UpdatedAt = time.Now()
+	state.sandboxes[id] = sb
+	state.mu.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]any{"sandbox": sb})
+}
+
+func handleSandboxPause(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	state.mu.RLock()
+	sb, ok := state.sandboxes[id]
+	state.mu.RUnlock()
+
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("Sandbox %s not found", id))
+		return
+	}
+
+	if sb.State != SandboxStateRunning {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Sandbox %s is not running", id))
+		return
+	}
+
+	state.mu.Lock()
+	sb.State = SandboxStatePaused
+	sb.UpdatedAt = time.Now()
+	state.sandboxes[id] = sb
+	state.mu.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":    id,
+		"state": sb.State.String(),
+	})
+}
+
+func handleSandboxResume(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	state.mu.RLock()
+	sb, ok := state.sandboxes[id]
+	state.mu.RUnlock()
+
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("Sandbox %s not found", id))
+		return
+	}
+
+	if sb.State != SandboxStatePaused {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Sandbox %s is not paused", id))
+		return
+	}
+
+	state.mu.Lock()
+	sb.State = SandboxStateRunning
+	sb.UpdatedAt = time.Now()
+	state.sandboxes[id] = sb
+	state.mu.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":    id,
+		"state": sb.State.String(),
+	})
 }
 
 func handleSandboxDestroy(w http.ResponseWriter, r *http.Request, id string) {
@@ -130,6 +309,9 @@ func handleSandboxDestroy(w http.ResponseWriter, r *http.Request, id string) {
 
 	state.metrics.RecordDestroy()
 	log.Printf("Destroyed sandbox %s", id)
+
+	// Audit log sandbox destruction
+	auditLogger.LogSandboxAction(AuditActionDelete, AuditResultSuccess, id, r, nil)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,

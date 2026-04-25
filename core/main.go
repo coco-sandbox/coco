@@ -4,20 +4,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
-	"path/filepath"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/coco-sandbox/coco/core/visor"
+	"github.com/coco-sandbox/coco/core/config"
 )
 
 // =============================================================================
@@ -128,10 +126,11 @@ type Metrics struct {
 // =============================================================================
 
 var state AppState
+var auditLogger *AuditLogger
 var vsockMu sync.Mutex
 var nextVsockCID uint32 = 3
 
-func nextVsockCID() uint32 {
+func allocateVsockCID() uint32 {
 	vsockMu.Lock()
 	c := nextVsockCID
 	nextVsockCID++
@@ -171,25 +170,87 @@ func main() {
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
 
+	// Load configuration
+	cfg := config.Default()
+
 	state = AppState{
 		sandboxes:   make(map[string]Sandbox),
 		checkpoints: make(map[string][]Checkpoint),
 		replays:     make(map[string]Replay),
 		nodeID:      getNodeID(),
 		startTime:   time.Now(),
-		dataDir:     "/var/lib/coco/store",
+		dataDir:     cfg.DataDir,
 		metrics:     newMetrics(),
+	}
+
+	// Initialize audit logger
+	auditLogger = NewAuditLogger(log.Default())
+
+	// Initialize cluster manager
+	clusterManager = NewClusterManager(state.nodeID, "0.1.0")
+	clusterManager.Start()
+
+	// Initialize Raft consensus
+	raft = NewRaftConsensus(state.nodeID, clusterManager)
+	raft.Start()
+
+	// Initialize vsock router for cross-node communication
+	vsockRouter = NewVsockRouter(allocateVsockCID(), state.nodeID)
+	if err := vsockRouter.Start(); err != nil {
+		log.Printf("[vsock-router] Failed to start: %v (continuing anyway)", err)
 	}
 
 	setupDirectories()
 	mux := http.NewServeMux()
 	setupRoutes(mux)
 
-	addr := ":4747"
-	log.Printf("coco-core starting on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	// Wrap with middleware chain
+	handler := wrapMiddleware(mux)
+
+	// Create HTTP server
+	server := &http.Server{
+		Addr:         cfg.ListenAddr,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// Channel to receive OS signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	// Start server in goroutine
+	go func() {
+		log.Printf("coco-core starting on %s", cfg.ListenAddr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// Wait for signal
+	sig := <-sigChan
+	log.Printf("Received signal %v, shutting down gracefully...", sig)
+
+	// Create shutdown context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+
+	// Shutdown server
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Shutdown error: %v", err)
+	}
+
+	// Shutdown cluster manager
+	clusterManager.Stop()
+
+	// Shutdown Raft consensus
+	raft.Stop()
+
+	// Shutdown vsock router
+	vsockRouter.Stop()
+
+	log.Println("coco-core stopped")
 }
 
 func setupDirectories() {

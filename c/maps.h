@@ -8,6 +8,8 @@
 #ifndef COCO_MAPS_H
 #define COCO_MAPS_H
 
+#include <linux/bpf.h>
+
 /* Maximum entries per map (must be power of 2 for hash) */
 #define EGRESS_SESSIONS_MAX 65536
 #define INGRESS_SESSIONS_MAX 65536

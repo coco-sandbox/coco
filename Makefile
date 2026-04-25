@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 The Coco Sandbox Authors
 
-.PHONY: all build test clean proto go-zig go-core cocovisor coconet cocofork
+.PHONY: all build test test-sdk integration-test clean proto go-zig go-core cocovisor coconet cocofork
 
 # Go components
 go-core:
@@ -30,13 +30,22 @@ all: go-core go-ctl cocovisor coconet cocofork cocod
 test-go:
 	cd core && go test ./...
 	cd ctl && go test ./...
+	cd cocogate && go test ./...
+
+test-sdk:
+	cd sdk/go && go test -v ./...
 
 test-zig:
 	cd src/cocovisor && zig build test
 	cd src/coconet && zig build test
 	cd src/cocofork && zig build test
+	cd src/cocod && zig build test
 
-test: test-go test-zig
+test: test-go test-sdk test-zig
+
+# Integration tests (requires coco-core running)
+integration-test:
+	cd sdk/go && go test -v -tags=integration ./tests/integration/...
 
 # Protobuf generation
 proto:
@@ -49,3 +58,4 @@ clean:
 	rm -f src/coconet/zig-out/bin/coconet
 	rm -f src/cocofork/zig-out/bin/cocofork
 	rm -f src/cocod/zig-out/bin/cocod
+	rm -f sdk/go/coverage.out sdk/go/coverage.html
