@@ -30,7 +30,7 @@ type Template struct {
 	Initrd    string `json:"initrd"`
 	MemoryMB  uint32 `json:"memory_mb"`
 	VCPUs     uint32 `json:"vcpus"`
-	SnapPath  string `json:"snapshot_path"`
+	SnapshotPath string `json:"snapshot_path"`
 	SizeBytes int64  `json:"size_bytes"`
 	CreatedAt int64  `json:"created_at"`
 }
@@ -59,11 +59,11 @@ func (m *Manager) Create(name string, opts CreateOpts) (string, error) {
 		Initrd:    opts.InitrdPath,
 		MemoryMB:  opts.MemoryMB,
 		VCPUs:     opts.VCPUs,
-		SnapPath:  filepath.Join(m.baseDir, id, "snapshot.mem"),
+		SnapshotPath: filepath.Join(m.baseDir, id, "snapshot.mem"),
 		CreatedAt: time.Now().Unix(),
 	}
 
-	if err := os.MkdirAll(filepath.Dir(tpl.SnapPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(tpl.SnapshotPath), 0755); err != nil {
 		return "", err
 	}
 
