@@ -6,7 +6,9 @@ package visor
 import (
     "encoding/binary"
     "fmt"
+    "io"
     "net"
+    "strings"
     "sync"
     "time"
 )
@@ -143,6 +145,9 @@ func (c *Client) Boot(req BootRequest) (*BootResponse, error) {
     if kind != RespBoot {
         return nil, fmt.Errorf("unexpected response kind: %d", kind)
     }
+    if len(data) < 12 {
+        return nil, fmt.Errorf("boot response too short: got %d bytes, need 12", len(data))
+    }
 
     return &BootResponse{
         VsockCID: binary.LittleEndian.Uint32(data[0:4]),
@@ -157,8 +162,8 @@ func (c *Client) Exec(req ExecRequest, cb func(ExecChunk) error) error {
     defer c.mu.Unlock()
 
     cmdLen := uint32(len(req.Cmd))
-    argsStr := joinStrings(req.Args, "\x00")
-    envStr := joinStrings(req.Env, "\x00")
+    argsStr := strings.Join(req.Args, "\x00")
+    envStr := strings.Join(req.Env, "\x00")
     envLen := uint32(len(envStr))
     workdirLen := uint32(len(req.WorkingDir))
 
@@ -233,6 +238,9 @@ func (c *Client) GetState(sandboxID string) (*GetStateResponse, error) {
     }
     if kind == RespError {
         return nil, fmt.Errorf("visor error: %s", string(data))
+    }
+    if len(data) < 12 {
+        return nil, fmt.Errorf("getstate response too short: got %d bytes, need 12", len(data))
     }
 
     return &GetStateResponse{
@@ -318,6 +326,9 @@ func (c *Client) Fork(id string) (*ForkResponse, error) {
     if kind == RespError {
         return nil, fmt.Errorf("visor error: %s", string(data))
     }
+    if len(data) < 12 {
+        return nil, fmt.Errorf("fork response too short: got %d bytes, need 12", len(data))
+    }
 
     return &ForkResponse{
         ChildVsockCID: binary.LittleEndian.Uint32(data[0:4]),
@@ -342,6 +353,9 @@ func (c *Client) Hibernate(id string) error {
     if kind == RespError {
         return fmt.Errorf("visor error: %s", string(data))
     }
+    if len(data) < 12 {
+        return fmt.Errorf("hibernate response too short: got %d bytes, need 12", len(data))
+    }
 
     return nil
 }
@@ -362,6 +376,9 @@ func (c *Client) ResumeHibernated(id string) (*BootResponse, error) {
     if kind == RespError {
         return nil, fmt.Errorf("visor error: %s", string(data))
     }
+    if len(data) < 12 {
+        return nil, fmt.Errorf("resumehibernated response too short: got %d bytes, need 12", len(data))
+    }
 
     return &BootResponse{
         VsockCID: binary.LittleEndian.Uint32(data[0:4]),
@@ -381,14 +398,14 @@ func (c *Client) sendFrame(kind uint32, payload []byte) error {
 
 func (c *Client) readFrame() (uint32, []byte, error) {
     header := make([]byte, 8)
-    if _, err := c.conn.Read(header); err != nil {
+    if _, err := io.ReadFull(c.conn, header); err != nil {
         return 0, nil, err
     }
     kind := binary.LittleEndian.Uint32(header[0:4])
     size := binary.LittleEndian.Uint32(header[4:8])
     if size > 0 {
         data := make([]byte, size)
-        if _, err := c.conn.Read(data); err != nil {
+        if _, err := io.ReadFull(c.conn, data); err != nil {
             return 0, nil, err
         }
         return kind, data, nil
@@ -396,18 +413,7 @@ func (c *Client) readFrame() (uint32, []byte, error) {
     return kind, nil, nil
 }
 
-func joinStrings(strs []string, sep string) string {
-    if len(strs) == 0 {
-        return ""
-    }
-    out := strs[0]
-    for _, s := range strs[1:] {
-        out += sep + s
-    }
-    return out
-}
-
-// Pool manages a pool of connections (add this at the end of the file)
+// Pool manages a pool of connections
 type Pool struct {
     socketPath string
     maxIdle    int
@@ -424,6 +430,8 @@ func NewPool(socketPath string, maxIdle int) *Pool {
 }
 
 func (p *Pool) Acquire() (*Client, error) {
+    p.mu.Lock()
+    defer p.mu.Unlock()
     select {
     case conn := <-p.conns:
         return conn, nil
@@ -433,6 +441,8 @@ func (p *Pool) Acquire() (*Client, error) {
 }
 
 func (p *Pool) Release(conn *Client) error {
+    p.mu.Lock()
+    defer p.mu.Unlock()
     select {
     case p.conns <- conn:
         return nil
@@ -442,6 +452,8 @@ func (p *Pool) Release(conn *Client) error {
 }
 
 func (p *Pool) Close() error {
+    p.mu.Lock()
+    defer p.mu.Unlock()
     close(p.conns)
     for conn := range p.conns {
         conn.Close()
