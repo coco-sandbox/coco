@@ -297,10 +297,10 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
     };
 
     const exit_code: u32 = switch (term) {
-        .Exited => |code| @intCast(code),
-        .Signal => |sig| @intCast(sig),
-        .Stopped => |sig| @intCast(sig) + 128,
-        .Unknown => @intFromPtr(@alignCast(@ptrFromInt(@intFromEnum(term)))),
+        .Exited => |code| @as(u32, @intCast(code)),
+        .Signal => |sig| @as(u32, @intCast(sig)),
+        .Stopped => |sig| @as(u32, @intCast(sig)) + 128,
+        .Unknown => @as(u32, @intFromPtr(@alignCast(@ptrFromInt(@intFromEnum(term)))),
     };
 
     if (stdout.len > 0) {
@@ -495,7 +495,7 @@ pub fn main() !void {
     std.fs.makeDirAbsolute("/var/lib/coco/hibernation") catch {};
 
     const sock_addr = try std.net.Address.initUnix(SOCK_PATH);
-    const listener = try sock_addr.listen(.{ .reuse_address = true });
+    var listener = try sock_addr.listen(.{ .reuse_address = true });
 
     std.debug.print("[cocovisor] Listening on {s}\n", .{SOCK_PATH});
     std.debug.print("[cocovisor] Protocol: BOOT={d}, EXEC={d}, DESTROY={d}, PAUSE={d}, RESUME={d}, GET_STATE={d}, FORK={d}, HIBERNATE={d}\n", .{
@@ -504,7 +504,7 @@ pub fn main() !void {
 
     while (true) {
         const conn = try listener.accept();
-        const t = std.Thread.spawn(.{}, handleConnection, .{conn}) catch continue;
+        const t = std.Thread.spawn(.{}, handleConnection, .{@constCast(conn)}) catch continue;
         t.detach();
     }
 }

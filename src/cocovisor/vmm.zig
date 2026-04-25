@@ -130,9 +130,9 @@ pub const VM = struct {
 
         const exit_code: u32 = switch (term) {
             .Exited => |code| @intCast(code),
-            .Signal => |sig| @intCast(sig),
-            .Stopped => |sig| @intCast(sig) + 128,
-            .Unknown => @intFromPtr(@alignCast(@ptrFromInt(@intFromEnum(term)))),
+            .Signal => |sig| @as(u32, @intCast(sig)),
+            .Stopped => |sig| @as(u32, @intCast(sig)) + 128,
+            .Unknown => @as(u32, @intFromPtr(@alignCast(@ptrFromInt(@intFromEnum(term))))),
         };
 
         if (exit_code != 0) {
