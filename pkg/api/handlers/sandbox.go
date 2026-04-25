@@ -44,6 +44,14 @@ func (h *SandboxHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.MemoryMB < 0 {
+		http.Error(w, "memory_mb must be non-negative", http.StatusBadRequest)
+		return
+	}
+	if req.VCPUs < 0 {
+		http.Error(w, "vcpus must be non-negative", http.StatusBadRequest)
+		return
+	}
 	if req.Template == "" {
 		req.Template = "alpine"
 	}
@@ -95,7 +103,11 @@ func (h *SandboxHandler) HandleGet(w http.ResponseWriter, r *http.Request, id st
 // HandleDelete handles DELETE /v1/sandboxes/:id
 func (h *SandboxHandler) HandleDelete(w http.ResponseWriter, r *http.Request, id string) {
 	if err := h.service.Delete(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		if err.Error() == "sandbox not found" {
+			http.Error(w, "sandbox not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("delete failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 

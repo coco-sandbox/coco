@@ -37,6 +37,8 @@ type ExecResponse struct {
 
 // HandleExec handles POST /v1/sandboxes/:id/exec
 func (h *ExecHandler) HandleExec(w http.ResponseWriter, r *http.Request, sandboxID string) {
+	defer r.Body.Close()
+
 	var req ExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
@@ -59,6 +61,8 @@ func (h *ExecHandler) HandleExec(w http.ResponseWriter, r *http.Request, sandbox
 // HandleStreamingExec handles POST /v1/sandboxes/:id/streaming-exec
 // This implements Server-Sent Events for streaming output
 func (h *ExecHandler) HandleStreamingExec(w http.ResponseWriter, r *http.Request, sandboxID string) {
+	defer r.Body.Close()
+
 	var req ExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
@@ -77,10 +81,13 @@ func (h *ExecHandler) HandleStreamingExec(w http.ResponseWriter, r *http.Request
 
 	// Send mock streaming output
 	for i := 0; i < 5; i++ {
-		data, _ := json.Marshal(map[string]interface{}{
+		data, err := json.Marshal(map[string]interface{}{
 			"stream_type": 1,
 			"data":        fmt.Sprintf("chunk %d\n", i),
 		})
+		if err != nil {
+			data = []byte(`{"error":"marshal error"}`)
+		}
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 	}

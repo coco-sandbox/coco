@@ -83,6 +83,11 @@ func (h *TemplateHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Name == "" || req.Rootfs == "" || req.Kernel == "" {
+		http.Error(w, "name, rootfs, and kernel are required", http.StatusBadRequest)
+		return
+	}
+
 	if req.MemoryMB == 0 {
 		req.MemoryMB = 512
 	}
