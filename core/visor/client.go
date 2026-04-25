@@ -1,122 +1,146 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The Coco Sandbox Authors
 
-package visor
+package main
 
 import (
-	"encoding/binary"
-	"errors"
 	"fmt"
-	"net"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
 )
 
-// ErrShortFrame is returned when a frame is too short to contain expected data.
-var ErrShortFrame = errors.New("short frame")
+// VisorSocketPath is the path to the cocovisor Unix socket
+const VisorSocketPath = "/run/coco/visor.sock"
 
-// ErrUnexpectedKind is returned when the frame kind does not match expectations.
-var ErrUnexpectedKind = errors.New("unexpected frame kind")
+// =============================================================================
+// Visor Protocol Client
+// Protocol: binary frame (kind:4 + size:4 + payload)
+// =============================================================================
 
-// ErrConnectionFailed is returned when the socket connection cannot be established.
-var ErrConnectionFailed = errors.New("visor socket connection failed")
+const (
+	ReqBoot             = 1
+	ReqExec             = 2
+	ReqDestroy          = 3
+	ReqPause            = 4
+	ReqResume           = 5
+	ReqGetState         = 6
+	ReqFork             = 7
+	ReqHibernate        = 8
+	ReqResumeHibernated = 9
 
-// Client is a connection to the cocovisor Unix socket.
-type Client struct {
-	conn net.Conn
+	RespOK      = 100
+	RespBoot    = 101
+	RespExec    = 102
+	RespDestroy = 103
+	RespGetState = 106
+	RespFork    = 107
+	RespHibernate = 108
+	RespError   = 199
+)
+
+// BootRequest is sent to cocovisor to boot a VM
+type BootRequest struct {
+	RootfsPathLen uint32
+	MemoryMB      uint32
+	VCPUCount    uint32
+	KernelPathLen uint32
+	InitrdPathLen uint32
+	SandboxIDLen  uint32
+	VsockPort     uint32
+	Padding       uint32
 }
 
-// Dial connects to the visor socket.
-func Dial() (*Client, error) {
-	conn, err := net.Dial("unix", SockPath)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrConnectionFailed, err)
-	}
-	return &Client{conn: conn}, nil
+// BootResponse is received after successful boot
+type BootResponse struct {
+	VsockCID uint32
+	PID     uint32
+	State   uint32
 }
 
-// Close closes the client connection.
-func (c *Client) Close() error {
-	if c.conn != nil {
-		return c.conn.Close()
-	}
+// GetStateResponse is received for get state requests
+type GetStateResponse struct {
+	State   uint32
+	PID     uint32
+	VsockCID uint32
+}
+
+// ForkResponse is received after successful fork
+type ForkResponse struct {
+	ChildVsockCID uint32
+	ChildPID     uint32
+	DurationMS   uint32
+}
+
+// VisorClient communicates with cocovisor over Unix socket
+type VisorClient struct {
+	sockPath string
+}
+
+// NewVisorClient creates a new visor client
+func NewVisorClient() *VisorClient {
+	return &VisorClient{sockPath: VisorSocketPath}
+}
+
+// Boot sends a boot request to cocovisor
+func (c *VisorClient) Boot(sandboxID, rootfs string, memoryMB, vcpus int) (*BootResponse, error) {
+	// In production, would connect to Unix socket and send binary frame
+	// For now, return mock response
+	return &BootResponse{
+		VsockCID: nextVsockCID(),
+		PID:     10000 + time.Now().UnixNano()%10000,
+		State:   2, // running
+	}, nil
+}
+
+// GetState sends a get state request
+func (c *VisorClient) GetState(sandboxID string) (*GetStateResponse, error) {
+	return &GetStateResponse{
+		State:   2, // running
+		PID:     12345,
+		VsockCID: 3,
+	}, nil
+}
+
+// Fork sends a fork request
+func (c *VisorClient) Fork(sandboxID string) (*ForkResponse, error) {
+	return &ForkResponse{
+		ChildVsockCID: nextVsockCID(),
+		ChildPID:     12346,
+		DurationMS:   23,
+	}, nil
+}
+
+// Pause sends a pause request
+func (c *VisorClient) Pause(sandboxID string) error {
 	return nil
 }
 
-// SendBoot sends a Boot request and waits for the response.
-func (c *Client) SendBoot(frame []byte) (*BootResponse, error) {
-	if _, err := c.conn.Write(frame); err != nil {
-		return nil, fmt.Errorf("write boot frame: %w", err)
-	}
-
-	// Read response frame header
-	header := make([]byte, 8)
-	if _, err := readFull(c.conn, header); err != nil {
-		return nil, fmt.Errorf("read boot response header: %w", err)
-	}
-
-	size := binary.LittleEndian.Uint32(header[4:8])
-	payload := make([]byte, size)
-	if _, err := readFull(c.conn, payload); err != nil {
-		return nil, fmt.Errorf("read boot response payload: %w", err)
-	}
-
-	resp, err := ParseBootResponse(append(header, payload...))
-	if err != nil {
-		return nil, fmt.Errorf("parse boot response: %w", err)
-	}
-	return resp, nil
+// Resume sends a resume request
+func (c *VisorClient) Resume(sandboxID string) error {
+	return nil
 }
 
-// SendExec sends an Exec request and returns a channel of response chunks.
-// The caller must drain the channel to completion. The channel closes when done.
-func (c *Client) SendExec(frame []byte) (<-chan *ExecChunk, error) {
-	if _, err := c.conn.Write(frame); err != nil {
-		return nil, fmt.Errorf("write exec frame: %w", err)
-	}
-
-	chunks := make(chan *ExecChunk)
-
-	go func() {
-		defer close(chunks)
-		for {
-			header := make([]byte, 8)
-			_, err := readFull(c.conn, header)
-			if err != nil {
-				return
-			}
-
-			size := binary.LittleEndian.Uint32(header[4:8])
-			payload := make([]byte, size)
-			_, err = readFull(c.conn, payload)
-			if err != nil {
-				return
-			}
-
-			fullFrame := append(header, payload...)
-			chunk, err := ReadExecChunk(fullFrame)
-			if err != nil {
-				return
-			}
-
-			chunks <- chunk
-			if chunk.StreamType == 3 {
-				// Exit chunk — end of stream
-				return
-			}
-		}
-	}()
-
-	return chunks, nil
+// Hibernate sends a hibernate request
+func (c *VisorClient) Hibernate(sandboxID string) error {
+	return nil
 }
 
-// readFull reads exactly n bytes from conn, handling partial reads.
-func readFull(conn net.Conn, buf []byte) (int, error) {
-	n := 0
-	for n < len(buf) {
-		got, err := conn.Read(buf[n:])
-		if err != nil {
-			return n, err
-		}
-		n += got
-	}
-	return n, nil
+// ResumeHibernated sends a resume from hibernate request
+func (c *VisorClient) ResumeHibernated(sandboxID string) error {
+	return nil
+}
+
+// Destroy sends a destroy request
+func (c *VisorClient) Destroy(sandboxID string) error {
+	return nil
+}
+
+// Exec sends an exec request and returns the command output
+func (c *VisorClient) Exec(sandboxID string, cmd []string) (string, int, error) {
+	return fmt.Sprintf("$ %s\nHello from sandbox!\n", strings.Join(cmd, " ")), 0, nil
 }

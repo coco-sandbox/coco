@@ -1,212 +1,126 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The Coco Sandbox Authors
 
-package visor
+package main
 
 import (
-	"bytes"
 	"encoding/binary"
-	"strings"
+	"fmt"
 )
 
-// Protocol constants — must match cocovisor/src/cocovisor/main.zig
-const (
-	ReqBoot    uint32 = 1
-	ReqExec    uint32 = 2
-	ReqDestroy uint32 = 3
-	ReqGetState uint32 = 6
+// Binary protocol frame format:
+// ┌──────────┬──────────┬─────────────────────┐
+// │ kind (4B)│ size (4B)│ payload (size B)   │
+// └──────────┴──────────┴─────────────────────┘
 
-	RespBoot     uint32 = 101
-	RespExec     uint32 = 102
-	RespDestroy  uint32 = 103
-	RespGetState uint32 = 106
-	RespError    uint32 = 199
+var nativeEndian = binary.LittleEndian
 
-	SockPath = "/run/coco/visor.sock"
-)
-
-// BootRequest is the binary payload sent for a Boot request.
-// All length fields count bytes of the string data that follows the struct.
-type BootRequest struct {
-	RootfsPathLen  uint32
-	MemoryMB       uint32
-	VCPUs          uint32
-	KernelPathLen  uint32
-	InitrdPathLen  uint32
-	SandboxIDLen   uint32
-	VsockPort      uint32
-	Padding        uint32
+// Frame represents a binary protocol frame
+type Frame struct {
+	Kind    uint32
+	Size    uint32
+	Payload []byte
 }
 
-// BootResponse is the binary payload returned from a successful Boot.
-type BootResponse struct {
-	VsockCID uint32
-	PID      uint32
-	State    uint32
+// Pack serializes a frame to bytes
+func (f *Frame) Pack() []byte {
+	buf := make([]byte, 8+len(f.Payload))
+	nativeEndian.PutUint32(buf[0:4], f.Kind)
+	nativeEndian.PutUint32(buf[4:8], f.Size)
+	copy(buf[8:], f.Payload)
+	return buf
 }
 
-// ExecRequest is the binary payload sent for an Exec request.
-type ExecRequest struct {
-	CmdLen       uint32
-	ArgsLen      uint32
-	EnvLen       uint32
-	WorkingDirLen uint32
+// Unpack deserializes bytes to a frame
+func (f *Frame) Unpack(data []byte) error {
+	if len(data) < 8 {
+		return fmt.Errorf("frame too short: %d bytes", len(data))
+	}
+	f.Kind = nativeEndian.Uint32(data[0:4])
+	f.Size = nativeEndian.Uint32(data[4:8])
+	if int(f.Size) > len(data)-8 {
+		return fmt.Errorf("payload size mismatch: %d > %d", f.Size, len(data)-8)
+	}
+	f.Payload = data[8 : 8+f.Size]
+	return nil
 }
 
-// ExecChunk represents a chunk in the exec response stream.
-type ExecChunk struct {
-	StreamType uint32 // 1=stdout, 2=stderr, 3=exit
-	DataLen    uint32
-	ExitCode   uint32
-	Data       []byte
+// NewBootRequest creates a boot request frame
+func NewBootRequest(sandboxID, rootfs string, memoryMB, vcpus int) *Frame {
+	sandboxIDBytes := []byte(sandboxID)
+	rootfsBytes := []byte(rootfs)
+
+	payload := make([]byte, 36+len(sandboxIDBytes)+len(rootfsBytes))
+	nativeEndian.PutUint32(payload[0:4], uint32(len(rootfsBytes)))   // rootfs_path_len
+	nativeEndian.PutUint32(payload[4:8], uint32(memoryMB))          // memory_mb
+	nativeEndian.PutUint32(payload[8:12], uint32(vcpus))           // vcpu_count
+	nativeEndian.PutUint32(payload[12:16], 0)                      // kernel_path_len
+	nativeEndian.PutUint32(payload[16:20], 0)                      // initrd_path_len
+	nativeEndian.PutUint32(payload[20:24], uint32(len(sandboxIDBytes))) // sandbox_id_len
+	nativeEndian.PutUint32(payload[24:28], 4747)                    // vsock_port
+	nativeEndian.PutUint32(payload[28:32], 0)                      // padding
+	nativeEndian.PutUint32(payload[32:36], 0)                      // padding
+	copy(payload[36:], sandboxIDBytes)
+	copy(payload[36+len(sandboxIDBytes):], rootfsBytes)
+
+	return &Frame{Kind: 1, Size: uint32(len(payload)), Payload: payload}
 }
 
-// BuildBootFrame constructs a complete Boot request frame.
-// Payload: BootRequest struct + sandbox_id bytes + rootfs_path bytes.
-func BuildBootFrame(sandboxID, rootfsPath string, memoryMB, vcpus uint32, vsockPort uint32) ([]byte, error) {
-	const kernelPath = "/boot/vmlinuz"
-	const initrdPath = "/boot/initrd"
+// NewForkRequest creates a fork request frame
+func NewForkRequest(sandboxID string) *Frame {
+	idBytes := []byte(sandboxID)
+	nameBytes := []byte("fork-" + sandboxID)
 
-	req := BootRequest{
-		RootfsPathLen: uint32(len(rootfsPath)),
-		MemoryMB:      memoryMB,
-		VCPUs:         vcpus,
-		KernelPathLen: uint32(len(kernelPath)),
-		InitrdPathLen: uint32(len(initrdPath)),
-		SandboxIDLen:  uint32(len(sandboxID)),
-		VsockPort:     vsockPort,
-		Padding:       0,
-	}
+	payload := make([]byte, 8+len(idBytes)+len(nameBytes))
+	nativeEndian.PutUint32(payload[0:4], uint32(len(idBytes)))
+	nativeEndian.PutUint32(payload[4:8], uint32(len(nameBytes)))
+	copy(payload[8:], idBytes)
+	copy(payload[8+len(idBytes):], nameBytes)
 
-	var buf bytes.Buffer
-	// Frame header will be written last; first write the struct
-	if err := binary.Write(&buf, binary.LittleEndian, req); err != nil {
-		return nil, err
-	}
-	buf.WriteString(sandboxID)
-	buf.WriteString(rootfsPath)
-	buf.WriteString(kernelPath)
-	buf.WriteString(initrdPath)
-
-	frame := buildFrame(ReqBoot, buf.Bytes())
-	return frame, nil
+	return &Frame{Kind: 7, Size: uint32(len(payload)), Payload: payload}
 }
 
-// BuildExecFrame constructs a complete Exec request frame.
-// Payload: ExecRequest struct + cmd bytes + args bytes + env bytes + working_dir bytes.
-func BuildExecFrame(cmd string, args, env []string, workingDir string) ([]byte, error) {
-	// Build args string (space-separated)
-	argsStr := joinStrings(args, "\x00")
-	envStr := joinEnv(env)
-	wdStr := workingDir
-
-	// Handle empty working dir
-	if wdStr == "" {
-		wdStr = "/"
+// ParseBootResponse parses a boot response frame
+func ParseBootResponse(f *Frame) (vsockCID, pid uint32, err error) {
+	if f.Kind != 101 {
+		return 0, 0, fmt.Errorf("expected RESP_BOOT (101), got %d", f.Kind)
 	}
-
-	req := ExecRequest{
-		CmdLen:       uint32(len(cmd)),
-		ArgsLen:      uint32(len(argsStr)),
-		EnvLen:       uint32(len(envStr)),
-		WorkingDirLen: uint32(len(wdStr)),
+	if len(f.Payload) < 12 {
+		return 0, 0, fmt.Errorf("boot response payload too short: %d", len(f.Payload))
 	}
-
-	var buf bytes.Buffer
-	if err := binary.Write(&buf, binary.LittleEndian, req); err != nil {
-		return nil, err
+	vsockCID = nativeEndian.Uint32(f.Payload[0:4])
+	pid = nativeEndian.Uint32(f.Payload[4:8])
+	state := nativeEndian.Uint32(f.Payload[8:12])
+	if state != 2 {
+		return 0, 0, fmt.Errorf("VM not running, state=%d", state)
 	}
-	buf.WriteString(cmd)
-	buf.WriteString(argsStr)
-	buf.WriteString(envStr)
-	buf.WriteString(wdStr)
-
-	frame := buildFrame(ReqExec, buf.Bytes())
-	return frame, nil
+	return vsockCID, pid, nil
 }
 
-// buildFrame prepends [kind:u32][size:u32] to the payload.
-func buildFrame(kind uint32, payload []byte) []byte {
-	size := uint32(len(payload))
-	frame := make([]byte, 8+size)
-	binary.LittleEndian.PutUint32(frame[0:4], kind)
-	binary.LittleEndian.PutUint32(frame[4:8], size)
-	copy(frame[8:], payload)
-	return frame
+// ParseGetStateResponse parses a get state response frame
+func ParseGetStateResponse(f *Frame) (state, pid, vsockCID uint32, err error) {
+	if f.Kind != 106 {
+		return 0, 0, 0, fmt.Errorf("expected RESP_GET_STATE (106), got %d", f.Kind)
+	}
+	if len(f.Payload) < 12 {
+		return 0, 0, 0, fmt.Errorf("get_state payload too short: %d", len(f.Payload))
+	}
+	state = nativeEndian.Uint32(f.Payload[0:4])
+	pid = nativeEndian.Uint32(f.Payload[4:8])
+	vsockCID = nativeEndian.Uint32(f.Payload[8:12])
+	return state, pid, vsockCID, nil
 }
 
-// ParseBootResponse extracts VsockCID, PID, and State from a Boot response frame.
-func ParseBootResponse(frame []byte) (*BootResponse, error) {
-	if len(frame) < 8 {
-		return nil, ErrShortFrame
+// ParseForkResponse parses a fork response frame
+func ParseForkResponse(f *Frame) (childVsockCID, childPID, durationMS uint32, err error) {
+	if f.Kind != 107 {
+		return 0, 0, 0, fmt.Errorf("expected RESP_FORK (107), got %d", f.Kind)
 	}
-	kind := binary.LittleEndian.Uint32(frame[0:4])
-	if kind != RespBoot {
-		return nil, ErrUnexpectedKind
+	if len(f.Payload) < 12 {
+		return 0, 0, 0, fmt.Errorf("fork response payload too short: %d", len(f.Payload))
 	}
-	size := binary.LittleEndian.Uint32(frame[4:8])
-	if size < 12 || len(frame) < 8+int(size) {
-		return nil, ErrShortFrame
-	}
-	resp := &BootResponse{
-		VsockCID: binary.LittleEndian.Uint32(frame[8:12]),
-		PID:      binary.LittleEndian.Uint32(frame[12:16]),
-		State:    binary.LittleEndian.Uint32(frame[16:20]),
-	}
-	return resp, nil
-}
-
-// ReadExecChunk reads a single Exec response chunk from the socket.
-// Returns the chunk and whether the stream has ended (stream_type == 3).
-func ReadExecChunk(frame []byte) (*ExecChunk, error) {
-	if len(frame) < 8 {
-		return nil, ErrShortFrame
-	}
-	kind := binary.LittleEndian.Uint32(frame[0:4])
-	if kind != RespExec {
-		return nil, ErrUnexpectedKind
-	}
-	size := binary.LittleEndian.Uint32(frame[4:8])
-	if size < 12 || len(frame) < 8+int(size) {
-		return nil, ErrShortFrame
-	}
-
-	chunk := &ExecChunk{
-		StreamType: binary.LittleEndian.Uint32(frame[8:12]),
-		DataLen:    binary.LittleEndian.Uint32(frame[12:16]),
-		ExitCode:   binary.LittleEndian.Uint32(frame[16:20]),
-	}
-	dataStart := 20
-	if int(chunk.DataLen) <= int(size)-12 {
-		chunk.Data = frame[dataStart : dataStart+int(chunk.DataLen)]
-	}
-	return chunk, nil
-}
-
-func joinStrings(strs []string, sep string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for i, s := range strs {
-		if i > 0 {
-			b.WriteString(sep)
-		}
-		b.WriteString(s)
-	}
-	return b.String()
-}
-
-func joinEnv(env []string) string {
-	if len(env) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for i, e := range env {
-		if i > 0 {
-			b.WriteByte('\x00')
-		}
-		b.WriteString(e)
-	}
-	return b.String()
+	childVsockCID = nativeEndian.Uint32(f.Payload[0:4])
+	childPID = nativeEndian.Uint32(f.Payload[4:8])
+	durationMS = nativeEndian.Uint32(f.Payload[8:12])
+	return childVsockCID, childPID, durationMS, nil
 }

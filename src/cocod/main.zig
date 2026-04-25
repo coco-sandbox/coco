@@ -7,12 +7,12 @@
 
 const std = @import("std");
 const posix = std.posix;
+const linux = std.os.linux;
 
 // =============================================================================
 // Constants
 // =============================================================================
 
-const DEFAULT_VSOCK_CID: u32 = 2;
 const DEFAULT_VSOCK_PORT: u16 = 4747;
 const RECV_BUF_SIZE: usize = 65536;
 const CHUNK_SIZE: usize = 32768;
@@ -50,49 +50,8 @@ fn logError(comptime fmt: []const u8, args: anytype) void {
 // Signal Handling (PID 1 responsibilities)
 // =============================================================================
 
-fn setupSignalHandlers() void {
-    // Setup sigaction for SIGTERM
-    var sa_term: posix.sigaction = .{
-        .handler = .{ .handler = &handleSigterm },
-        .mask = posix.empty_sigset,
-        .flags = 0,
-    };
-    posix.sigaction(posix.SIG.TERM, &sa_term, null);
-
-    // Setup sigaction for SIGINT
-    var sa_int: posix.sigaction = .{
-        .handler = .{ .handler = &handleSigterm },
-        .mask = posix.empty_sigset,
-        .flags = 0,
-    };
-    posix.sigaction(posix.SIG.INT, &sa_int, null);
-
-    // Setup sigaction for SIGHUP
-    var sa_hup: posix.sigaction = .{
-        .handler = .{ .handler = &handleSigterm },
-        .mask = posix.empty_sigset,
-        .flags = 0,
-    };
-    posix.sigaction(posix.SIG.HUP, &sa_hup, null);
-
-    // SIGPIPE: ignore (we handle closed sockets explicitly)
-    var sa_pipe: posix.sigaction = .{
-        .handler = .{ .handler = posix.SIG.IGN },
-        .mask = posix.empty_sigset,
-        .flags = 0,
-    };
-    posix.sigaction(posix.SIG.PIPE, &sa_pipe, null);
-
-    // Setup sigaction for child signals
-    var sa_chld: posix.sigaction = .{
-        .handler = .{ .handler = &handleSigchld },
-        .mask = posix.empty_sigset,
-        .flags = posix.SA.NOCLDSTOP,
-    };
-    posix.sigaction(posix.SIG.CHLD, &sa_chld, null);
-}
-
-fn handleSigterm(_: c_int) callconv(.C) void {
+fn handleSigterm(sig_num: i32) callconv(.C) void {
+    _ = sig_num;
     log("Received SIGTERM, initiating graceful shutdown", .{});
     running = false;
 
@@ -103,7 +62,8 @@ fn handleSigterm(_: c_int) callconv(.C) void {
     }
 }
 
-fn handleSigchld(_: c_int) callconv(.C) void {
+fn handleSigchld(sig_num: i32) callconv(.C) void {
+    _ = sig_num;
     // Reap child process if it exits
     if (child_pid > 0) {
         var status: c_int = 0;
@@ -115,23 +75,64 @@ fn handleSigchld(_: c_int) callconv(.C) void {
     }
 }
 
+fn setupSignalHandlers() void {
+    // SIGTERM: graceful shutdown
+    var sa_term: linux.Sigaction = .{
+        .handler = .{ .handler = handleSigterm },
+        .mask = posix.empty_sigset,
+        .flags = 0,
+    };
+    posix.sigaction(posix.SIG.TERM, &sa_term, null);
+
+    // SIGINT: treat as SIGTERM
+    var sa_int: linux.Sigaction = .{
+        .handler = .{ .handler = handleSigterm },
+        .mask = posix.empty_sigset,
+        .flags = 0,
+    };
+    posix.sigaction(posix.SIG.INT, &sa_int, null);
+
+    // SIGHUP: treat as SIGTERM
+    var sa_hup: linux.Sigaction = .{
+        .handler = .{ .handler = handleSigterm },
+        .mask = posix.empty_sigset,
+        .flags = 0,
+    };
+    posix.sigaction(posix.SIG.HUP, &sa_hup, null);
+
+    // SIGPIPE: ignore (we handle closed sockets explicitly)
+    var sa_pipe: linux.Sigaction = .{
+        .handler = .{ .handler = posix.SIG.IGN },
+        .mask = posix.empty_sigset,
+        .flags = 0,
+    };
+    posix.sigaction(posix.SIG.PIPE, &sa_pipe, null);
+
+    // SIGCHLD: reap child processes
+    var sa_chld: linux.Sigaction = .{
+        .handler = .{ .handler = handleSigchld },
+        .mask = posix.empty_sigset,
+        .flags = posix.SA.NOCLDSTOP,
+    };
+    posix.sigaction(posix.SIG.CHLD, &sa_chld, null);
+}
+
 // =============================================================================
 // VSock Communication (TCP fallback)
 // =============================================================================
 
 /// connectToHost establishes a connection to the host.
-/// Uses COCO_VSOCK_CID env var for hypervisor port forwarding selection.
+/// Uses COCO_VSOCK_PORT env var.
 /// Falls back to TCP connection since AF_VSOCK is not in Zig std.
-fn connectToHost(port: u32) !std.net.Stream {
+fn connectToHost(port: u16) !std.net.Stream {
     // In a real vsock implementation, we would use:
     //   const addr = try std.net.Address.initVsock(cid, port);
     // Since Zig 0.14.0 std doesn't include vsock support, we use TCP
     // with the expectation that the hypervisor maps vsock port to a TCP port.
-    // The host listens on the same port number via vsock-to-TCP mapping.
 
     const loopback = try std.net.Address.parseIp("127.0.0.1", port);
     log("Connecting to 127.0.0.1:{d} (vsock fallback)", .{port});
-    return try loopback.connect();
+    return try std.net.tcpConnectToAddress(loopback);
 }
 
 /// sendChunk sends a stream chunk to host with proper framing

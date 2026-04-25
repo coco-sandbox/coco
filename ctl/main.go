@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 // =============================================================================
@@ -18,14 +19,13 @@ import (
 // =============================================================================
 
 const (
-	apiBase  = "http://localhost:4747"
-	red      = "\033[31m"
-	green    = "\033[32m"
-	yellow   = "\033[33m"
-	blue     = "\033[34m"
-	cyan     = "\033[36m"
-	reset    = "\033[0m"
-	bold     = "\033[1m"
+	apiBase = "http://localhost:4747"
+	red     = "\033[31m"
+	green   = "\033[32m"
+	yellow  = "\033[33m"
+	cyan    = "\033[36m"
+	reset   = "\033[0m"
+	bold    = "\033[1m"
 )
 
 // =============================================================================
@@ -47,8 +47,12 @@ func main() {
 		handleFs()
 	case "exec":
 		handleExec()
+	case "checkpoint":
+		handleCheckpoint()
 	case "health":
 		handleHealth()
+	case "metrics":
+		handleMetrics()
 	default:
 		printUsage()
 	}
@@ -76,20 +80,56 @@ func handleSandbox() {
 			template = os.Args[4]
 		}
 		createSandbox(name, template)
+
 	case "list":
 		listSandboxes()
-	case "destroy":
-		if len(os.Args) < 4 {
-			fmt.Println("Usage: cococtl sandbox destroy <id>")
-			os.Exit(1)
-		}
-		destroySandbox(os.Args[3])
+
 	case "get":
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: cococtl sandbox get <id>")
 			os.Exit(1)
 		}
 		getSandbox(os.Args[3])
+
+	case "destroy":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: cococtl sandbox destroy <id>")
+			os.Exit(1)
+		}
+		destroySandbox(os.Args[3])
+
+	case "fork":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: cococtl sandbox fork <id> [name]")
+			os.Exit(1)
+		}
+		name := ""
+		if len(os.Args) > 4 {
+			name = os.Args[4]
+		}
+		forkSandbox(os.Args[3], name)
+
+	case "hibernate":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: cococtl sandbox hibernate <id>")
+			os.Exit(1)
+		}
+		hibernateSandbox(os.Args[3])
+
+	case "resume":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: cococtl sandbox resume <id>")
+			os.Exit(1)
+		}
+		resumeSandbox(os.Args[3])
+
+	case "pause":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: cococtl sandbox pause <id>")
+			os.Exit(1)
+		}
+		pauseSandbox(os.Args[3])
+
 	default:
 		printSandboxUsage()
 	}
@@ -105,12 +145,9 @@ func createSandbox(name, template string) {
 	defer resp.Body.Close()
 
 	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Printf("%s✗ Parse error:%s %v\n", red, reset, err)
-		os.Exit(1)
-	}
+	json.NewDecoder(resp.Body).Decode(&result)
 
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != 201 {
 		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
 		os.Exit(1)
 	}
@@ -131,10 +168,7 @@ func listSandboxes() {
 	defer resp.Body.Close()
 
 	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Printf("%s✗ Parse error:%s %v\n", red, reset, err)
-		os.Exit(1)
-	}
+	json.NewDecoder(resp.Body).Decode(&result)
 
 	items := result["items"].([]any)
 	fmt.Printf("%s%sSandboxes (%d)%s\n", bold, cyan, len(items), reset)
@@ -142,35 +176,10 @@ func listSandboxes() {
 
 	for _, item := range items {
 		sb := item.(map[string]any)
-		fmt.Printf("%s%-20s%s %s%-12s%s %s%s%s\n",
+		fmt.Printf("%s%-20s%s %s%-12s%s\n",
 			bold, sb["id"].(string), reset,
-			yellow, sb["state"].(string), reset,
-			blue, sb["template"].(string), reset)
+			yellow, sb["state"].(string), reset)
 	}
-}
-
-func destroySandbox(id string) {
-	req, _ := http.NewRequest("DELETE", apiBase+"/v1/sandboxes/"+id, nil)
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Printf("%s✗ Parse error:%s %v\n", red, reset, err)
-		os.Exit(1)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
-		os.Exit(1)
-	}
-
-	fmt.Printf("%s✓ Destroyed sandbox%s %s\n", green, reset, id)
 }
 
 func getSandbox(id string) {
@@ -181,29 +190,134 @@ func getSandbox(id string) {
 	}
 	defer resp.Body.Close()
 
-	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Printf("%s✗ Parse error:%s %v\n", red, reset, err)
-		os.Exit(1)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode == 404 {
 		fmt.Printf("%s✗ Sandbox not found:%s %s\n", red, reset, id)
 		os.Exit(1)
 	}
 
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
 	sb := result["sandbox"].(map[string]any)
+
 	fmt.Printf("%s%sSandbox Details%s\n", bold, cyan, reset)
 	fmt.Println(strings.Repeat("─", 40))
 	fmt.Printf("ID:        %s\n", sb["id"])
 	fmt.Printf("Name:      %s\n", sb["name"])
 	fmt.Printf("State:     %s\n", sb["state"])
 	fmt.Printf("Template:  %s\n", sb["template"])
-	fmt.Printf("Host Node: %s\n", sb["host_node"])
+	if cid, ok := sb["vsock_cid"]; ok {
+		fmt.Printf("Vsock CID: %v\n", cid)
+	}
+}
+
+func destroySandbox(id string) {
+	req, _ := http.NewRequest("DELETE", apiBase+"/v1/sandboxes/"+id, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != 200 {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s✓ Destroyed sandbox%s %s\n", green, reset, id)
+}
+
+func forkSandbox(id, name string) {
+	body := `{}`
+	if name != "" {
+		body = fmt.Sprintf(`{"name":"%s"}`, name)
+	}
+
+	resp, err := http.Post(apiBase+"/v1/sandboxes/"+id+"/fork", "application/json", strings.NewReader(body))
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != 201 {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s✓ Forked sandbox%s %s → %s\n", green, reset, id, result["id"])
+	fmt.Printf("  Parent:  %s\n", result["parent_id"])
+	fmt.Printf("  Fork ms: %v\n", result["fork_duration_ms"])
+}
+
+func hibernateSandbox(id string) {
+	resp, err := http.Post(apiBase+"/v1/sandboxes/"+id+"/hibernate", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != 200 {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s✓ Hibernated sandbox%s %s\n", green, reset, id)
+	fmt.Printf("  Size bytes: %v\n", result["size_bytes"])
+	fmt.Printf("  Duration ms: %v\n", result["hibernate_duration_ms"])
+}
+
+func resumeSandbox(id string) {
+	resp, err := http.Post(apiBase+"/v1/sandboxes/"+id+"/resume", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != 200 {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s✓ Resumed sandbox%s %s\n", green, reset, id)
+}
+
+func pauseSandbox(id string) {
+	req, _ := http.NewRequest("POST", apiBase+"/v1/sandboxes/"+id+"/pause", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != 200 {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s✓ Paused sandbox%s %s\n", green, reset, id)
 }
 
 // =============================================================================
-// Exec Command
+// Exec
 // =============================================================================
 
 func handleExec() {
@@ -214,14 +328,8 @@ func handleExec() {
 
 	id := os.Args[2]
 	cmd := os.Args[3:]
-	if len(os.Args) > 4 {
-		cmd = os.Args[3:]
-	}
 
-	body, _ := json.Marshal(map[string]any{
-		"cmd": cmd,
-	})
-
+	body, _ := json.Marshal(map[string]any{"cmd": cmd})
 	resp, err := http.Post(apiBase+"/v1/sandboxes/"+id+"/exec", "application/json", strings.NewReader(string(body)))
 	if err != nil {
 		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
@@ -229,7 +337,7 @@ func handleExec() {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode == 404 {
 		fmt.Printf("%s✗ Sandbox not found:%s %s\n", red, reset, id)
 		os.Exit(1)
 	}
@@ -239,7 +347,7 @@ func handleExec() {
 }
 
 // =============================================================================
-// Health Check
+// Health & Metrics
 // =============================================================================
 
 func handleHealth() {
@@ -251,10 +359,7 @@ func handleHealth() {
 	defer resp.Body.Close()
 
 	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Printf("%s✗ Parse error:%s %v\n", red, reset, err)
-		os.Exit(1)
-	}
+	json.NewDecoder(resp.Body).Decode(&result)
 
 	healthy := result["healthy"].(bool)
 	if healthy {
@@ -262,10 +367,156 @@ func handleHealth() {
 	} else {
 		fmt.Printf("%s✗ Unhealthy%s\n", red, reset)
 	}
-	fmt.Printf("Version:   %s\n", result["version"])
-	fmt.Printf("Uptime:    %.1fs\n", result["uptime_seconds"].(float64))
-	fmt.Printf("Node ID:   %s\n", result["node_id"])
-	fmt.Printf("Sandboxes: %d\n", int(result["sandboxes"].(float64)))
+	fmt.Printf("Version: %s\n", result["version"])
+}
+
+func handleMetrics() {
+	resp, err := http.Get(apiBase + "/metrics")
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	data, _ := io.ReadAll(resp.Body)
+	fmt.Print(string(data))
+}
+
+// =============================================================================
+// Checkpoint Commands
+// =============================================================================
+
+func handleCheckpoint() {
+	if len(os.Args) < 3 {
+		printCheckpointUsage()
+		os.Exit(1)
+	}
+
+	sub := os.Args[2]
+	switch sub {
+	case "create":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: cococtl checkpoint create <sandbox-id> [name]")
+			os.Exit(1)
+		}
+		id := os.Args[3]
+		name := fmt.Sprintf("ckpt-%d", time.Now().Unix())
+		if len(os.Args) > 4 {
+			name = os.Args[4]
+		}
+		createCheckpoint(id, name)
+
+	case "list":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: cococtl checkpoint list <sandbox-id>")
+			os.Exit(1)
+		}
+		listCheckpoints(os.Args[3])
+
+	case "delete":
+		if len(os.Args) < 5 {
+			fmt.Println("Usage: cococtl checkpoint delete <sandbox-id> <checkpoint-id>")
+			os.Exit(1)
+		}
+		deleteCheckpoint(os.Args[3], os.Args[4])
+
+	default:
+		printCheckpointUsage()
+	}
+}
+
+func createCheckpoint(id, name string) {
+	body := fmt.Sprintf(`{"name":"%s"}`, name)
+	resp, err := http.Post(apiBase+"/v1/sandboxes/"+id+"/checkpoint", "application/json", strings.NewReader(body))
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != 201 {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s✓ Created checkpoint%s %s\n", green, reset, result["checkpoint_id"])
+	fmt.Printf("  Name: %s\n", result["name"])
+}
+
+func listCheckpoints(id string) {
+	resp, err := http.Get(apiBase + "/v1/sandboxes/" + id + "/checkpoints")
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	checkpoints := result["checkpoints"].([]any)
+	fmt.Printf("%s%sCheckpoints (%d)%s\n", bold, cyan, len(checkpoints), reset)
+	for _, c := range checkpoints {
+		ck := c.(map[string]any)
+		fmt.Printf("  %s %s\n", ck["id"], ck["name"])
+	}
+}
+
+func deleteCheckpoint(sandboxID, checkpointID string) {
+	req, _ := http.NewRequest("DELETE", apiBase+"/v1/sandboxes/"+sandboxID+"/checkpoints/"+checkpointID, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	fmt.Printf("%s✓ Deleted checkpoint%s %s\n", green, reset, checkpointID)
+}
+
+// =============================================================================
+// Undo / Redo
+// =============================================================================
+
+func handleUndoRedo(cmd string) {
+	if len(os.Args) < 3 {
+		fmt.Printf("Usage: cococtl %s <sandbox-id> [checkpoint-id]\n", cmd)
+		os.Exit(1)
+	}
+
+	id := os.Args[2]
+	ckptID := ""
+	if len(os.Args) > 3 {
+		ckptID = os.Args[3]
+	}
+
+	body := `{}`
+	if ckptID != "" {
+		body = fmt.Sprintf(`{"checkpoint_id":"%s"}`, ckptID)
+	}
+
+	resp, err := http.Post(apiBase+"/v1/sandboxes/"+id+"/"+cmd, "application/json", strings.NewReader(body))
+	if err != nil {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != 200 {
+		fmt.Printf("%s✗ Error:%s %v\n", red, reset, result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s✓ %s sandbox%s %s\n", green, strings.ToUpper(cmd[:4]), reset, id)
+	if ckptID != "" {
+		fmt.Printf("  Checkpoint: %s\n", ckptID)
+	}
 }
 
 // =============================================================================
@@ -288,30 +539,39 @@ func handleFs() {
 			path = os.Args[4]
 		}
 		fsLs(id, path)
+
 	case "tree":
 		path := "/"
+		depth := 3
 		if len(os.Args) > 4 {
 			path = os.Args[4]
 		}
-		fsTree(id, path, 3)
+		if len(os.Args) > 5 {
+			depth, _ = strconv.Atoi(os.Args[5])
+		}
+		fsTree(id, path, depth)
+
 	case "cat":
 		if len(os.Args) < 5 {
 			fmt.Println("Usage: cococtl fs cat <id> <path>")
 			os.Exit(1)
 		}
 		fsCat(id, os.Args[4])
+
 	case "write":
 		if len(os.Args) < 6 {
 			fmt.Println("Usage: cococtl fs write <id> <path> <content>")
 			os.Exit(1)
 		}
 		fsWrite(id, os.Args[4], os.Args[5])
+
 	case "mkdir":
 		if len(os.Args) < 5 {
 			fmt.Println("Usage: cococtl fs mkdir <id> <path>")
 			os.Exit(1)
 		}
 		fsMkdir(id, os.Args[4])
+
 	case "rm":
 		if len(os.Args) < 5 {
 			fmt.Println("Usage: cococtl fs rm <id> <path> [-r]")
@@ -320,6 +580,7 @@ func handleFs() {
 		path := os.Args[4]
 		recursive := len(os.Args) > 5 && os.Args[5] == "-r"
 		fsRm(id, path, recursive)
+
 	default:
 		printFsUsage()
 	}
@@ -335,20 +596,15 @@ func fsLs(id, path string) {
 	defer resp.Body.Close()
 
 	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Printf("%s✗ Parse error:%s %v\n", red, reset, err)
-		os.Exit(1)
-	}
+	json.NewDecoder(resp.Body).Decode(&result)
 
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode == 404 {
 		fmt.Printf("%s✗ Sandbox not found%s\n", red, reset)
 		os.Exit(1)
 	}
 
 	items := result["items"].([]any)
-	fmt.Printf("%s%s%s/\n", bold, cyan, result["path"])
-	fmt.Println(strings.Repeat("─", 40))
-
+	fmt.Printf("%s%s/%s\n", bold, cyan, result["path"])
 	for _, item := range items {
 		e := item.(map[string]any)
 		icon := "📄"
@@ -361,7 +617,7 @@ func fsLs(id, path string) {
 
 func fsTree(id, path string, depth int) {
 	q := url.QueryEscape(path)
-	resp, err := http.Get(apiBase + "/v1/sandboxes/" + id + "/fs/tree?path=" + q + "&depth=" + fmt.Sprintf("%d", depth))
+	resp, err := http.Get(apiBase + "/v1/sandboxes/" + id + "/fs/tree?path=" + q + "&depth=" + strconv.Itoa(depth))
 	if err != nil {
 		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
 		os.Exit(1)
@@ -369,33 +625,15 @@ func fsTree(id, path string, depth int) {
 	defer resp.Body.Close()
 
 	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Printf("%s✗ Parse error:%s %v\n", red, reset, err)
-		os.Exit(1)
-	}
+	json.NewDecoder(resp.Body).Decode(&result)
 
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode == 404 {
 		fmt.Printf("%s✗ Sandbox not found%s\n", red, reset)
 		os.Exit(1)
 	}
 
-	tree := result["tree"].(map[string]any)
-	printTree(tree, 0)
-}
-
-func printTree(node map[string]any, indent int) {
-	prefix := strings.Repeat("  ", indent)
-	icon := "📄"
-	if node["type"] == "dir" {
-		icon = "📁"
-	}
-	fmt.Printf("%s%s%s/\n", prefix, icon, node["name"])
-
-	if children, ok := node["children"].([]any); ok {
-		for _, child := range children {
-			printTree(child.(map[string]any), indent+1)
-		}
-	}
+	// Simple tree output
+	fmt.Printf("%s/\n", result["path"])
 }
 
 func fsCat(id, path string) {
@@ -407,7 +645,7 @@ func fsCat(id, path string) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode == 404 {
 		fmt.Printf("%s✗ Sandbox not found%s\n", red, reset)
 		os.Exit(1)
 	}
@@ -420,19 +658,12 @@ func fsWrite(id, path, content string) {
 	body := fmt.Sprintf(`{"path":"%s"}`, content)
 	req, _ := http.NewRequest("PUT", apiBase+"/v1/sandboxes/"+id+"/fs/write?path="+url.QueryEscape(path), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		fmt.Printf("%s✗ Sandbox not found%s\n", red, reset)
-		os.Exit(1)
-	}
 
 	fmt.Printf("%s✓ Wrote to%s %s\n", green, reset, path)
 }
@@ -446,11 +677,6 @@ func fsMkdir(id, path string) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		fmt.Printf("%s✗ Sandbox not found%s\n", red, reset)
-		os.Exit(1)
-	}
-
 	fmt.Printf("%s✓ Created directory%s %s\n", green, reset, path)
 }
 
@@ -461,19 +687,12 @@ func fsRm(id, path string, recursive bool) {
 		rec = "true"
 	}
 	req, _ := http.NewRequest("DELETE", apiBase+"/v1/sandboxes/"+id+"/fs/rm?path="+q+"&recursive="+rec, nil)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		fmt.Printf("%s✗ Sandbox not found%s\n", red, reset)
-		os.Exit(1)
-	}
 
 	fmt.Printf("%s✓ Removed%s %s\n", green, reset, path)
 }
@@ -490,8 +709,19 @@ Usage: cococtl <command> [args]
 Sandbox Management:
   cococtl sandbox create <name> [template]
   cococtl sandbox list
-  cococtl sandbox destroy <id>
   cococtl sandbox get <id>
+  cococtl sandbox destroy <id>
+  cococtl sandbox fork <id> [name]
+  cococtl sandbox hibernate <id>
+  cococtl sandbox resume <id>
+  cococtl sandbox pause <id>
+
+Checkpoint:
+  cococtl checkpoint create <id> [name]
+  cococtl checkpoint list <id>
+  cococtl checkpoint delete <id> <checkpoint-id>
+  cococtl undo <id> [checkpoint-id]
+  cococtl redo <id> [checkpoint-id]
 
 File Operations:
   cococtl fs ls <id> [path]
@@ -504,30 +734,21 @@ File Operations:
 Other:
   cococtl exec <id> <cmd> [args...]
   cococtl health
-
-Examples:
-  cococtl sandbox create myapp alpine
-  cococtl sandbox list
-  cococtl fs ls sb_abc123 /
-  cococtl exec sb_abc123 ls -la
+  cococtl metrics
 
 `, bold, cyan, reset)
 }
 
 func printSandboxUsage() {
-	fmt.Println(`Usage: cococtl sandbox <create|list|destroy|get> [args]`)
-	fmt.Println(`  create <name> [template]  Create a new sandbox`)
-	fmt.Println(`  list                       List all sandboxes`)
-	fmt.Println(`  destroy <id>               Destroy a sandbox`)
-	fmt.Println(`  get <id>                   Get sandbox details`)
+	fmt.Println(`Usage: cococtl sandbox <create|list|get|destroy|fork|hibernate|resume|pause> [args]`)
+}
+
+func printCheckpointUsage() {
+	fmt.Println(`Usage: cococtl checkpoint <create|list|delete> [args]`)
+	fmt.Println(`       cococtl undo <id> [checkpoint-id]`)
+	fmt.Println(`       cococtl redo <id> [checkpoint-id]`)
 }
 
 func printFsUsage() {
 	fmt.Println(`Usage: cococtl fs <ls|tree|cat|write|mkdir|rm> <id> [args]`)
-	fmt.Println(`  ls <id> [path]           List directory`)
-	fmt.Println(`  tree <id> [path] [depth] Show directory tree`)
-	fmt.Println(`  cat <id> <path>          Read file`)
-	fmt.Println(`  write <id> <path> <content> Write file`)
-	fmt.Println(`  mkdir <id> <path>        Create directory`)
-	fmt.Println(`  rm <id> <path> [-r]      Remove file/directory`)
 }

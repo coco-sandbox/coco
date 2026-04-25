@@ -207,28 +207,119 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     try sock.writeAll(&resp);
 }
 
+const ExecRequest = extern struct {
+    cmd_len: u32,
+    args_len: u32,
+    env_len: u32,
+    working_dir_len: u32,
+};
+
+const ExecStreamChunk = struct {
+    stream_type: u32, // 1=stdout, 2=stderr, 3=exit
+    data_len: u32,
+    exit_code: u32,
+};
+
+fn sendExecChunk(sock: std.net.Stream, stream_type: u32, data: []const u8, exit_code: u32) !void {
+    const chunk_size = @sizeOf(ExecStreamChunk) + data.len;
+    var frame = try std.heap.page_allocator.alloc(u8, 8 + chunk_size);
+    defer std.heap.page_allocator.free(frame);
+    std.mem.writeIntLittle(u32, frame[0..4], RESP_EXEC);
+    std.mem.writeIntLittle(u32, frame[4..8], @as(u32, @intCast(chunk_size)));
+    std.mem.writeIntLittle(u32, frame[8..12], stream_type);
+    std.mem.writeIntLittle(u32, frame[12..16], @as(u32, @intCast(data.len)));
+    std.mem.writeIntLittle(u32, frame[16..20], exit_code);
+    @memcpy(frame[20..][0..data.len], data);
+    try sock.writeAll(frame);
+}
+
 fn handleExec(sock: std.net.Stream, payload: []u8) !void {
-    const cmd = payload[4..payload.len];
-    std.debug.print("[cocovisor] Exec: {s}\n", .{cmd});
+    if (payload.len < @sizeOf(ExecRequest)) {
+        try sendError(sock, "Exec request too small");
+        return;
+    }
 
-    // Send stdout chunk
-    var chunk: [48]u8 = undefined;
-    std.mem.writeIntLittle(u32, &chunk, RESP_EXEC);
-    const msg = "Hello from sandbox exec!\n";
-    std.mem.writeIntLittle(u32, chunk[4..8], 8 + msg.len);
-    std.mem.writeIntLittle(u32, chunk[8..12], 1); // stdout
-    std.mem.writeIntLittle(u32, chunk[12..16], msg.len);
-    std.mem.writeIntLittle(u32, chunk[16..20], 0); // exit_code
-    std.mem.copySlice(chunk[20..20+msg.len], msg);
-    try sock.writeAll(chunk[0..20+msg.len]);
+    const req = @as(*align(1) const ExecRequest, @ptrCast(payload.ptr));
+    const base = @sizeOf(ExecRequest);
 
-    // Send exit
-    var exit_chunk: [20]u8 = undefined;
-    std.mem.writeIntLittle(u32, &exit_chunk, RESP_EXEC);
-    std.mem.writeIntLittle(u32, exit_chunk[4..8], 8);
-    std.mem.writeIntLittle(u32, exit_chunk[8..12], 3); // exit
-    std.mem.writeIntLittle(u32, exit_chunk[12..16], 0);
-    try sock.writeAll(&exit_chunk);
+    const cmd = payload[base..][0..req.cmd_len];
+    const args = payload[base + req.cmd_len ..][0..req.args_len];
+    const env = payload[base + req.cmd_len + req.args_len ..][0..req.env_len];
+    const working_dir = payload[base + req.cmd_len + req.args_len + req.env_len ..][0..req.working_dir_len];
+
+    std.debug.print("[cocovisor] Exec: {s} args={s}\n", .{ cmd, args });
+
+    // Build argv: cmd followed by args split on spaces
+    var argv = std.ArrayList([]const u8).init(std.heap.page_allocator);
+    defer argv.deinit();
+    try argv.append(cmd);
+    var args_iter = std.mem.splitScalar(u8, args, ' ');
+    while (args_iter.next()) |arg| {
+        if (arg.len > 0) try argv.append(arg);
+    }
+
+    var child = std.ChildProcess.init(argv.items, std.heap.page_allocator);
+    child.stdout_behavior = .pipe;
+    child.stderr_behavior = .pipe;
+
+    if (working_dir.len > 0) {
+        child.cwd = working_dir;
+    }
+
+    if (env.len > 0) {
+        child.env_map = try std.process.getEnvMap(std.heap.page_allocator);
+        var env_iter = std.mem.splitScalar(u8, env, '\n');
+        while (env_iter.next()) |pair| {
+            if (pair.len > 0 and std.mem.indexOfScalar(u8, pair, '=') != null) {
+                if (std.mem.indexOfScalar(u8, pair, '=')) |eq| {
+                    try child.env_map.put(pair[0..eq], pair[eq + 1 ..]);
+                }
+            }
+        }
+    }
+
+    child.spawn() catch |err| {
+        std.debug.print("[cocovisor] Exec spawn failed: {}\n", .{err});
+        try sendError(sock, "Exec spawn failed");
+        return;
+    };
+
+    const stdout = child.stdout.?.reader().readAllAlloc(std.heap.page_allocator, 1024 * 1024) catch "";
+    defer std.heap.page_allocator.free(stdout);
+
+    const stderr = child.stderr.?.reader().readAllAlloc(std.heap.page_allocator, 1024 * 1024) catch "";
+    defer std.heap.page_allocator.free(stderr);
+
+    const term = child.wait() catch |err| {
+        std.debug.print("[cocovisor] Exec wait failed: {}\n", .{err});
+        try sendError(sock, "Exec wait failed");
+        return;
+    };
+
+    const exit_code: u32 = switch (term) {
+        .Exited => |code| @intCast(code),
+        .Signal => |sig| @intCast(sig),
+        .Stopped => |sig| @intCast(sig) + 128,
+        .Unknown => @intFromPtr(@alignCast(@ptrFromInt(@intFromEnum(term)))),
+    };
+
+    if (stdout.len > 0) {
+        sendExecChunk(sock, 1, stdout, 0) catch {};
+    }
+    if (stderr.len > 0) {
+        sendExecChunk(sock, 2, stderr, 0) catch {};
+    }
+
+    // Send exit chunk
+    {
+        var exit_frame: [8 + @sizeOf(ExecStreamChunk)]u8 = undefined;
+        std.mem.writeIntLittle(u32, &exit_frame, RESP_EXEC);
+        std.mem.writeIntLittle(u32, exit_frame[4..8], @sizeOf(ExecStreamChunk));
+        std.mem.writeIntLittle(u32, exit_frame[8..12], 3); // stream_type = exit
+        std.mem.writeIntLittle(u32, exit_frame[12..16], 0); // data_len
+        std.mem.writeIntLittle(u32, exit_frame[16..20], exit_code);
+        try sock.writeAll(&exit_frame);
+    }
 }
 
 fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
@@ -292,7 +383,7 @@ fn handleFork(sock: std.net.Stream, payload: []u8) !void {
 
     std.debug.print("[cocovisor] Fork: {s}\n", .{parent_id});
 
-    if (vmm.vms.get(parent_id)) |parent_vm| {
+    if (vmm.getVMs().get(parent_id)) |parent_vm| {
         const result = parent_vm.fork() catch |e| {
             std.debug.print("[cocovisor] Fork failed: {}\n", .{e});
             try sendError(sock, "Fork failed");

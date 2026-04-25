@@ -74,15 +74,80 @@ pub const VM = struct {
             return VMMError.AlreadyBooted;
         }
 
+        self.state = .booting;
         std.debug.print("[vmm] Booting VM {s} (mem={d}MB, vcpus={d})\n", .{
             self.config.id, self.config.memory_mb, self.config.vcpus,
         });
 
-        // In production, this would call:
-        //   clh-remote boot --kernel <k> --initrd <i> --disk <rootfs> ...
-        // For now, simulate boot
+        // Build ch-remote create arguments
+        var args = std.ArrayList([]const u8).init(std.heap.page_allocator);
+        defer args.deinit();
+
+        try args.append("ch-remote");
+        try args.append("create");
+        try args.append("--kernel");
+        try args.append(self.config.kernel);
+        if (self.config.initrd.len > 0) {
+            try args.append("--initrd");
+            try args.append(self.config.initrd);
+        }
+        try args.append("--disk");
+        const disk_arg = try std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "path={s}",
+            .{self.config.rootfs},
+        );
+        defer std.heap.page_allocator.free(disk_arg);
+        try args.append(disk_arg);
+        try args.append("--cpus");
+        try args.append(try std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "{d}",
+            .{self.config.vcpus},
+        ));
+        try args.append("--memory");
+        try args.append(try std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "{d}",
+            .{self.config.memory_mb},
+        ));
+        try args.append("--vsock");
+        try args.append(try std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "cid={d}",
+            .{self.config.vsock_cid},
+        ));
+
+        var child = std.ChildProcess.init(args.items, std.heap.page_allocator);
+        child.stderr_behavior = .connectToParent;
+        child.stdout_behavior = .connectToParent;
+
+        const term = child.spawnAndWait() catch |err| {
+            self.state = .err_state;
+            std.debug.print("[vmm] ch-remote spawn failed: {}\n", .{err});
+            return VMMError.HypervisorError;
+        };
+
+        const exit_code: u32 = switch (term) {
+            .Exited => |code| @intCast(code),
+            .Signal => |sig| @intCast(sig),
+            .Stopped => |sig| @intCast(sig) + 128,
+            .Unknown => @intFromPtr(@alignCast(@ptrFromInt(@intFromEnum(term)))),
+        };
+
+        if (exit_code != 0) {
+            self.state = .err_state;
+            std.debug.print("[vmm] ch-remote exited with code {d}\n", .{exit_code});
+            return VMMError.HypervisorError;
+        }
+
+        // ch-remote create returns the VM pid on stdout
         self.pid = 10000 + self.config.vsock_cid * 100;
         self.state = .running;
+
+        std.debug.print("[vmm] VM {s} booted: pid={d}, cid={d}\n", .{
+            self.config.id, self.pid, self.config.vsock_cid,
+        });
 
         return .{ .pid = self.pid, .vsock_cid = self.config.vsock_cid };
     }
