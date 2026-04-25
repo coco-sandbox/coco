@@ -29,14 +29,23 @@ func NewSnapshotManager(templateDir string) *SnapshotManager {
 
 func (sm *SnapshotManager) SnapshotTemplate(templateID string, vmPID int) error {
 	snapDir := filepath.Join(sm.templateDir, templateID)
-	os.MkdirAll(snapDir, 0755)
+	if err := os.MkdirAll(snapDir, 0755); err != nil {
+		return fmt.Errorf("failed to create snapshot directory: %w", err)
+	}
 
 	memPath := filepath.Join(snapDir, "snapshot.mem")
 	statePath := filepath.Join(snapDir, "vmstate.bin")
 
-	f1, _ := os.Create(memPath)
+	f1, err := os.Create(memPath)
+	if err != nil {
+		return fmt.Errorf("failed to create memory snapshot file: %w", err)
+	}
 	defer f1.Close()
-	f2, _ := os.Create(statePath)
+
+	f2, err := os.Create(statePath)
+	if err != nil {
+		return fmt.Errorf("failed to create state file: %w", err)
+	}
 	defer f2.Close()
 
 	return nil
@@ -45,9 +54,13 @@ func (sm *SnapshotManager) SnapshotTemplate(templateID string, vmPID int) error 
 func (sm *SnapshotManager) RestoreSnapshot(templateID string) error {
 	snapDir := filepath.Join(sm.templateDir, templateID)
 	memPath := filepath.Join(snapDir, "snapshot.mem")
+	statePath := filepath.Join(snapDir, "vmstate.bin")
 
 	if _, err := os.Stat(memPath); err != nil {
-		return fmt.Errorf("snapshot not found: %w", err)
+		return fmt.Errorf("memory snapshot not found: %w", err)
+	}
+	if _, err := os.Stat(statePath); err != nil {
+		return fmt.Errorf("VM state file not found: %w", err)
 	}
 
 	return nil

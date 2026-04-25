@@ -5,6 +5,7 @@ package template
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -30,9 +31,17 @@ func (s *Store) Put(tpl *Template) error {
 	s.mu.Unlock()
 
 	metaPath := filepath.Join(s.baseDir, tpl.ID, "meta.json")
-	os.MkdirAll(filepath.Dir(metaPath), 0755)
-	data, _ := json.Marshal(tpl)
-	return os.WriteFile(metaPath, data, 0644)
+	if err := os.MkdirAll(filepath.Dir(metaPath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+	data, err := json.Marshal(tpl)
+	if err != nil {
+		return fmt.Errorf("failed to marshal template: %w", err)
+	}
+	if err := os.WriteFile(metaPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write meta: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Get(id string) (*Template, error) {

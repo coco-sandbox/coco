@@ -97,6 +97,9 @@ func (m *Manager) List() ([]*Template, error) {
 
 func (m *Manager) saveMeta(tpl *Template) error {
 	metaPath := filepath.Join(m.baseDir, tpl.ID, "meta.json")
-	data, _ := json.Marshal(tpl)
+	data, err := json.Marshal(tpl)
+	if err != nil {
+		return fmt.Errorf("failed to marshal template: %w", err)
+	}
 	return os.WriteFile(metaPath, data, 0644)
 }
