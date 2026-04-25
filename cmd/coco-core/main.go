@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -34,17 +35,7 @@ type server struct {
 	metrics     *metrics.Metrics
 	templateMgr *template.Manager
 	visorPool   *visor.Pool
-}
-
-// AppState holds the application state
-type AppState struct {
-	sandboxes map[string]*types.Sandbox
-	store     *store.Store
-	cluster   *cluster.Manager
-	metrics   *metrics.Metrics
-	mu        struct {
-		sync.RWMutex
-	}
+	wg          sync.WaitGroup
 }
 
 func main() {
@@ -84,7 +75,10 @@ func (s *server) init() error {
 	s.visorPool = visor.NewPool(visor.SocketPath, 10)
 
 	// Initialize cluster manager
-	hostname, _ := os.Hostname()
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Printf("Warning: failed to get hostname: %v", err)
+	}
 	s.cluster = cluster.NewManager(hostname, "0.2.0")
 	s.cluster.Start()
 
@@ -129,12 +123,12 @@ func (s *server) setupRoutes() {
 	templateHandler := handlers.NewTemplateHandler(s.templateMgr)
 
 	// Sandboxes
-	s.mux.HandleFunc("/v1/sandboxes", handleSandboxes(sandboxHandler))
-	s.mux.HandleFunc("/v1/sandboxes/", handleSandboxByID(sandboxHandler, execHandler))
+	s.mux.HandleFunc("/v1/sandboxes", handleSandboxes(s, sandboxHandler))
+	s.mux.HandleFunc("/v1/sandboxes/", handleSandboxByID(s, sandboxHandler, execHandler))
 
 	// Templates
-	s.mux.HandleFunc("/v1/templates", handleTemplates(templateHandler))
-	s.mux.HandleFunc("/v1/templates/", handleTemplateByID(templateHandler))
+	s.mux.HandleFunc("/v1/templates", handleTemplates(s, templateHandler))
+	s.mux.HandleFunc("/v1/templates/", handleTemplateByID(s, templateHandler))
 
 	// Cluster
 	s.mux.HandleFunc("/cluster/nodes", handleClusterNodes)
@@ -163,8 +157,9 @@ func (s *server) waitForSignal() {
 		log.Printf("Shutdown error: %v", err)
 	}
 
-	s.cluster.Stop()
+	s.wg.Wait()
 	s.visorPool.Close()
+	s.cluster.Stop()
 	s.store.Close()
 
 	log.Println("coco-core stopped")
@@ -184,8 +179,10 @@ func handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"ready":true,"version":"0.2.0"}`))
 }
 
-func handleSandboxes(h *handlers.SandboxHandler) http.HandlerFunc {
+func handleSandboxes(s *server, h *handlers.SandboxHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		s.wg.Add(1)
+		defer s.wg.Done()
 		switch r.Method {
 		case "POST":
 			h.HandleCreate(w, r)
@@ -197,8 +194,10 @@ func handleSandboxes(h *handlers.SandboxHandler) http.HandlerFunc {
 	}
 }
 
-func handleSandboxByID(sandboxHandler *handlers.SandboxHandler, execHandler *handlers.ExecHandler) http.HandlerFunc {
+func handleSandboxByID(s *server, sandboxHandler *handlers.SandboxHandler, execHandler *handlers.ExecHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		s.wg.Add(1)
+		defer s.wg.Done()
 		id := extractSandboxID(r.URL.Path)
 		if id == "" {
 			http.Error(w, "missing sandbox ID", http.StatusBadRequest)
@@ -228,8 +227,10 @@ func handleSandboxByID(sandboxHandler *handlers.SandboxHandler, execHandler *han
 	}
 }
 
-func handleTemplates(h *handlers.TemplateHandler) http.HandlerFunc {
+func handleTemplates(s *server, h *handlers.TemplateHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		s.wg.Add(1)
+		defer s.wg.Done()
 		switch r.Method {
 		case "GET":
 			h.HandleList(w, r)
@@ -241,8 +242,10 @@ func handleTemplates(h *handlers.TemplateHandler) http.HandlerFunc {
 	}
 }
 
-func handleTemplateByID(h *handlers.TemplateHandler) http.HandlerFunc {
+func handleTemplateByID(s *server, h *handlers.TemplateHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		s.wg.Add(1)
+		defer s.wg.Done()
 		id := extractTemplateID(r.URL.Path)
 		if id == "" {
 			http.Error(w, "missing template ID", http.StatusBadRequest)
@@ -343,12 +346,21 @@ var _ handlers.TemplateService = (*template.Manager)(nil)
 // ID extraction helpers
 
 func extractSandboxID(path string) string {
-	// Expected format: /v1/sandboxes/<id>[/action]
-	path = strings.TrimPrefix(path, "/v1/sandboxes/")
-	if idx := strings.Index(path, "/"); idx != -1 {
-		path = path[:idx]
+	const prefix = "/v1/sandboxes/"
+	idx := strings.Index(path, prefix)
+	if idx == -1 {
+		return ""
 	}
-	return path
+	remaining := path[idx+len(prefix):]
+	// Remove any trailing path segments
+	if i := strings.Index(remaining, "/"); i != -1 {
+		remaining = remaining[:i]
+	}
+	// Validate non-empty
+	if remaining == "" {
+		return ""
+	}
+	return remaining
 }
 
 func extractTemplateID(path string) string {
