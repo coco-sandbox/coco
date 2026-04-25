@@ -59,10 +59,19 @@ HTTP/gRPC server listening on port 4747.
 ### 3.2 ctl/ — CLI Tool (Go)
 
 ```bash
+# Sandbox management
 cococtl sandbox create <name> <template>
 cococtl sandbox list
 cococtl sandbox destroy <id>
 cococtl exec <id> <cmd> [args...]
+
+# File operations
+cococtl fs ls <id> [path]
+cococtl fs tree <id> [path] [depth]
+cococtl fs cat <id> <path>
+cococtl fs write <id> <path> <content>
+cococtl fs mkdir <id> <path>
+cococtl fs rm <id> <path> [-r|--recursive]
 ```
 
 ### 3.3 src/cocovisor/ — Hypervisor Wrapper (Zig)
