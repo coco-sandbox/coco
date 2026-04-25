@@ -1,8 +1,6 @@
 *.o
 *.bin
 *.elf
-zig-cache/
-zig-out/
 *.exe
 *.test
 *.out
@@ -11,3 +9,4 @@ zig-out/
 *.swp
 zig-cache/
 zig-out/
+*.zig-cache*
