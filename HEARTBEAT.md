@@ -15,7 +15,22 @@ Periodic checks every 10 minutes.
 - [ ] Smoke test passes
 - [ ] All benchmarks green
 
-**Current blockers:** None
+**Current blockers:**
+- Zig toolchain not available in dev environment (zig build/format/test cannot run)
+- cocovisor needs ch-remote binary in PATH for real MicroVM boot
+
+---
+
+## Build Status (Last Run: 2026-04-26)
+
+| Component | Build | Notes |
+|-----------|-------|-------|
+| `coco-core` | ✅ | visor/client.go + visor/protocol.go with real socket comms |
+| `cococtl` | ✅ | Full CLI with sandbox/exec/fs commands |
+| `cocovisor` | ⚠️ | Real Boot/Exec via ch-remote (Zig unverified) |
+| `cocod` | ⚠️ | vsock exec handler (Zig unverified) |
+| `coconet` | ⚠️ | Skeleton only |
+| `cocofork` | ⚠️ | Skeleton only |
 
 ---
 

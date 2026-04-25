@@ -43,7 +43,7 @@ fn log(comptime fmt: []const u8, args: anytype) void {
 }
 
 fn logError(comptime fmt: []const u8, args: anytype) void {
-    std.debug.print("[cocod] ERROR: " ++ fmt ++ "\n", args);
+    std.debug.print("[codod] ERROR: " ++ fmt ++ "\n", args);
 }
 
 // =============================================================================
@@ -66,10 +66,9 @@ fn handleSigchld(sig_num: i32) callconv(.C) void {
     _ = sig_num;
     // Reap child process if it exits
     if (child_pid > 0) {
-        var status: c_int = 0;
-        const pid = posix.waitpid(child_pid, &status, posix.W.NOHANG);
-        if (pid == child_pid) {
-            log("Child {d} reaped with status {d}", .{ child_pid, status });
+        const result = posix.waitpid(child_pid, posix.W.NOHANG);
+        if (result.pid == child_pid) {
+            log("Child {d} reaped with status {d}", .{ child_pid, result.status });
             child_pid = 0;
         }
     }
@@ -138,11 +137,11 @@ fn connectToHost(port: u16) !std.net.Stream {
 /// sendChunk sends a stream chunk to host with proper framing
 fn sendChunk(sock: std.net.Stream, stream_type: u32, data: []const u8) !void {
     // Length-prefixed message: [4-byte stream_type][4-byte payload_len][payload]
-    var header: [8]u8 = undefined;
-    std.mem.writeIntLittle(u32, &header[0..4], stream_type);
-    std.mem.writeIntLittle(u32, header[4..8], @as(u32, @intCast(data.len)));
+    var stream_type_val: u32 = stream_type;
+    var payload_len_val: u32 = @as(u32, @intCast(data.len));
 
-    try sock.writeAll(&header);
+    try sock.writeAll(std.mem.asBytes(&stream_type_val));
+    try sock.writeAll(std.mem.asBytes(&payload_len_val));
     if (data.len > 0) {
         try sock.writeAll(data);
     }
@@ -151,29 +150,28 @@ fn sendChunk(sock: std.net.Stream, stream_type: u32, data: []const u8) !void {
 /// sendExit sends the exit code to host
 fn sendExit(sock: std.net.Stream, code: u32) !void {
     // Exit message: [stream_type=3][payload_len=4][exit_code]
-    var header: [8]u8 = undefined;
-    std.mem.writeIntLittle(u32, &header[0..4], STREAM_EXIT);
-    std.mem.writeIntLittle(u32, header[4..8], 4);
-    try sock.writeAll(&header);
+    var stream_type_val: u32 = STREAM_EXIT;
+    var payload_len_val: u32 = 4;
+    var exit_code_val: u32 = code;
 
-    var exit_code: [4]u8 = undefined;
-    std.mem.writeIntLittle(u32, &exit_code, code);
-    try sock.writeAll(&exit_code);
+    try sock.writeAll(std.mem.asBytes(&stream_type_val));
+    try sock.writeAll(std.mem.asBytes(&payload_len_val));
+    try sock.writeAll(std.mem.asBytes(&exit_code_val));
 }
 
 /// recvMessage receives a length-prefixed message from vsock
 fn recvMessage(sock: std.net.Stream, buf: []u8) ![]u8 {
     // Read 4-byte length header
     var len_buf: [4]u8 = undefined;
-    try sock.readFull(&len_buf);
-    const payload_len = std.mem.readIntLittle(u32, &len_buf);
+    _ = try sock.readAtLeast(&len_buf, 4);
+    const payload_len = std.mem.readInt(u32, &len_buf, .little);
 
     if (payload_len > buf.len) {
         return error.MessageTooLarge;
     }
 
     // Read payload
-    try sock.readFull(buf[0..payload_len]);
+    _ = try sock.readAtLeast(buf[0..payload_len], payload_len);
     return buf[0..payload_len];
 }
 
@@ -207,12 +205,13 @@ fn executeStreamingCommand(sock: std.net.Stream, cmdline: []const u8) !void {
     defer allocator.free(argv);
 
     // Create child process
-    var child = std.ChildProcess.init(argv, allocator);
-    child.stdout_behavior = .pipe;
-    child.stderr_behavior = .pipe;
+    var child = std.process.Child.init(argv, allocator);
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
 
     // Spawn
-    child_pid = try child.spawn();
+    try child.spawn();
+    child_pid = child.id;
     log("Child process spawned with PID {d}", .{child_pid});
 
     // Stream stdout/stderr in parallel with reading
@@ -229,6 +228,7 @@ fn executeStreamingCommand(sock: std.net.Stream, cmdline: []const u8) !void {
                 const n = stdout.read(&stdout_buf) catch |e| {
                     logError("stdout read error: {}", .{e});
                     stdout_done = true;
+                    break;
                 };
                 if (n == 0) {
                     stdout_done = true;
@@ -245,6 +245,7 @@ fn executeStreamingCommand(sock: std.net.Stream, cmdline: []const u8) !void {
                 const n = stderr.read(&stderr_buf) catch |e| {
                     logError("stderr read error: {}", .{e});
                     stderr_done = true;
+                    break;
                 };
                 if (n == 0) {
                     stderr_done = true;
@@ -266,6 +267,9 @@ fn executeStreamingCommand(sock: std.net.Stream, cmdline: []const u8) !void {
     const term = child.wait() catch |e| {
         logError("Failed to wait for child: {}", .{e});
         exit_code = 255;
+        child_pid = 0;
+        try sendExit(sock, exit_code);
+        return;
     };
 
     child_pid = 0;
@@ -301,26 +305,42 @@ fn runMainLoop(sock: std.net.Stream) !void {
     log("Main loop started", .{});
 
     var recv_buf: [RECV_BUF_SIZE]u8 = undefined;
+    var pollfd: [1]posix.pollfd = [1]posix.pollfd{.{
+        .fd = sock.handle,
+        .events = posix.POLL.IN,
+        .revents = 0,
+    }};
 
     while (running) {
-        // Wait for socket to be readable or timeout (for checking running flag)
-        sock.setReadTimeout(100 * std.time.ns_per_ms) catch {};
+        // Poll with 100ms timeout to allow checking running flag
+        const poll_result = posix.poll(&pollfd, 100) catch |e| {
+            logError("Poll error: {}", .{e});
+            break;
+        };
 
+        if (poll_result == 0) {
+            // Timeout, check running flag and continue
+            continue;
+        }
+
+        if (pollfd[0].revents & posix.POLL.HUP != 0) {
+            log("Connection closed (HUP)", .{});
+            break;
+        }
+
+        if (pollfd[0].revents & posix.POLL.ERR != 0) {
+            logError("Socket error", .{});
+            break;
+        }
+
+        if (pollfd[0].revents & posix.POLL.IN == 0) {
+            continue;
+        }
+
+        // Socket is readable, try to receive
         const msg = recvMessage(sock, &recv_buf) catch |e| {
-            switch (e) {
-                error.WouldBlock => {
-                    // Timeout, check running flag
-                    continue;
-                },
-                error.ConnectionReset, error.ConnectionAborted => {
-                    log("Connection closed by host", .{});
-                    break;
-                },
-                else => {
-                    logError("Receive error: {}", .{e});
-                    break;
-                },
-            }
+            logError("Receive error: {}", .{e});
+            break;
         };
 
         if (msg.len < 4) {
@@ -329,7 +349,7 @@ fn runMainLoop(sock: std.net.Stream) !void {
         }
 
         // Parse message type (first 4 bytes)
-        const msg_type = std.mem.readIntLittle(u32, msg[0..4]);
+        const msg_type = std.mem.readInt(u32, msg[0..4], .little);
         const payload = msg[4..];
 
         switch (msg_type) {

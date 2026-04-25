@@ -1,11 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The Coco Sandbox Authors
 
-package main
+package visor
 
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
+)
+
+// Protocol constants — must match src/cocovisor/main.zig
+const (
+	ReqBoot         = 1
+	ReqExec         = 2
+	ReqDestroy      = 3
+	ReqPause        = 4
+	ReqResume       = 5
+	ReqGetState     = 6
+	ReqFork         = 7
+	ReqHibernate    = 8
+	ReqResumeHibernated = 9
+
+	RespOK       = 100
+	RespBoot    = 101
+	RespExec    = 102
+	RespDestroy = 103
+	RespError   = 199
 )
 
 // Binary protocol frame format:
@@ -123,4 +143,71 @@ func ParseForkResponse(f *Frame) (childVsockCID, childPID, durationMS uint32, er
 	childPID = nativeEndian.Uint32(f.Payload[4:8])
 	durationMS = nativeEndian.Uint32(f.Payload[8:12])
 	return childVsockCID, childPID, durationMS, nil
+}
+
+// BuildBootFrame builds a boot request frame for the visor protocol
+func BuildBootFrame(sandboxID, rootfs string, memoryMB, vcpus, vsockPort uint32) ([]byte, error) {
+	idBytes := []byte(sandboxID)
+	rootfsBytes := []byte(rootfs)
+
+	// Header: rootfs_len(4) + memory_mb(4) + vcpus(4) + kernel_len(4) + initrd_len(4) + id_len(4) + vsock_port(4) + padding(8) = 36 bytes
+	headerSize := 36
+	payload := make([]byte, headerSize+len(idBytes)+len(rootfsBytes))
+
+	nativeEndian.PutUint32(payload[0:4], uint32(len(rootfsBytes)))
+	nativeEndian.PutUint32(payload[4:8], memoryMB)
+	nativeEndian.PutUint32(payload[8:12], vcpus)
+	nativeEndian.PutUint32(payload[12:16], 0)          // kernel_path_len (empty)
+	nativeEndian.PutUint32(payload[16:20], 0)          // initrd_path_len (empty)
+	nativeEndian.PutUint32(payload[20:24], uint32(len(idBytes)))
+	nativeEndian.PutUint32(payload[24:28], vsockPort)
+	nativeEndian.PutUint32(payload[28:32], 0)          // padding
+	nativeEndian.PutUint32(payload[32:36], 0)          // padding
+
+	offset := headerSize
+	copy(payload[offset:], idBytes)
+	offset += len(idBytes)
+	copy(payload[offset:], rootfsBytes)
+
+	// Frame: [kind:4][size:4][payload]
+	frame := make([]byte, 8+len(payload))
+	nativeEndian.PutUint32(frame[0:4], 1) // ReqBoot
+	nativeEndian.PutUint32(frame[4:8], uint32(len(payload)))
+	copy(frame[8:], payload)
+	return frame, nil
+}
+
+// BuildExecFrame builds an exec request frame for the visor protocol
+func BuildExecFrame(cmd string, args []string, env []string, workingDir string) ([]byte, error) {
+	cmdBytes := []byte(cmd)
+	argsJoined := strings.Join(args, " ")
+	argsBytes := []byte(argsJoined)
+	envJoined := strings.Join(env, "\n")
+	envBytes := []byte(envJoined)
+	wdBytes := []byte(workingDir)
+
+	// Header: cmd_len(4) + args_len(4) + env_len(4) + wd_len(4) + padding(4) = 20 bytes
+	headerSize := 20
+	payload := make([]byte, headerSize+len(cmdBytes)+len(argsBytes)+len(envBytes)+len(wdBytes))
+
+	nativeEndian.PutUint32(payload[0:4], uint32(len(cmdBytes)))
+	nativeEndian.PutUint32(payload[4:8], uint32(len(argsBytes)))
+	nativeEndian.PutUint32(payload[8:12], uint32(len(envBytes)))
+	nativeEndian.PutUint32(payload[12:16], uint32(len(wdBytes)))
+	nativeEndian.PutUint32(payload[16:20], 0) // padding
+
+	offset := headerSize
+	copy(payload[offset:], cmdBytes)
+	offset += len(cmdBytes)
+	copy(payload[offset:], argsBytes)
+	offset += len(argsBytes)
+	copy(payload[offset:], envBytes)
+	offset += len(envBytes)
+	copy(payload[offset:], wdBytes)
+
+	frame := make([]byte, 8+len(payload))
+	nativeEndian.PutUint32(frame[0:4], 2) // ReqExec
+	nativeEndian.PutUint32(frame[4:8], uint32(len(payload)))
+	copy(frame[8:], payload)
+	return frame, nil
 }
