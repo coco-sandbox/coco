@@ -10,26 +10,30 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/coco-sandbox/coco/internal/config"
 	"github.com/coco-sandbox/coco/internal/metrics"
+	"github.com/coco-sandbox/coco/internal/template"
 	"github.com/coco-sandbox/coco/internal/types"
-	"github.com/coco-sandbox/coco/pkg/cluster"
 	"github.com/coco-sandbox/coco/pkg/api/handlers"
+	"github.com/coco-sandbox/coco/pkg/cluster"
 	"github.com/coco-sandbox/coco/pkg/middleware"
 	"github.com/coco-sandbox/coco/pkg/store"
 	"github.com/coco-sandbox/coco/pkg/visor"
 )
 
 type server struct {
-	config   *config.Config
-	mux      *http.ServeMux
-	server   *http.Server
-	store    *store.Store
-	cluster  *cluster.Manager
-	metrics  *metrics.Metrics
+	config      *config.Config
+	mux         *http.ServeMux
+	server      *http.Server
+	store       *store.Store
+	cluster     *cluster.Manager
+	metrics     *metrics.Metrics
+	templateMgr *template.Manager
+	visorPool   *visor.Pool
 }
 
 // AppState holds the application state
@@ -66,6 +70,9 @@ func main() {
 }
 
 func (s *server) init() error {
+	// Initialize template manager
+	s.templateMgr = template.NewManager(s.config.Templates)
+
 	// Initialize store
 	st, err := store.New(s.config.StoreDir)
 	if err != nil {
@@ -73,23 +80,26 @@ func (s *server) init() error {
 	}
 	s.store = st
 
+	// Initialize visor client pool
+	s.visorPool = visor.NewPool(visor.SocketPath, 10)
+
 	// Initialize cluster manager
 	hostname, _ := os.Hostname()
-	s.cluster = cluster.NewManager(hostname, "0.1.0")
+	s.cluster = cluster.NewManager(hostname, "0.2.0")
 	s.cluster.Start()
 
 	// Initialize metrics
 	s.metrics = metrics.New()
 
-	// Setup routes
+	// Setup routes with wired handlers
 	s.setupRoutes()
 
-	// Create HTTP server
+	// Create HTTP server with streaming support
 	s.server = &http.Server{
 		Addr:         s.config.ListenAddr,
 		Handler:      s.wrapMiddleware(s.mux),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 60 * time.Second, // Increased for streaming
 		IdleTimeout:  60 * time.Second,
 	}
 
@@ -113,9 +123,18 @@ func (s *server) setupRoutes() {
 	s.mux.HandleFunc("/health", handleHealth)
 	s.mux.HandleFunc("/ready", handleReady)
 
+	// Create handler instances with dependencies
+	sandboxHandler := handlers.NewSandboxHandler(s)
+	execHandler := handlers.NewExecHandler()
+	templateHandler := handlers.NewTemplateHandler(s.templateMgr)
+
 	// Sandboxes
-	s.mux.HandleFunc("/v1/sandboxes", handleSandboxes)
-	s.mux.HandleFunc("/v1/sandboxes/", handleSandboxByID)
+	s.mux.HandleFunc("/v1/sandboxes", handleSandboxes(sandboxHandler))
+	s.mux.HandleFunc("/v1/sandboxes/", handleSandboxByID(sandboxHandler, execHandler))
+
+	// Templates
+	s.mux.HandleFunc("/v1/templates", handleTemplates(templateHandler))
+	s.mux.HandleFunc("/v1/templates/", handleTemplateByID(templateHandler))
 
 	// Cluster
 	s.mux.HandleFunc("/cluster/nodes", handleClusterNodes)
@@ -145,6 +164,7 @@ func (s *server) waitForSignal() {
 	}
 
 	s.cluster.Stop()
+	s.visorPool.Close()
 	s.store.Close()
 
 	log.Println("coco-core stopped")
@@ -155,25 +175,89 @@ func (s *server) waitForSignal() {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"healthy":true,"version":"0.1.0"}`))
+	w.Write([]byte(`{"healthy":true,"version":"0.2.0"}`))
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"ready":true,"version":"0.1.0"}`))
+	w.Write([]byte(`{"ready":true,"version":"0.2.0"}`))
 }
 
-func handleSandboxes(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"items":[],"total":0}`))
+func handleSandboxes(h *handlers.SandboxHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			h.HandleCreate(w, r)
+		case "GET":
+			h.HandleList(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
 }
 
-func handleSandboxByID(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte(`{"error":"not found"}`))
+func handleSandboxByID(sandboxHandler *handlers.SandboxHandler, execHandler *handlers.ExecHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := extractSandboxID(r.URL.Path)
+		if id == "" {
+			http.Error(w, "missing sandbox ID", http.StatusBadRequest)
+			return
+		}
+
+		switch r.Method {
+		case "GET":
+			sandboxHandler.HandleGet(w, r, id)
+		case "DELETE":
+			sandboxHandler.HandleDelete(w, r, id)
+		case "POST":
+			if strings.HasSuffix(r.URL.Path, "/pause") {
+				sandboxHandler.HandlePause(w, r, id)
+			} else if strings.HasSuffix(r.URL.Path, "/resume") {
+				sandboxHandler.HandleResume(w, r, id)
+			} else if strings.HasSuffix(r.URL.Path, "/exec") {
+				execHandler.HandleExec(w, r, id)
+			} else if strings.HasSuffix(r.URL.Path, "/streaming-exec") {
+				execHandler.HandleStreamingExec(w, r, id)
+			} else {
+				http.Error(w, "unknown action", http.StatusNotFound)
+			}
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func handleTemplates(h *handlers.TemplateHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			h.HandleList(w, r)
+		case "POST":
+			h.HandleCreate(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func handleTemplateByID(h *handlers.TemplateHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := extractTemplateID(r.URL.Path)
+		if id == "" {
+			http.Error(w, "missing template ID", http.StatusBadRequest)
+			return
+		}
+
+		switch r.Method {
+		case "GET":
+			h.HandleGet(w, r, id)
+		case "DELETE":
+			h.HandleDelete(w, r, id)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
 }
 
 func handleClusterNodes(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +285,7 @@ func (s *sandboxService) Create(ctx context.Context, req *types.CreateSandboxReq
 		Name:      req.Name,
 		State:     types.SandboxStateCreating,
 		Template:  req.Template,
-		MemoryMB: req.MemoryMB,
+		MemoryMB:  req.MemoryMB,
 		VCPUs:     req.VCPUs,
 		Labels:    req.Labels,
 	}
@@ -254,3 +338,24 @@ func generateID() string {
 }
 
 var _ handlers.SandboxService = (*sandboxService)(nil)
+var _ handlers.TemplateService = (*template.Manager)(nil)
+
+// ID extraction helpers
+
+func extractSandboxID(path string) string {
+	// Expected format: /v1/sandboxes/<id>[/action]
+	path = strings.TrimPrefix(path, "/v1/sandboxes/")
+	if idx := strings.Index(path, "/"); idx != -1 {
+		path = path[:idx]
+	}
+	return path
+}
+
+func extractTemplateID(path string) string {
+	// Expected format: /v1/templates/<id>
+	path = strings.TrimPrefix(path, "/v1/templates/")
+	if idx := strings.Index(path, "/"); idx != -1 {
+		path = path[:idx]
+	}
+	return path
+}
