@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
 package ebpf
 
 import (
@@ -7,14 +10,15 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/btf"
+	"github.com/cilium/ebpf/link"
 )
 
 type Loader struct {
-	mu           sync.RWMutex
-	programs     map[string]*ebpf.Program
-	maps         map[string]*ebpf.Map
-	specs        map[string]*ebpf.ProgramSpec
-	btfSpec      *btf.Spec
+	mu       sync.RWMutex
+	programs map[string]*ebpf.Program
+	maps     map[string]*ebpf.Map
+	specs    map[string]*ebpf.ProgramSpec
+	btfSpec  *btf.Spec
 }
 
 func NewLoader() *Loader {
@@ -40,11 +44,11 @@ func (l *Loader) Load(coll *ebpf.Collection) error {
 	return nil
 }
 
-func (l *Loader) LoadFromSpec(specs []*ebpf.ProgramSpec, opts *ebpf.CollectionOptions) error {
+func (l *Loader) LoadFromSpec(spec *ebpf.CollectionSpec, opts ebpf.CollectionOptions) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	coll, err := ebpf.NewCollectionWithOptions(specs, *opts)
+	coll, err := ebpf.NewCollectionWithOptions(spec, opts)
 	if err != nil {
 		return fmt.Errorf("failed to create collection: %w", err)
 	}
@@ -146,7 +150,10 @@ func (l *Loader) AttachXDP(ifindex int, progName string) error {
 		return fmt.Errorf("program %s not found", progName)
 	}
 
-	link, err := prog.AttachXDP(ifindex, nil)
+	link, err := link.AttachXDP(link.XDPOptions{
+		Program:   prog,
+		Interface: ifindex,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to attach XDP: %w", err)
 	}

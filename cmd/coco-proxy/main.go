@@ -16,7 +16,6 @@ func main() {
 	log.SetOutput(os.Stdout)
 
 	listenAddr := flag.String("listen", ":8080", "Listen address")
-	backend := flag.String("backend", "", "Backend URL (can be specified multiple times)", )
 	timeout := flag.Duration("timeout", 30*time.Second, "Request timeout")
 	maxRetries := flag.Int("max-retries", 3, "Maximum number of retries")
 	cacheEnabled := flag.Bool("cache", false, "Enable response caching")

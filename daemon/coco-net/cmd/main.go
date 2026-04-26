@@ -43,6 +43,10 @@ func main() {
 	netnsMgr := netns.NewManager()
 	policyEng := policy.NewEngine()
 	rateLimiter := rate.NewLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst)
+	_ = ct
+	_ = netnsMgr
+	_ = policyEng
+	_ = rateLimiter
 
 	var ebpfLoader *ebpf.Loader
 	if cfg.EBPFEnabled {

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
 package main
 
 import (
@@ -11,12 +14,12 @@ import (
 )
 
 type Proxy struct {
-	mu           sync.RWMutex
-	backends     map[string]*Backend
-	balancer     LoadBalancer
-	timeout      time.Duration
-	maxRetries   int
-	cache        *ResponseCache
+	mu         sync.RWMutex
+	backends   map[string]*Backend
+	balancer   LoadBalancer
+	timeout    time.Duration
+	maxRetries int
+	cache      *Cache
 }
 
 type Backend struct {
@@ -36,24 +39,13 @@ type RoundRobinBalancer struct {
 	mu       sync.Mutex
 }
 
-type ResponseCache struct {
-	mu    sync.RWMutex
-	cache map[string]*CachedResponse
-	ttl   time.Duration
-}
-
-type CachedResponse struct {
-	Data      []byte
-	ExpiresAt time.Time
-}
-
 func NewProxy(timeout time.Duration, maxRetries int) *Proxy {
 	return &Proxy{
 		backends:   make(map[string]*Backend),
 		balancer:   &RoundRobinBalancer{},
 		timeout:    timeout,
 		maxRetries: maxRetries,
-		cache:      &ResponseCache{cache: make(map[string]*CachedResponse)},
+		cache:      NewCache(1000, 5*time.Minute, 10*time.Minute),
 	}
 }
 
@@ -125,39 +117,4 @@ func (rb *RoundRobinBalancer) SelectBackend() *Backend {
 	rb.current = (rb.current + 1) % len(rb.backends)
 
 	return backend
-}
-
-func (c *ResponseCache) Get(key string) ([]byte, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if resp, ok := c.cache[key]; ok {
-		if time.Now().Before(resp.ExpiresAt) {
-			return resp.Data, true
-		}
-	}
-
-	return nil, false
-}
-
-func (c *ResponseCache) Set(key string, data []byte, ttl time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.cache[key] = &CachedResponse{
-		Data:      data,
-		ExpiresAt: time.Now().Add(ttl),
-	}
-}
-
-func (c *ResponseCache) Cleanup() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	now := time.Now()
-	for key, resp := range c.cache {
-		if now.After(resp.ExpiresAt) {
-			delete(c.cache, key)
-		}
-	}
 }

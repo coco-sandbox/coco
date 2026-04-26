@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
 package ebpf
 
 import (
@@ -20,8 +23,8 @@ func LoadXDPObjects() (*Objects, error) {
 	spec := &ebpf.CollectionSpec{
 		Programs: map[string]*ebpf.ProgramSpec{
 			"xdp_filter": {
-				Type:       "xdp",
-				AttachType: "sched_act",
+				Type:       ebpf.XDP,
+				AttachType: ebpf.AttachXDP,
 				Instructions: asm.Instructions{
 					asm.Mov.Imm(asm.R0, 0),
 					asm.Return(),
@@ -29,8 +32,8 @@ func LoadXDPObjects() (*Objects, error) {
 				License: "Apache-2.0",
 			},
 			"xdp_fwd": {
-				Type:       "xdp",
-				AttachType: "sched_act",
+				Type:       ebpf.XDP,
+				AttachType: ebpf.AttachXDP,
 				Instructions: asm.Instructions{
 					asm.Mov.Imm(asm.R0, 2),
 					asm.Return(),
@@ -58,7 +61,6 @@ func LoadXDPObjects() (*Objects, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create collection: %w", err)
 	}
-	defer coll.Close()
 
 	return &Objects{
 		XDP: XDPObjects{
