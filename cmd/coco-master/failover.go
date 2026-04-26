@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/coco-sandbox/coco/pkg/scheduler"
-	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 type FailoverManager struct {

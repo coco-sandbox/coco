@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/coco-sandbox/coco/pkg/scheduler"
-	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 type Balancer struct {
@@ -239,5 +238,3 @@ func (b *Balancer) forwardRequest(ctx context.Context, node *NodeClient, req *Ro
 func (b *Balancer) GetNodeBySandbox(sandboxID string) (string, error) {
 	return "", nil
 }
-
-var _ types.BalancerServiceServer = &Balancer{}

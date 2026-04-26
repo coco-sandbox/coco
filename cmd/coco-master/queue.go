@@ -6,8 +6,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
-	"github.com/coco-sandbox/coco/pkg/scheduler"
 )
 
 type RequestQueue struct {
@@ -218,8 +216,8 @@ func (q *RequestQueue) StartWorkers(ctx context.Context, handler func(context.Co
 						continue
 					}
 
-					result, err := handler(ctx, req)
-					q.Complete(req.ID, result, err)
+					result := handler(ctx, req)
+					q.Complete(req.ID, result, nil)
 				}
 			}
 		}()

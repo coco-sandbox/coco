@@ -34,7 +34,8 @@ func NewNodePool(visorPool *visor.Pool, cfg pool.PoolConfig) *NodePool {
 }
 
 func (np *NodePool) Start(ctx context.Context) error {
-	log.Printf("Starting node pool (target: %d)", np.vmPool.Stats())
+	active, free := np.vmPool.Stats()
+	log.Printf("Starting node pool (active: %d, free: %d)", active, free)
 	return nil
 }
 
