@@ -5,6 +5,7 @@ package coco.v1;
 option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
 
 import "google/protobuf/timestamp.proto";
+import "coco/v1/coco.proto"; // For ClusterInfo, Node, Sandbox, SandboxState, etc.
 
 // =============================================================================
 // Master Service (Cluster coordination, leader election, scheduling)
@@ -35,6 +36,10 @@ service MasterService {
   rpc GetFailoverStatus(GetFailoverStatusRequest) returns (GetFailoverStatusResponse);
 }
 
+// =============================================================================
+// Scheduling Messages
+// =============================================================================
+
 message ScheduleSandboxRequest {
   string name = 1;
   string template_id = 2;
@@ -61,50 +66,9 @@ message GetScheduleResponse {
   string state = 3;
 }
 
-message ClusterInfo {
-  string cluster_id = 1;
-  int32 node_count = 2;
-  int32 sandbox_count = 3;
-  int32 active_sandboxes = 4;
-  string leader_id = 5;
-  string leader_addr = 6;
-  bool is_leader = 7;
-  google.protobuf.Timestamp last_update = 8;
-}
-
-message GetClusterInfoRequest {}
-
-message GetClusterInfoResponse {
-  ClusterInfo cluster = 1;
-}
-
-message ListNodesRequest {
-  bool include_unhealthy = 2;
-}
-
-message ListNodesResponse {
-  repeated Node nodes = 1;
-}
-
-message GetNodeRequest {
-  string id = 1;
-}
-
-message GetNodeResponse {
-  Node node = 1;
-}
-
-message DrainNodeRequest {
-  string id = 1;
-  bool force = 2;
-  int32 timeout_seconds = 3;
-}
-
-message DrainNodeResponse {
-  bool success = 1;
-  string message = 2;
-  int32 sandboxes_migrated = 3;
-}
+// =============================================================================
+// Leader Election Messages
+// =============================================================================
 
 message RegisterLeaderRequest {
   string node_id = 1;
@@ -130,6 +94,10 @@ message RequestVoteResponse {
   int64 term = 2;
 }
 
+// =============================================================================
+// Sandbox Tracking Messages
+// =============================================================================
+
 message TrackSandboxRequest {
   Sandbox sandbox = 1;
 }
@@ -150,6 +118,18 @@ message UpdateSandboxStateRequest {
 
 message UpdateSandboxStateResponse {}
 
+// =============================================================================
+// Failover Messages
+// =============================================================================
+
+enum FailoverState {
+  FAILOVER_STATE_UNSPECIFIED = 0;
+  FAILOVER_STATE_HEALTHY = 1;
+  FAILOVER_STATE_DEGRADED = 2;
+  FAILOVER_STATE_RECOVERING = 3;
+  FAILOVER_STATE_FAILED = 4;
+}
+
 message InitiateFailoverRequest {
   string failed_node_id = 1;
 }
@@ -166,13 +146,6 @@ message GetFailoverStatusRequest {
 
 message GetFailoverStatusResponse {
   string node_id = 1;
-  enum FailoverState {
-    FAILOVER_STATE_UNSPECIFIED = 0;
-    FAILOVER_STATE_HEALTHY = 1;
-    FAILOVER_STATE_DEGRADED = 2;
-    FAILOVER_STATE_RECOVERING = 3;
-    FAILOVER_STATE_FAILED = 4;
-  }
   FailoverState state = 2;
   int32 sandboxes_migrated = 3;
   int32 sandboxes_pending = 4;

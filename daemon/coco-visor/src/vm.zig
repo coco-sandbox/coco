@@ -1,10 +1,25 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
+//! VM implementation with direct KVM.
+
 const std = @import("std");
 const posix = std.posix;
 const kvm_mod = @import("kvm.zig");
 const memory = @import("memory.zig");
 const vcpu = @import("vcpu.zig");
 const vsock = @import("vsock.zig");
-const clh = @import("clh.zig");
+
+pub const VmConfig = struct {
+    id: []const u8,
+    rootfs: []const u8,
+    kernel: []const u8 = "/var/lib/coco/vmlinux",
+    initrd: []const u8 = "",
+    memory_mb: u32 = 512,
+    vcpus: u32 = 2,
+    vsock_cid: u32,
+    tap_name: []const u8 = "",
+};
 
 pub const Vm = struct {
     kvm_fd: i32,
@@ -15,7 +30,7 @@ pub const Vm = struct {
     vsock_fd: i32,
     cid: u32,
 
-    pub fn create(config: *const clh.VMConfig, allocator: std.mem.Allocator) !Vm {
+    pub fn create(config: *const VmConfig, mem_ptr: [*]u8, mem_size: u64, allocator: std.mem.Allocator) !Vm {
         _ = allocator;
 
         const kvm_fd = try kvm_mod.open();
@@ -24,22 +39,24 @@ pub const Vm = struct {
         const vm_fd = try kvm_mod.createVm(kvm_fd);
         errdefer posix.close(vm_fd);
 
-        var mem = try memory.GuestMemory.init(config.memory_mb);
-        errdefer mem.deinit();
+        var mem = memory.GuestMemory{
+            .ptr = mem_ptr,
+            .size = mem_size,
+        };
 
         try kvm_mod.setUserMemoryRegion(vm_fd, &.{
             .slot = 0,
             .flags = 0,
             .guest_phys_addr = 0,
-            .memory_size = @as(u64, config.memory_mb) * 1024 * 1024,
-            .userspace_addr = @intFromPtr(mem.ptr),
+            .memory_size = mem_size,
+            .userspace_addr = @intFromPtr(mem_ptr),
         });
 
         _ = try memory.loadKernel(&mem, config.kernel);
 
         const initrd_info = try memory.loadInitrd(&mem, config.initrd);
 
-        try memory.setupBootParams(&mem, "console=ttyS0 reboot=k panic=1 pci=off", config.memory_mb, initrd_info.addr, initrd_info.size);
+        try memory.setupBootParams(&mem, "console=ttyS0 reboot=k panic=1 pci=off", @intCast(mem_size / 1024 / 1024), initrd_info.addr, initrd_info.size);
 
         memory.setupGdt(&mem);
 

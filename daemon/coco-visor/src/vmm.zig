@@ -5,18 +5,16 @@
 //! Handles MicroVM lifecycle: boot, fork, hibernate, pause, resume.
 
 const std = @import("std");
+const posix = std.posix;
 
-const clh = @import("clh.zig");
 const vm_mod = @import("vm.zig");
 const vsock = @import("vsock.zig");
-pub const VMConfig = clh.VMConfig;
+const fork_mod = @import("fork.zig");
+const checkpoint_mod = @import("checkpoint.zig");
 
-// =============================================================================
-// Constants
-// =============================================================================
-
-const SNAPSHOT_DIR = "/var/lib/coco/hibernation";
-const CLH_API_SOCKET_DIR = "/run/coco/vm/";
+pub const VMConfig = vm_mod.VmConfig;
+pub const SNAPSHOT_DIR = "/var/lib/coco/hibernation";
+pub const CHECKPOINT_DIR = "/var/lib/coco/checkpoints";
 
 pub const VMState = enum(u32) {
     created = 0,
@@ -39,19 +37,18 @@ pub const VMMError = error{
     SnapshotFailed,
     RestoreFailed,
     OutOfMemory,
+    ForkNotSupported,
+    CheckpointNotSupported,
 };
 
 pub const BootResult = struct { pid: u32, vsock_cid: u32 };
+pub const ForkResult = struct { child_pid: u32, child_vsock_cid: u32 };
+pub const SnapshotResult = struct { duration_ms: u32, size_bytes: u64 };
+pub const RestoreResult = struct { pid: u32, vsock_cid: u32, duration_ms: u32 };
 
-// =============================================================================
-// VM Config
-// =============================================================================
-
-// VMConfig is imported from clh.zig
-
-// =============================================================================
-// VM Instance
-// =============================================================================
+var global_next_vsock_cid: u32 = 3;
+var vms = std.StringHashMap(*VM).init(std.heap.page_allocator);
+var global_metrics: Metrics = .{};
 
 pub const VM = struct {
     config: VMConfig,
@@ -59,6 +56,8 @@ pub const VM = struct {
     pid: u32,
     vm_instance: ?*vm_mod.Vm,
     agent_fd: i32,
+    memory_ptr: ?[*]u8,
+    memory_size: u64,
 
     pub fn init(config: VMConfig) VM {
         return .{
@@ -67,6 +66,8 @@ pub const VM = struct {
             .pid = 0,
             .vm_instance = null,
             .agent_fd = -1,
+            .memory_ptr = null,
+            .memory_size = 0,
         };
     }
 
@@ -81,7 +82,22 @@ pub const VM = struct {
             self.config.id, self.config.memory_mb, self.config.vcpus,
         });
 
-        var vm = vm_mod.Vm.create(&self.config, std.heap.page_allocator) catch |e| {
+        const mem_size = @as(u64, self.config.memory_mb) * 1024 * 1024;
+        const mem_slice = posix.mmap(
+            null,
+            mem_size,
+            posix.PROT.READ | posix.PROT.WRITE,
+            posix.MAP{ .TYPE = .SHARED, .ANONYMOUS = true },
+            -1,
+            0,
+        ) catch {
+            self.state = .err_state;
+            return VMMError.OutOfMemory;
+        };
+        self.memory_ptr = mem_slice.ptr;
+        self.memory_size = mem_size;
+
+        var vm = vm_mod.Vm.create(&self.config, self.memory_ptr.?, mem_size, std.heap.page_allocator) catch |e| {
             std.debug.print("[vmm] Failed to create VM: {}\n", .{e});
             self.state = .err_state;
             return VMMError.HypervisorError;
@@ -118,7 +134,7 @@ pub const VM = struct {
         }
 
         const vm_ptr = std.heap.page_allocator.create(vm_mod.Vm) catch {
-            std.posix.close(agent_fd);
+            posix.close(agent_fd);
             vm.destroy();
             return VMMError.OutOfMemory;
         };
@@ -142,8 +158,9 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        var vm = self.vm_instance orelse return VMMError.NotBooted;
-        vm.pause();
+        if (self.vm_instance) |vm| {
+            vm.pause();
+        }
         self.state = .paused;
         std.debug.print("[vmm] VM {s} paused\n", .{self.config.id});
     }
@@ -153,8 +170,9 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        var vm = self.vm_instance orelse return VMMError.NotBooted;
-        vm.resume_();
+        if (self.vm_instance) |vm| {
+            vm.resume_();
+        }
         self.state = .running;
         std.debug.print("[vmm] VM {s} resumed\n", .{self.config.id});
     }
@@ -168,7 +186,7 @@ pub const VM = struct {
         std.debug.print("[vmm] Destroying VM {s}\n", .{self.config.id});
 
         if (self.agent_fd >= 0) {
-            std.posix.close(self.agent_fd);
+            posix.close(self.agent_fd);
             self.agent_fd = -1;
         }
 
@@ -176,6 +194,12 @@ pub const VM = struct {
             vm.destroy();
             std.heap.page_allocator.destroy(vm);
             self.vm_instance = null;
+        }
+
+        if (self.memory_ptr) |ptr| {
+            const aligned_ptr = @as([*]align(std.heap.page_size_min) u8, @alignCast(ptr));
+            posix.munmap(aligned_ptr[0..self.memory_size]);
+            self.memory_ptr = null;
         }
 
         self.state = .stopped;
@@ -186,14 +210,16 @@ pub const VM = struct {
         std.debug.print("[vmm] VM {s} destroyed\n", .{self.config.id});
     }
 
-    pub fn fork(self: *VM) VMMError!struct { child_pid: u32, child_vsock_cid: u32 } {
-        if (self.state != .running) {
+    pub fn fork(self: *VM) VMMError!ForkResult {
+        if (self.state != .running and self.state != .paused) {
             return VMMError.NotBooted;
         }
 
-        std.debug.print("[vmm] Forking VM {s}\n", .{self.config.id});
+        std.debug.print("[vmm] Forking VM {s} (using btrfs reflinks)\n", .{self.config.id});
 
-        self.pause() catch {};
+        if (self.state == .running) {
+            self.pause() catch {};
+        }
 
         const child_id = std.fmt.allocPrint(
             std.heap.page_allocator,
@@ -205,17 +231,20 @@ pub const VM = struct {
         const child_cid = allocateVsockCid();
 
         const child_config = VMConfig{
-            .id = child_id,
+            .id = try std.heap.page_allocator.dupe(u8, child_id),
             .rootfs = self.config.rootfs,
             .kernel = self.config.kernel,
             .initrd = self.config.initrd,
             .memory_mb = self.config.memory_mb,
             .vcpus = self.config.vcpus,
             .vsock_cid = child_cid,
-            .tap_name = "",
+            .tap_name = self.config.tap_name,
         };
 
-        var child_vm = vm_mod.Vm.create(&child_config, std.heap.page_allocator) catch |e| {
+        var fork_manager = fork_mod.ForkManager.init(std.heap.page_allocator, "/var/lib/coco/templates");
+        fork_manager.createFork(self.config.id, child_id);
+
+        var child_vm = vm_mod.Vm.create(&child_config, self.memory_ptr.?, self.memory_size, std.heap.page_allocator) catch |e| {
             std.debug.print("[vmm] Fork VM create failed: {}\n", .{e});
             self.resume_() catch {};
             return VMMError.HypervisorError;
@@ -246,7 +275,7 @@ pub const VM = struct {
         }
 
         const child_vm_ptr = std.heap.page_allocator.create(VM) catch {
-            std.posix.close(child_agent_fd);
+            posix.close(child_agent_fd);
             child_vm.destroy();
             self.resume_() catch {};
             return VMMError.OutOfMemory;
@@ -257,7 +286,7 @@ pub const VM = struct {
         child_vm_ptr.state = .running;
         child_vm_ptr.pid = child_pid;
         child_vm_ptr.vm_instance = std.heap.page_allocator.create(vm_mod.Vm) catch {
-            std.posix.close(child_agent_fd);
+            posix.close(child_agent_fd);
             child_vm.destroy();
             std.heap.page_allocator.destroy(child_vm_ptr);
             self.resume_() catch {};
@@ -265,6 +294,8 @@ pub const VM = struct {
         };
         child_vm_ptr.vm_instance.?.* = child_vm;
         child_vm_ptr.agent_fd = child_agent_fd;
+        child_vm_ptr.memory_ptr = self.memory_ptr;
+        child_vm_ptr.memory_size = self.memory_size;
 
         registerVM(child_id, child_vm_ptr);
 
@@ -277,10 +308,12 @@ pub const VM = struct {
         return .{ .child_pid = child_pid, .child_vsock_cid = child_cid };
     }
 
-    pub fn hibernate(self: *VM) VMMError!void {
+    pub fn hibernate(self: *VM) VMMError!SnapshotResult {
         if (self.state != .running) {
             return VMMError.NotBooted;
         }
+
+        const start = std.time.nanoTimestamp();
 
         std.debug.print("[vmm] Hibernate VM {s}\n", .{self.config.id});
 
@@ -299,10 +332,32 @@ pub const VM = struct {
         }
         self.state = .hibernated;
 
-        std.debug.print("[vmm] Hibernate complete: {s}\n", .{snap_dir});
+        if (self.memory_ptr) |mem_ptr| {
+            var checkpoint = checkpoint_mod.CheckpointManager.init(std.heap.page_allocator);
+            const meta = checkpoint_mod.CheckpointMetadata{
+                .id = self.config.id,
+                .memory_size = self.memory_size,
+                .compressed_size = 0,
+                .timestamp = std.time.timestamp(),
+                .memory_mb = self.config.memory_mb,
+                .vcpus = self.config.vcpus,
+                .kernel = self.config.kernel,
+                .rootfs = self.config.rootfs,
+            };
+            _ = checkpoint.createCheckpoint(self.config.id, mem_ptr, self.memory_size, meta);
+        }
+
+        const duration: i128 = std.time.nanoTimestamp() - start;
+        const duration_ms = @as(u32, @intCast(@divTrunc(duration, 1_000_000)));
+
+        global_metrics.recordHibernate(@intCast(duration));
+
+        std.debug.print("[vmm] Hibernate complete: {d}ms\n", .{duration_ms});
+
+        return .{ .duration_ms = duration_ms, .size_bytes = self.memory_size };
     }
 
-    pub fn resumeFromHibernate(self: *VM) VMMError!void {
+    pub fn resumeFromHibernate(self: *VM) VMMError!BootResult {
         if (self.state != .hibernated) {
             return VMMError.NotBooted;
         }
@@ -315,30 +370,56 @@ pub const VM = struct {
         self.state = .running;
 
         std.debug.print("[vmm] Resume from hibernate complete\n", .{});
+
+        return .{ .pid = self.pid, .vsock_cid = self.config.vsock_cid };
+    }
+
+    pub fn snapshot(self: *VM, incremental: bool) VMMError!SnapshotResult {
+        _ = incremental;
+        if (self.state != .running and self.state != .paused) {
+            return VMMError.NotBooted;
+        }
+
+        const start = std.time.nanoTimestamp();
+
+        if (self.state == .running) {
+            try self.pause();
+        }
+
+        if (self.memory_ptr) |mem_ptr| {
+            var checkpoint = checkpoint_mod.CheckpointManager.init(std.heap.page_allocator);
+            const meta = checkpoint_mod.CheckpointMetadata{
+                .id = self.config.id,
+                .memory_size = self.memory_size,
+                .compressed_size = 0,
+                .timestamp = std.time.timestamp(),
+                .memory_mb = self.config.memory_mb,
+                .vcpus = self.config.vcpus,
+                .kernel = self.config.kernel,
+                .rootfs = self.config.rootfs,
+            };
+            const size = checkpoint.createCheckpoint(self.config.id, mem_ptr, self.memory_size, meta) catch |e| {
+                std.debug.print("[vmm] Snapshot failed: {}\n", .{e});
+                return VMMError.SnapshotFailed;
+            };
+            _ = size;
+        }
+
+        try self.resume_();
+
+        const duration = @as(u64, std.time.nanoTimestamp() - start);
+        const duration_ms = @as(u32, @intCast(@divTrunc(duration, 1_000_000)));
+
+        std.debug.print("[vmm] Snapshot complete: {d}ms\n", .{duration_ms});
+
+        return .{ .duration_ms = duration_ms, .size_bytes = self.memory_size };
     }
 };
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-fn cleanDirectory(dir_path: []const u8) void {
-    std.fs.deleteFileAbsolute(dir_path) catch {};
-}
-
 fn allocateVsockCid() u32 {
-    // Simple counter, in production would need coordination
     _ = @atomicRmw(u32, &global_next_vsock_cid, .Add, 1, .seq_cst);
     return global_next_vsock_cid - 1;
 }
-
-var global_next_vsock_cid: u32 = 3;
-
-// =============================================================================
-// Global VM Registry
-// =============================================================================
-
-var vms = std.StringHashMap(*VM).init(std.heap.page_allocator);
 
 pub fn getVMs() *std.StringHashMap(*VM) {
     return &vms;
@@ -370,10 +451,6 @@ pub fn removeVM(id: []const u8) void {
     _ = vms.remove(id);
 }
 
-// =============================================================================
-// Sandbox Metrics (for performance tracking)
-// =============================================================================
-
 pub const Metrics = struct {
     boot_count: u32 = 0,
     fork_count: u32 = 0,
@@ -404,8 +481,6 @@ pub const Metrics = struct {
         self.total_hibernate_time_ns += duration_ns;
     }
 };
-
-var global_metrics: Metrics = .{};
 
 pub fn getMetrics() *Metrics {
     return &global_metrics;

@@ -54,23 +54,33 @@ service GatewayService {
   rpc HibernateSandbox(HibernateSandboxRequest) returns (HibernateSandboxResponse);
   rpc RestoreSandbox(RestoreSandboxRequest) returns (RestoreSandboxResponse);
 
-  // Execution
+  // Execution (spec 2.2)
   rpc Exec(ExecRequest) returns (ExecResponse);
   rpc StreamingExec(StreamingExecRequest) returns (stream ExecChunk);
+  rpc InteractiveExec(InteractiveExecRequest) returns (stream ExecChunk); // bidirectional
 
-  // Templates
+  // Templates (spec 2.3)
   rpc CreateTemplate(CreateTemplateRequest) returns (CreateTemplateResponse);
   rpc GetTemplate(GetTemplateRequest) returns (GetTemplateResponse);
   rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
   rpc DeleteTemplate(DeleteTemplateRequest) returns (DeleteTemplateResponse);
   rpc BuildTemplate(BuildTemplateRequest) returns (BuildTemplateResponse);
 
-  // Cluster
+  // Checkpoints
+  rpc CreateCheckpoint(CreateCheckpointRequest) returns (CreateCheckpointResponse);
+  rpc ListCheckpoints(ListCheckpointsRequest) returns (ListCheckpointsResponse);
+  rpc GetCheckpoint(GetCheckpointRequest) returns (GetCheckpointResponse);
+  rpc DeleteCheckpoint(DeleteCheckpointRequest) returns (DeleteCheckpointResponse);
+
+  // Cluster (spec 2.4)
   rpc GetClusterInfo(GetClusterInfoRequest) returns (GetClusterInfoResponse);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
 }
 
 // =============================================================================
-// Sandbox Messages
+// Sandbox Messages (spec 3.1)
 // =============================================================================
 
 message Sandbox {
@@ -78,17 +88,17 @@ message Sandbox {
   string name = 2;
   SandboxState state = 3;
   string template_id = 4;
-  google.protobuf.Timestamp created_at = 5;
-  google.protobuf.Timestamp updated_at = 6;
-  string host_node = 7;
-  uint32 vsock_cid = 8;
-  int32 pid = 9;
-  int32 memory_mb = 10;
-  int32 vcpus = 11;
-  string parent_id = 12;
-  int32 fork_depth = 13;
-  map<string, string> labels = 14;
-  NetworkMode network_mode = 15;
+  int32 memory_mb = 5;
+  int32 vcpus = 6;
+  uint32 vsock_cid = 7;
+  int64 pid = 8;
+  string parent_id = 9;
+  int32 fork_depth = 10;
+  map<string, string> labels = 11;
+  NetworkMode network_mode = 12;
+  string host_node = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
 }
 
 message CreateSandboxRequest {
@@ -173,7 +183,7 @@ message RestoreSandboxResponse {
 }
 
 // =============================================================================
-// Execution Messages
+// Execution Messages (spec 2.2)
 // =============================================================================
 
 message ExecRequest {
@@ -199,7 +209,14 @@ message StreamingExecRequest {
   repeated string env = 4;
   string working_dir = 5;
   int64 timeout_ms = 6;
-  bool interactive = 7;
+}
+
+message InteractiveExecRequest {
+  string sandbox_id = 1;
+  string cmd = 2;
+  repeated string args = 3;
+  repeated string env = 4;
+  string working_dir = 5;
 }
 
 enum StreamType {
@@ -217,7 +234,7 @@ message ExecChunk {
 }
 
 // =============================================================================
-// Template Messages
+// Template Messages (spec 2.3)
 // =============================================================================
 
 message Template {
@@ -281,7 +298,7 @@ message BuildTemplateResponse {
 }
 
 // =============================================================================
-// Checkpoint Messages (Gateway-level, detailed checkpoint types)
+// Checkpoint Messages (spec 3.4)
 // =============================================================================
 
 message Checkpoint {
@@ -314,24 +331,22 @@ message ListCheckpointsResponse {
   repeated Checkpoint checkpoints = 1;
 }
 
+message GetCheckpointRequest {
+  string id = 1;
+}
+
+message GetCheckpointResponse {
+  Checkpoint checkpoint = 1;
+}
+
 message DeleteCheckpointRequest {
   string id = 1;
 }
 
 message DeleteCheckpointResponse {}
 
-message RestoreCheckpointRequest {
-  string checkpoint_id = 1;
-  string sandbox_name = 2;
-}
-
-message RestoreCheckpointResponse {
-  Sandbox sandbox = 1;
-  int64 duration_ms = 2;
-}
-
 // =============================================================================
-// Cluster Messages
+// Cluster Messages (spec 2.4)
 // =============================================================================
 
 message ClusterInfo {

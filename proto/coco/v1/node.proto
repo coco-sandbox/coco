@@ -5,6 +5,7 @@ package coco.v1;
 option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
 
 import "google/protobuf/timestamp.proto";
+import "coco/v1/coco.proto"; // For ExecChunk, SandboxState
 
 // =============================================================================
 // Node Service (Node → Master communication, gRPC)
@@ -21,10 +22,6 @@ service NodeService {
   // Execution
   rpc ExecVM(ExecVMRequest) returns (ExecVMResponse);
   rpc StreamingExecVM(StreamingExecVMRequest) returns (stream ExecChunk);
-
-  // Checkpoint
-  rpc CreateCheckpoint(CreateCheckpointRequest) returns (CreateCheckpointResponse);
-  rpc RestoreCheckpoint(RestoreCheckpointRequest) returns (RestoreCheckpointResponse);
 
   // Node management
   rpc GetNodeStatus(GetNodeStatusRequest) returns (NodeStatus);

@@ -469,7 +469,7 @@ fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
     std.debug.print("[cocovisor] Hibernate: {s}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
-        vm.hibernate() catch |e| {
+        _ = vm.hibernate() catch |e| {
             std.debug.print("[cocovisor] Hibernate failed: {}\n", .{e});
             try sendError(sock, "Hibernate failed");
             return;
@@ -495,7 +495,7 @@ fn handleResumeHibernated(sock: std.net.Stream, payload: []u8) !void {
     std.debug.print("[cocovisor] Resume from hibernate: {s}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
-        vm.resumeFromHibernate() catch |e| {
+        _ = vm.resumeFromHibernate() catch |e| {
             std.debug.print("[cocovisor] Resume failed: {}\n", .{e});
             try sendError(sock, "Resume failed");
             return;

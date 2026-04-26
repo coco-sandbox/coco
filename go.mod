@@ -1,6 +1,6 @@
 module github.com/coco-sandbox/coco
 
-go 1.23
+go 1.22
 
 require (
 	github.com/dgraph-io/badger/v4 v4.4.0
@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	connectrpc.com/connect v1.16.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.0.0 // indirect
@@ -28,6 +29,5 @@ require (
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.19.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
