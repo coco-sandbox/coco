@@ -5,18 +5,17 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/coco-sandbox/coco/pkg/api/handlers"
+	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 	// Sandbox handlers - gateway implements SandboxService interface
 	sbHandler := handlers.NewSandboxHandler(gw)
-
-	// Exec handler - wired with checkpoint client
-	execHandler := handlers.NewExecHandler(nil, nil)
 
 	// Sandbox CRUD
 	mux.HandleFunc("/v1/sandboxes", func(w http.ResponseWriter, r *http.Request) {
@@ -64,34 +63,39 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 		case "resume-hibernate":
 			sbHandler.HandleResumeHibernate(w, r, id)
 		case "exec":
-			execHandler.HandleExec(w, r, id)
+			handleExec(w, r, id, gw)
 		case "streaming-exec":
-			execHandler.HandleStreamingExec(w, r, id)
+			http.Error(w, "streaming exec not yet implemented", http.StatusNotImplemented)
 		case "interactive-exec":
-			execHandler.HandleInteractiveExec(w, r, id)
+			http.Error(w, "interactive exec not yet implemented", http.StatusNotImplemented)
 		case "checkpoint":
 			if r.Method == http.MethodPost {
-				execHandler.HandleCreateCheckpoint(w, r, id)
+				handleCreateCheckpoint(w, r, id, gw)
 			} else {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		case "restore":
 			if r.Method == http.MethodPost {
-				execHandler.HandleRestoreSandbox(w, r, id)
+				handleRestoreSandbox(w, r, id, gw)
 			} else {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		case "checkpoints":
-			execHandler.HandleListCheckpoints(w, r, id)
+			handleListCheckpoints(w, r, id, gw)
 		default:
 			http.NotFound(w, r)
 		}
 	})
 
-	// Checkpoints (top-level)
+	// Checkpoints (top-level - requires sandbox_id query param)
 	mux.HandleFunc("/v1/checkpoints", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			handleListAllCheckpoints(w, r)
+			sandboxID := r.URL.Query().Get("sandbox_id")
+			if sandboxID == "" {
+				http.Error(w, "sandbox_id query parameter required", http.StatusBadRequest)
+				return
+			}
+			handleListCheckpoints(w, r, sandboxID, gw)
 		} else {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -108,9 +112,9 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 
 		switch r.Method {
 		case http.MethodGet:
-			handleGetCheckpoint(w, r, id)
+			handleGetCheckpoint(w, r, id, gw)
 		case http.MethodDelete:
-			handleDeleteCheckpoint(w, r, id)
+			handleDeleteCheckpoint(w, r, id, gw)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -156,7 +160,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 	// Cluster
 	mux.HandleFunc("/v1/cluster", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			handleGetClusterInfo(w, r)
+			handleGetClusterInfo(w, r, gw)
 		} else {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -165,7 +169,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 	// Nodes
 	mux.HandleFunc("/v1/nodes", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			handleListNodes(w, r)
+			handleListNodes(w, r, gw)
 		} else {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -183,9 +187,9 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 		if len(parts) == 1 {
 			switch r.Method {
 			case http.MethodGet:
-				handleGetNode(w, r, id)
+				handleGetNode(w, r, id, gw)
 			case http.MethodPost:
-				handleDrainNode(w, r, id)
+				handleDrainNode(w, r, id, gw)
 			default:
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
@@ -193,44 +197,149 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 		}
 
 		if parts[1] == "drain" && r.Method == http.MethodPost {
-			handleDrainNode(w, r, id)
+			handleDrainNode(w, r, id, gw)
 		} else {
 			http.NotFound(w, r)
 		}
 	})
 }
 
+// Exec handler - proxies to master via GatewayServer
+func handleExec(w http.ResponseWriter, r *http.Request, sandboxID string, gw *GatewayServer) {
+	defer r.Body.Close()
+
+	var req types.ExecSandboxRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+	req.SandboxID = sandboxID
+
+	output, exitCode, err := gw.ExecSandbox(r.Context(), &req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("exec failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"stdout":   string(output),
+		"exitCode": exitCode,
+	})
+}
+
 // Cluster handlers
-func handleGetClusterInfo(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+func handleGetClusterInfo(w http.ResponseWriter, r *http.Request, gw *GatewayServer) {
+	info, err := gw.GetClusterInfo(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to get cluster info: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
 }
 
-func handleListNodes(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+func handleListNodes(w http.ResponseWriter, r *http.Request, gw *GatewayServer) {
+	resp, err := gw.ListNodes(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to list nodes: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"items": resp.Items,
+		"total": resp.Total,
+	})
 }
 
-func handleGetNode(w http.ResponseWriter, r *http.Request, id string) {
-	_ = id
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+func handleGetNode(w http.ResponseWriter, r *http.Request, id string, gw *GatewayServer) {
+	node, err := gw.GetNode(r.Context(), id)
+	if err != nil {
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(node)
 }
 
-func handleDrainNode(w http.ResponseWriter, r *http.Request, id string) {
-	_ = id
+func handleDrainNode(w http.ResponseWriter, r *http.Request, id string, gw *GatewayServer) {
+	if err := gw.DrainNode(r.Context(), id); err != nil {
+		http.Error(w, fmt.Sprintf("failed to drain node: %v", err), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "draining"})
 }
 
 // Checkpoint handlers
-func handleListAllCheckpoints(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+func handleCreateCheckpoint(w http.ResponseWriter, r *http.Request, sandboxID string, gw *GatewayServer) {
+	defer r.Body.Close()
+
+	var req types.CreateCheckpointRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	cp, err := gw.CreateCheckpoint(r.Context(), sandboxID, &req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("create checkpoint failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(cp)
 }
 
-func handleGetCheckpoint(w http.ResponseWriter, r *http.Request, id string) {
-	_ = id
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+func handleListCheckpoints(w http.ResponseWriter, r *http.Request, sandboxID string, gw *GatewayServer) {
+	resp, err := gw.ListCheckpoints(r.Context(), sandboxID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("list checkpoints failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"items": resp.Items,
+		"total": resp.Total,
+	})
 }
 
-func handleDeleteCheckpoint(w http.ResponseWriter, r *http.Request, id string) {
-	_ = id
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+func handleGetCheckpoint(w http.ResponseWriter, r *http.Request, id string, gw *GatewayServer) {
+	cp, err := gw.GetCheckpoint(r.Context(), id)
+	if err != nil {
+		http.Error(w, "checkpoint not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cp)
+}
+
+func handleDeleteCheckpoint(w http.ResponseWriter, r *http.Request, id string, gw *GatewayServer) {
+	if err := gw.DeleteCheckpoint(r.Context(), id); err != nil {
+		http.Error(w, fmt.Sprintf("delete checkpoint failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
+func handleRestoreSandbox(w http.ResponseWriter, r *http.Request, sandboxID string, gw *GatewayServer) {
+	defer r.Body.Close()
+
+	var req struct {
+		CheckpointID string `json:"checkpoint_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if err := gw.RestoreSandbox(r.Context(), sandboxID, req.CheckpointID); err != nil {
+		http.Error(w, fmt.Sprintf("restore failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "restored"})
 }
