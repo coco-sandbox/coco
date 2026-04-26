@@ -60,7 +60,7 @@ type Config struct {
 func Default() *Config {
 	return &Config{
 		ListenAddr:        ":4747",
-		GRPCAddr:          ":4748",
+		GRPCAddr:          ":4746",
 		ShutdownTimeout:   30 * time.Second,
 		DataDir:           "/var/lib/coco",
 		ImagesDir:         "/var/lib/coco/images",
@@ -113,6 +113,9 @@ func Load() *Config {
 	}
 	if master := os.Getenv("COCO_MASTER_ADDR"); master != "" {
 		cfg.MasterAddr = master
+	}
+	if addr := os.Getenv("COCO_MASTER_LISTEN_ADDR"); addr != "" {
+		cfg.GRPCAddr = addr
 	}
 	if nodeID := os.Getenv("COCO_NODE_ID"); nodeID != "" {
 		cfg.NodeID = nodeID
