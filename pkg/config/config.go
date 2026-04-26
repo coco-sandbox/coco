@@ -29,12 +29,6 @@ type Config struct {
 	VisorSocket string
 	NetSocket   string
 
-	ClusterEnabled    bool
-	ClusterPort       int
-	ClusterPeers      []string
-	ElectionTimeout   time.Duration
-	HeartbeatInterval time.Duration
-
 	RateLimitEnabled bool
 	RateLimitRPS     float64
 	RateLimitBurst   int
@@ -73,10 +67,6 @@ func Default() *Config {
 		RuntimeDir:        "/run/coco",
 		VisorSocket:       "/run/coco/visor.sock",
 		NetSocket:         "/run/coco/net.sock",
-		ClusterEnabled:    false,
-		ClusterPort:       4748,
-		ElectionTimeout:   5 * time.Second,
-		HeartbeatInterval: 1 * time.Second,
 		RateLimitEnabled:  true,
 		RateLimitRPS:      100,
 		RateLimitBurst:    200,
