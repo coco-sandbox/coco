@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The Coco Sandbox Authors
 
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
+//! Command execution for coco-agent.
+
 const std = @import("std");
 const posix = std.posix;
 
@@ -26,20 +34,33 @@ pub const ExecResult = struct {
 };
 
 pub fn exec(opts: ExecOptions) ExecResult {
-    if (opts.stdout) |_| {}
-    if (opts.stderr) |_| {}
-    if (opts.stdin) |_| {}
-
     const pid = posix.fork() catch {
         return ExecResult{ .exit_code = 255 };
     };
 
     if (pid == 0) {
-        posix.exit(0);
+        if (opts.stdin) |fd| {
+            _ = posix.dup2(fd, posix.STDOUT_FILENO) catch {};
+        }
+        if (opts.stdout) |fd| {
+            _ = posix.dup2(fd, posix.STDOUT_FILENO) catch {};
+        }
+        if (opts.stderr) |fd| {
+            _ = posix.dup2(fd, posix.STDERR_FILENO) catch {};
+        }
+
+        if (opts.cwd) |cwd| {
+            posix.chdir(cwd) catch {};
+        }
+
+        const envp = if (opts.env) |env| buildEnv(env) else std.process.env;
+        posix.execve(opts.args[0], opts.args, envp) catch {};
+        posix.exit(127);
     }
 
     var status: posix.wait.Status = .{};
-    posix.waitpid(pid, &status, 0) catch {
+    const waited = posix.waitpid(pid, &status, 0);
+    if (waited < 0) {
         return ExecResult{ .exit_code = 255 };
     }
 
@@ -50,6 +71,16 @@ pub fn exec(opts: ExecOptions) ExecResult {
     }
 
     return ExecResult{ .exit_code = 255 };
+}
+
+fn buildEnv(env: [][]const u8) [][*:0]u8 {
+    var result: [128][*:0]u8 = undefined;
+    var i: usize = 0;
+    while (i < env.len and i < 127) : (i += 1) {
+        result[i] = env[i].ptr;
+    }
+    result[i] = null;
+    return result;
 }
 
 pub fn execPath(path: []const u8, args: [][]const u8) ExecResult {

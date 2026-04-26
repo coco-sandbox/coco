@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
+//! Seccomp filter setup for coco-visor.
+
 const std = @import("std");
 const linux = std.os.linux;
-
-const SCMP_SYSNO = c"scmp_syscall_num_t";
-const SCMP_CMP = c"scmp_arg_cmp";
 
 const SECCOMP_MODE_FILTER = 2;
 const SECCOMP_RET_ALLOW = 0x7fff0000;
