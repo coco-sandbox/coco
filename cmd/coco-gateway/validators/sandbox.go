@@ -15,7 +15,11 @@ func NewSandboxValidator() *SandboxValidator {
 	}
 }
 
-func (v *SandboxValidator) ValidateCreate(req interface{ GetID() string; GetImage() string; GetSpec() interface{} }) error {
+func (v *SandboxValidator) ValidateCreate(req interface {
+	GetID() string
+	GetImage() string
+	GetSpec() interface{}
+}) error {
 	if req.GetID() != "" && !v.idRegex.MatchString(req.GetID()) {
 		return fmt.Errorf("invalid sandbox id format")
 	}

@@ -7,29 +7,29 @@ import (
 )
 
 type Limiter struct {
-	mu        sync.RWMutex
-	limits    map[string]*Limit
-	buckets   map[string]*MultiBucket
-	defaultRPS float64
+	mu           sync.RWMutex
+	limits       map[string]*Limit
+	buckets      map[string]*MultiBucket
+	defaultRPS   float64
 	defaultBurst int
 }
 
 type Limit struct {
-	SandboxID  string
-	RPS        float64
-	Burst      int
-	Direction   string
-	Proto      string
-	Port       uint16
-	Enabled    bool
-	CreatedAt  time.Time
+	SandboxID string
+	RPS       float64
+	Burst     int
+	Direction string
+	Proto     string
+	Port      uint16
+	Enabled   bool
+	CreatedAt time.Time
 }
 
 func NewLimiter(defaultRPS float64, defaultBurst int) *Limiter {
 	return &Limiter{
-		limits:    make(map[string]*Limit),
-		buckets:   make(map[string]*MultiBucket),
-		defaultRPS: defaultRPS,
+		limits:       make(map[string]*Limit),
+		buckets:      make(map[string]*MultiBucket),
+		defaultRPS:   defaultRPS,
 		defaultBurst: defaultBurst,
 	}
 }
@@ -141,8 +141,8 @@ func (l *Limiter) GetStats() map[string]interface{} {
 
 	for key, limit := range l.limits {
 		stats[key] = map[string]interface{}{
-			"rps":    limit.RPS,
-			"burst":  limit.Burst,
+			"rps":     limit.RPS,
+			"burst":   limit.Burst,
 			"enabled": limit.Enabled,
 		}
 	}

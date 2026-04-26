@@ -101,7 +101,7 @@ func ReadFrame(r io.Reader) (*Frame, error) {
 
 	return &Frame{
 		StreamID: streamID,
-		Type:    msgType,
-		Data:    data,
+		Type:     msgType,
+		Data:     data,
 	}, nil
 }

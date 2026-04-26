@@ -6,8 +6,8 @@ import (
 )
 
 type Manager struct {
-	mu          sync.RWMutex
-	namespaces  map[string]*Namespace
+	mu         sync.RWMutex
+	namespaces map[string]*Namespace
 }
 
 func NewManager() *Manager {

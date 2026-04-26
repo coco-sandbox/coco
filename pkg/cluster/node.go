@@ -22,26 +22,26 @@ type Node struct {
 }
 
 type NodeCapacity struct {
-	MemoryMB    uint64
-	CPUCount    int
-	DiskGB      uint64
+	MemoryMB     uint64
+	CPUCount     int
+	DiskGB       uint64
 	MaxSandboxes int
 }
 
 type NodeUsage struct {
 	MemoryUsedMB uint64
-	CPUUsed     int
-	DiskUsedGB  uint64
-	Sandboxes   int
+	CPUUsed      int
+	DiskUsedGB   uint64
+	Sandboxes    int
 }
 
 type NodeStatus string
 
 const (
-	NodeStatusOnline  NodeStatus = "online"
-	NodeStatusOffline NodeStatus = "offline"
+	NodeStatusOnline   NodeStatus = "online"
+	NodeStatusOffline  NodeStatus = "offline"
 	NodeStatusDraining NodeStatus = "draining"
-	NodeStatusUnknown NodeStatus = "unknown"
+	NodeStatusUnknown  NodeStatus = "unknown"
 )
 
 func NewNode(id, name, addr string, port int) *Node {

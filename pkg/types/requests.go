@@ -246,7 +246,7 @@ type GetCheckpointResponse struct {
 
 type ListCheckpointsResponse struct {
 	Items []*Checkpoint `json:"items"`
-	Total int            `json:"total"`
+	Total int           `json:"total"`
 }
 
 type RestoreCheckpointRequest struct {

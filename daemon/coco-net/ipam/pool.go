@@ -7,16 +7,16 @@ import (
 )
 
 type Pool struct {
-	mu       sync.RWMutex
-	subnet   *net.IPNet
-	reserved map[string]net.IP
+	mu        sync.RWMutex
+	subnet    *net.IPNet
+	reserved  map[string]net.IP
 	available []net.IP
 }
 
 func NewPool(subnet *net.IPNet) *Pool {
 	p := &Pool{
-		subnet:   subnet,
-		reserved: make(map[string]net.IP),
+		subnet:    subnet,
+		reserved:  make(map[string]net.IP),
 		available: make([]net.IP, 0),
 	}
 

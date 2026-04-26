@@ -11,29 +11,29 @@ import (
 )
 
 type FailoverManager struct {
-	mu           sync.RWMutex
-	nodes        map[string]*FailedNode
-	sandboxes    map[string]*FailedSandbox
-	scheduler    *scheduler.Scheduler
-	checkpoint   CheckpointManager
-	onNodeFail   func(nodeID string)
+	mu            sync.RWMutex
+	nodes         map[string]*FailedNode
+	sandboxes     map[string]*FailedSandbox
+	scheduler     *scheduler.Scheduler
+	checkpoint    CheckpointManager
+	onNodeFail    func(nodeID string)
 	onSandboxFail func(sandboxID, nodeID string)
 	checkInterval time.Duration
-	maxRetries   int
+	maxRetries    int
 }
 
 type FailedNode struct {
-	ID        string
-	FailedAt  time.Time
-	Retries   int
+	ID       string
+	FailedAt time.Time
+	Retries  int
 }
 
 type FailedSandbox struct {
-	ID           string
-	NodeID       string
-	FailedAt     time.Time
+	ID            string
+	NodeID        string
+	FailedAt      time.Time
 	HasCheckpoint bool
-	Retries      int
+	Retries       int
 }
 
 type CheckpointManager interface {
@@ -44,11 +44,11 @@ type CheckpointManager interface {
 func NewFailoverManager(sched *scheduler.Scheduler, checkpoint CheckpointManager) *FailoverManager {
 	return &FailoverManager{
 		nodes:         make(map[string]*FailedNode),
-		sandboxes:    make(map[string]*FailedSandbox),
-		scheduler:    sched,
-		checkpoint:   checkpoint,
+		sandboxes:     make(map[string]*FailedSandbox),
+		scheduler:     sched,
+		checkpoint:    checkpoint,
 		checkInterval: 10 * time.Second,
-		maxRetries:   3,
+		maxRetries:    3,
 	}
 }
 

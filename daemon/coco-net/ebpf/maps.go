@@ -43,11 +43,11 @@ type FlowKey struct {
 }
 
 type FlowValue struct {
-	Packets    uint64
-	Bytes      uint64
-	LastSeen   uint64
-	State      uint8
-	_          [7]byte
+	Packets  uint64
+	Bytes    uint64
+	LastSeen uint64
+	State    uint8
+	_        [7]byte
 }
 
 func CreateFlowMap(name string, maxEntries uint32) (*ebpf.Map, error) {
@@ -67,10 +67,10 @@ type PolicyKey struct {
 }
 
 type PolicyValue struct {
-	Allow  uint8
-	_       [7]byte
+	Allow     uint8
+	_         [7]byte
 	RateLimit uint64
-	Burst    uint64
+	Burst     uint64
 }
 
 func CreatePolicyMap(name string, maxEntries uint32) (*ebpf.Map, error) {

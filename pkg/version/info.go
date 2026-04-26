@@ -57,8 +57,8 @@ func (v Info) Full() string {
 
 // vars are set during build via ldflags
 var (
-	Version    = "v0.0.0"
-	GitCommit  = ""
+	Version     = "v0.0.0"
+	GitCommit   = ""
 	GitDescribe = ""
-	BuildDate  = time.Now()
+	BuildDate   = time.Now()
 )

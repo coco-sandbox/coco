@@ -23,6 +23,14 @@ make build-go       # Just Go binaries (gateway, master, node, cococtl)
 make build-zig      # Just Zig components (visor, agent, fork)
 make test           # Run all tests
 make proto          # Regenerate protobuf code
+make clean          # Remove bin/ and zig-out/
+```
+
+`make build-zig` does **not** build `coco-net` (Go + C). `make test-zig` runs tests for both `coco-visor` and `coco-agent`. eBPF programs are not built by `make`; use the build script (or invoke clang directly with `-Iheaders`):
+
+```bash
+./scripts/build/build-ebpf.sh                              # iterates ebpf/{from_sandbox,from_host,from_world,xdp}
+clang -O2 -target bpf -c <file>.bpf.c -o <file>.o -Iheaders  # single file
 ```
 
 Build individual Go binaries:
@@ -61,6 +69,25 @@ Run Zig tests for a component:
 cd daemon/coco-visor && zig build test
 ```
 
+## Scripts
+
+`make` targets are the primary entry points, but `scripts/` has a few extras not exposed via Make:
+
+- `scripts/build/build-ebpf.sh` — compile eBPF programs (no Make target)
+- `scripts/test/test-integration.sh` — integration tests (`make test` runs unit tests only)
+- `scripts/test/test-unit.sh`, `scripts/test/test-all.sh` — alternates to `make test-go`/`make test`
+- `scripts/tools/generate-proto.sh` — alternate to `make proto`
+- `scripts/docker/build-images.sh`, `scripts/docker/push-images.sh` — container image lifecycle
+
+## Linting
+
+```bash
+go fmt ./... && go vet ./...                # Go
+cd daemon/coco-visor && zig fmt --check src # Zig (per component)
+```
+
+Run `go fmt`/`zig fmt` before declaring work done — this is a project convention recorded in `.claude/rules/`.
+
 ## Project Layout
 
 - `cmd/` — Go entry points (coco-gateway, coco-master, coco-node, cococtl)
@@ -87,18 +114,16 @@ cd daemon/coco-visor && zig build test
 
 **No version numbers in specs.** Versioning belongs in code, not specifications.
 
-**Reference specs for design decisions.** All architectural decisions are documented in `spec/`. Check `spec/00-overview.md` and `spec/01-folder-structure.md` for high-level context before making major changes.
+**`spec/` is the source of truth.** All architectural decisions live in `spec/`. Check `spec/00-overview.md` and `spec/01-folder-structure.md` before making structural changes — file paths and component layouts are normative, not aspirational. Do not invent requirements beyond what the spec documents.
 
-**Proto regeneration.** After modifying `proto/coco/v1/*.proto`, run `make proto` to generate Go code.
+**Per-language conventions (from `.claude/rules/`):**
+- **Go** (`cmd/`, `pkg/`, `daemon/coco-*/**/*.go`): use standard library; run `go fmt` before finishing.
+- **Zig** (`daemon/coco-{visor,agent,fork}/`): use direct KVM syscalls via `linux/uapi.h`; run `zig fmt` before finishing.
+- **eBPF** (`ebpf/`): follow kernel coding style; use XDP for packet processing; compile with clang.
+
+**Proto regeneration.** After modifying `proto/coco/v1/*.proto`, run `make proto`. Generated Go lands under `pkg/api/v1/` (and `pkg/api/v1/v1connect/` for Connect handlers).
 
 **Integration tests.** Require docker-compose. Health check at `http://localhost:4747/health`.
-
-## Testing Patterns
-
-- Tests in `pkg/` packages use standard `*_test.go` convention
-- Integration tests in `test/integration/` require full environment
-- E2E tests in `test/e2e/` test end-to-end flows
-- Unit tests use table-driven patterns (see `test/core_test.go` for examples)
 
 ## Communication Flows
 

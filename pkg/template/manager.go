@@ -10,15 +10,15 @@ import (
 )
 
 type Manager struct {
-	mu      sync.RWMutex
+	mu        sync.RWMutex
 	templates map[string]*types.Template
-	store    *Store
+	store     *Store
 }
 
 func NewManager(store *Store) *Manager {
 	return &Manager{
 		templates: make(map[string]*types.Template),
-		store:    store,
+		store:     store,
 	}
 }
 

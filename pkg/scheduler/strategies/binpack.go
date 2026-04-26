@@ -1,7 +1,6 @@
 package strategies
 
 import (
-
 	"github.com/coco-sandbox/coco/pkg/scheduler"
 )
 

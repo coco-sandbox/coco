@@ -40,23 +40,23 @@ func (s SandboxState) String() string {
 }
 
 type Sandbox struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	State         SandboxState   `json:"state"`
-	Template      string         `json:"template"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	HostNode      string         `json:"host_node"`
-	Config        map[string]any `json:"config,omitempty"`
-	VsockCID      uint32         `json:"vsock_cid,omitempty"`
-	PID           int            `json:"pid,omitempty"`
-	Rootfs        string         `json:"rootfs,omitempty"`
-	MemoryMB      int            `json:"memory_mb,omitempty"`
-	VCPUs         int            `json:"vcpus,omitempty"`
-	ParentID      string         `json:"parent_id,omitempty"`
-	HibernatePath string         `json:"hibernate_path,omitempty"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	State         SandboxState      `json:"state"`
+	Template      string            `json:"template"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	HostNode      string            `json:"host_node"`
+	Config        map[string]any    `json:"config,omitempty"`
+	VsockCID      uint32            `json:"vsock_cid,omitempty"`
+	PID           int               `json:"pid,omitempty"`
+	Rootfs        string            `json:"rootfs,omitempty"`
+	MemoryMB      int               `json:"memory_mb,omitempty"`
+	VCPUs         int               `json:"vcpus,omitempty"`
+	ParentID      string            `json:"parent_id,omitempty"`
+	HibernatePath string            `json:"hibernate_path,omitempty"`
 	Labels        map[string]string `json:"labels,omitempty"`
-	ForkDepth     int            `json:"fork_depth,omitempty"`
+	ForkDepth     int               `json:"fork_depth,omitempty"`
 }
 
 type CreateSandboxRequest struct {

@@ -7,26 +7,26 @@ import (
 )
 
 type Cache struct {
-	mu          sync.RWMutex
-	entries     map[string]*CacheEntry
-	maxSize     int
-	ttl         time.Duration
+	mu              sync.RWMutex
+	entries         map[string]*CacheEntry
+	maxSize         int
+	ttl             time.Duration
 	cleanupInterval time.Duration
 }
 
 type CacheEntry struct {
-	Action    Action
-	Direction Direction
-	Conn      *Connection
-	CreatedAt time.Time
+	Action      Action
+	Direction   Direction
+	Conn        *Connection
+	CreatedAt   time.Time
 	AccessCount int
 }
 
 func NewCache() *Cache {
 	c := &Cache{
 		entries:         make(map[string]*CacheEntry),
-		maxSize:        10000,
-		ttl:            5 * time.Minute,
+		maxSize:         10000,
+		ttl:             5 * time.Minute,
 		cleanupInterval: 1 * time.Minute,
 	}
 

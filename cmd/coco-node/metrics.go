@@ -59,11 +59,11 @@ var (
 )
 
 type NodeMetrics struct {
-	mu         sync.RWMutex
-	nodeID     string
-	startTime  time.Time
-	registry   *prometheus.Registry
-	collector  *metricsCollector
+	mu        sync.RWMutex
+	nodeID    string
+	startTime time.Time
+	registry  *prometheus.Registry
+	collector *metricsCollector
 }
 
 type metricsCollector struct {

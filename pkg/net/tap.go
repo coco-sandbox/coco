@@ -1,144 +1,144 @@
 package net
 
 import (
-    "fmt"
-    "net"
-    "sync"
-    "syscall"
-    "unsafe"
+	"fmt"
+	"net"
+	"sync"
+	"syscall"
+	"unsafe"
 )
 
 const (
-    TUNSETIFF = 0x400454ca
-    IFF_TAP   = 0x0002
-    IFF_NO_PI = 0x1000
+	TUNSETIFF = 0x400454ca
+	IFF_TAP   = 0x0002
+	IFF_NO_PI = 0x1000
 )
 
 type TAPManager struct {
-    mu      sync.RWMutex
-    devices map[string]*TAPDevice
-    counter uint32 // Counter for unique MAC generation
+	mu      sync.RWMutex
+	devices map[string]*TAPDevice
+	counter uint32 // Counter for unique MAC generation
 }
 
 type TAPDevice struct {
-    Name string
-    FD   int
-    MAC  net.HardwareAddr
-    IP   net.IP
+	Name string
+	FD   int
+	MAC  net.HardwareAddr
+	IP   net.IP
 }
 
 func NewTAPManager() *TAPManager {
-    return &TAPManager{
-        devices: make(map[string]*TAPDevice),
-        counter: 0,
-    }
+	return &TAPManager{
+		devices: make(map[string]*TAPDevice),
+		counter: 0,
+	}
 }
 
 func (m *TAPManager) Create(name string) (*TAPDevice, error) {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-    if _, exists := m.devices[name]; exists {
-        return nil, fmt.Errorf("device %s already exists", name)
-    }
+	if _, exists := m.devices[name]; exists {
+		return nil, fmt.Errorf("device %s already exists", name)
+	}
 
-    // Open TAP character device
-    tapFD, err := syscall.Open("/dev/net/tun", syscall.O_RDWR, 0)
-    if err != nil {
-        return nil, fmt.Errorf("failed to open /dev/net/tun: %w", err)
-    }
+	// Open TAP character device
+	tapFD, err := syscall.Open("/dev/net/tun", syscall.O_RDWR, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open /dev/net/tun: %w", err)
+	}
 
-    // Set IFF_TAP and IFF_NO_PI flags
-    type ifreq struct {
-        Name  [16]byte
-        Flags uint16
-    }
-    req := ifreq{}
-    copy(req.Name[:], name)
-    req.Flags = IFF_TAP | IFF_NO_PI
+	// Set IFF_TAP and IFF_NO_PI flags
+	type ifreq struct {
+		Name  [16]byte
+		Flags uint16
+	}
+	req := ifreq{}
+	copy(req.Name[:], name)
+	req.Flags = IFF_TAP | IFF_NO_PI
 
-    _, _, errno := syscall.Syscall(
-        syscall.SYS_IOCTL,
-        uintptr(tapFD),
-        uintptr(TUNSETIFF),
-        uintptr(unsafe.Pointer(&req)),
-    )
-    if errno != 0 {
-        syscall.Close(tapFD)
-        return nil, fmt.Errorf("TUNSETIFF failed: %v", errno)
-    }
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		uintptr(tapFD),
+		uintptr(TUNSETIFF),
+		uintptr(unsafe.Pointer(&req)),
+	)
+	if errno != 0 {
+		syscall.Close(tapFD)
+		return nil, fmt.Errorf("TUNSETIFF failed: %v", errno)
+	}
 
-    // Generate MAC address using counter to avoid collisions after destroy
-    mac := make(net.HardwareAddr, 6)
-    mac[0] = 0x02 // Local admin bit
-    mac[1] = 0x00
-    mac[2] = 0x00
-    mac[3] = 0x00
-    mac[4] = byte(m.counter >> 8)
-    mac[5] = byte(m.counter & 0xff)
-    m.counter++
+	// Generate MAC address using counter to avoid collisions after destroy
+	mac := make(net.HardwareAddr, 6)
+	mac[0] = 0x02 // Local admin bit
+	mac[1] = 0x00
+	mac[2] = 0x00
+	mac[3] = 0x00
+	mac[4] = byte(m.counter >> 8)
+	mac[5] = byte(m.counter & 0xff)
+	m.counter++
 
-    dev := &TAPDevice{
-        Name: name,
-        FD:   tapFD,
-        MAC:  mac,
-    }
+	dev := &TAPDevice{
+		Name: name,
+		FD:   tapFD,
+		MAC:  mac,
+	}
 
-    m.devices[name] = dev
-    return dev, nil
+	m.devices[name] = dev
+	return dev, nil
 }
 
 func (m *TAPManager) Destroy(name string) error {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-    dev, exists := m.devices[name]
-    if !exists {
-        return fmt.Errorf("device %s not found", name)
-    }
+	dev, exists := m.devices[name]
+	if !exists {
+		return fmt.Errorf("device %s not found", name)
+	}
 
-    syscall.Close(dev.FD)
-    delete(m.devices, name)
+	syscall.Close(dev.FD)
+	delete(m.devices, name)
 
-    return nil
+	return nil
 }
 
 func (m *TAPManager) SetIP(name string, ipStr string, maskLen int) error {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-    dev, exists := m.devices[name]
-    if !exists {
-        return fmt.Errorf("device %s not found", name)
-    }
+	dev, exists := m.devices[name]
+	if !exists {
+		return fmt.Errorf("device %s not found", name)
+	}
 
-    ip := net.ParseIP(ipStr)
-    if ip == nil {
-        return fmt.Errorf("invalid IP address: %s", ipStr)
-    }
-    dev.IP = ip
-    return nil
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return fmt.Errorf("invalid IP address: %s", ipStr)
+	}
+	dev.IP = ip
+	return nil
 }
 
 func (m *TAPManager) Get(name string) (*TAPDevice, error) {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-    dev, exists := m.devices[name]
-    if !exists {
-        return nil, fmt.Errorf("device %s not found", name)
-    }
-    return dev, nil
+	dev, exists := m.devices[name]
+	if !exists {
+		return nil, fmt.Errorf("device %s not found", name)
+	}
+	return dev, nil
 }
 
 // ListDevices returns a list of all TAP devices
 func (m *TAPManager) ListDevices() []*TAPDevice {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-    devices := make([]*TAPDevice, 0, len(m.devices))
-    for _, dev := range m.devices {
-        devices = append(devices, dev)
-    }
-    return devices
+	devices := make([]*TAPDevice, 0, len(m.devices))
+	for _, dev := range m.devices {
+		devices = append(devices, dev)
+	}
+	return devices
 }

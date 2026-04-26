@@ -11,19 +11,19 @@ import (
 )
 
 type Namespace struct {
-	mu       sync.RWMutex
-	ID       string
-	Handle   netns.NsHandle
+	mu         sync.RWMutex
+	ID         string
+	Handle     netns.NsHandle
 	Interfaces map[string]*NetInterface
 	CreatedAt  string
 }
 
 type NetInterface struct {
-	Name     string
-	Link     netlink.Link
-	IPs      []net.IP
-	MAC      string
-	Type     string
+	Name string
+	Link netlink.Link
+	IPs  []net.IP
+	MAC  string
+	Type string
 }
 
 func New(id string) (*Namespace, error) {

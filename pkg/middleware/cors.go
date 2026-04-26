@@ -69,11 +69,11 @@ func isOriginAllowed(origin string, allowed []string) bool {
 
 func DefaultCORS() func(http.Handler) http.Handler {
 	return CORS(CORSConfig{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Content-Type", "Authorization"},
-		ExposedHeaders: []string{},
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		ExposedHeaders:   []string{},
 		AllowCredentials: false,
-		MaxAge: 3600,
+		MaxAge:           3600,
 	})
 }

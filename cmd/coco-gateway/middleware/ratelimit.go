@@ -15,7 +15,7 @@ type RateLimiter struct {
 }
 
 type bucket struct {
-	tokens    int64
+	tokens     int64
 	lastRefill time.Time
 }
 
@@ -37,7 +37,7 @@ func (rl *RateLimiter) Allow(key string) bool {
 
 	if !exists {
 		rl.tokens[key] = &bucket{
-			tokens:    rl.capacity - 1,
+			tokens:     rl.capacity - 1,
 			lastRefill: now,
 		}
 		return true

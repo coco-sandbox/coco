@@ -9,26 +9,26 @@ import (
 )
 
 type RequestQueue struct {
-	mu            sync.RWMutex
-	pending       []*QueuedRequest
-	processing    map[string]*QueuedRequest
-	completed     map[string]*QueuedRequest
-	maxSize      int
-	workerCount  int
-	resultTTL    time.Duration
+	mu          sync.RWMutex
+	pending     []*QueuedRequest
+	processing  map[string]*QueuedRequest
+	completed   map[string]*QueuedRequest
+	maxSize     int
+	workerCount int
+	resultTTL   time.Duration
 }
 
 type QueuedRequest struct {
-	ID         string
-	Type       RequestType
-	Payload    interface{}
-	Result     interface{}
-	Error      error
-	Priority   int
-	CreatedAt  time.Time
-	StartedAt  *time.Time
+	ID          string
+	Type        RequestType
+	Payload     interface{}
+	Result      interface{}
+	Error       error
+	Priority    int
+	CreatedAt   time.Time
+	StartedAt   *time.Time
 	CompletedAt *time.Time
-	Cancel     context.CancelFunc
+	Cancel      context.CancelFunc
 }
 
 type RequestType int
@@ -46,12 +46,12 @@ const (
 
 func NewRequestQueue(maxSize, workerCount int) *RequestQueue {
 	return &RequestQueue{
-		pending:    make([]*QueuedRequest, 0),
-		processing: make(map[string]*QueuedRequest),
-		completed:  make(map[string]*QueuedRequest),
-		maxSize:    maxSize,
+		pending:     make([]*QueuedRequest, 0),
+		processing:  make(map[string]*QueuedRequest),
+		completed:   make(map[string]*QueuedRequest),
+		maxSize:     maxSize,
 		workerCount: workerCount,
-		resultTTL:  5 * time.Minute,
+		resultTTL:   5 * time.Minute,
 	}
 }
 

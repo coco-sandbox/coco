@@ -9,28 +9,28 @@ import (
 )
 
 type ClusterManager struct {
-	mu           sync.RWMutex
-	nodes        map[string]*Node
-	membership   *Membership
-	discovery    *Discovery
-	config       *ClusterConfig
-	stopCh       chan struct{}
+	mu         sync.RWMutex
+	nodes      map[string]*Node
+	membership *Membership
+	discovery  *Discovery
+	config     *ClusterConfig
+	stopCh     chan struct{}
 }
 
 type ClusterConfig struct {
-	NodeID          string
-	NodeAddr        string
-	NodePort        int
-	EtcdEndpoints   []string
+	NodeID            string
+	NodeAddr          string
+	NodePort          int
+	EtcdEndpoints     []string
 	HeartbeatInterval time.Duration
-	NodeTimeout     time.Duration
+	NodeTimeout       time.Duration
 }
 
 func NewClusterManager(cfg ClusterConfig) (*ClusterManager, error) {
 	discovery, err := NewDiscovery(DiscoveryConfig{
-		Endpoints: cfg.EtcdEndpoints,
+		Endpoints:  cfg.EtcdEndpoints,
 		NodePrefix: "/coco/nodes",
-		TTL:       cfg.NodeTimeout,
+		TTL:        cfg.NodeTimeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create discovery: %w", err)

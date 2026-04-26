@@ -18,11 +18,11 @@ import (
 )
 
 type Config struct {
-	ListenAddr    string
-	Subnet        string
-	MetricsAddr   string
-	EBPFEnabled   bool
-	RateLimitRPS  float64
+	ListenAddr     string
+	Subnet         string
+	MetricsAddr    string
+	EBPFEnabled    bool
+	RateLimitRPS   float64
 	RateLimitBurst int
 }
 
@@ -53,6 +53,7 @@ func main() {
 		ebpfLoader = ebpf.NewLoader()
 		log.Println("eBPF support enabled")
 	}
+	_ = ebpfLoader
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ip/allocate", handleIPAllocate(ipam))
@@ -85,11 +86,11 @@ func parseFlags() *Config {
 	flag.Parse()
 
 	return &Config{
-		ListenAddr:    *listenAddr,
-		Subnet:        *subnet,
-		MetricsAddr:   *metricsAddr,
-		EBPFEnabled:   *ebpfEnabled,
-		RateLimitRPS:  *rateLimitRPS,
+		ListenAddr:     *listenAddr,
+		Subnet:         *subnet,
+		MetricsAddr:    *metricsAddr,
+		EBPFEnabled:    *ebpfEnabled,
+		RateLimitRPS:   *rateLimitRPS,
 		RateLimitBurst: *rateLimitBurst,
 	}
 }

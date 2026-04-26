@@ -23,12 +23,12 @@ func NewExecHandler(visorPool *visor.Pool) *ExecHandler {
 
 // ExecRequest represents a request to execute code
 type ExecRequest struct {
-	Command   string            `json:"command"`
-	Args      []string          `json:"args"`
-	Env       map[string]string `json:"env"`
-	WorkingDir string           `json:"working_dir"`
-	TimeoutMs int64             `json:"timeout_ms"`
-	Streaming bool              `json:"streaming"`
+	Command    string            `json:"command"`
+	Args       []string          `json:"args"`
+	Env        map[string]string `json:"env"`
+	WorkingDir string            `json:"working_dir"`
+	TimeoutMs  int64             `json:"timeout_ms"`
+	Streaming  bool              `json:"streaming"`
 }
 
 // ExecResponse represents the response from an exec operation

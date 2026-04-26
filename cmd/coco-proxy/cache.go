@@ -10,19 +10,19 @@ import (
 )
 
 type Cache struct {
-	mu       sync.RWMutex
-	entries  map[string]*CacheEntry
-	maxSize  int
-	ttl      time.Duration
+	mu              sync.RWMutex
+	entries         map[string]*CacheEntry
+	maxSize         int
+	ttl             time.Duration
 	cleanupInterval time.Duration
 }
 
 type CacheEntry struct {
-	Key        string
-	Response  *CachedResponse
-	CreatedAt time.Time
+	Key         string
+	Response    *CachedResponse
+	CreatedAt   time.Time
 	AccessCount int64
-	Size      int64
+	Size        int64
 }
 
 type CachedResponse struct {
@@ -33,9 +33,9 @@ type CachedResponse struct {
 
 func NewCache(maxSize int, ttl time.Duration, cleanupInterval time.Duration) *Cache {
 	c := &Cache{
-		entries:        make(map[string]*CacheEntry),
-		maxSize:       maxSize,
-		ttl:           ttl,
+		entries:         make(map[string]*CacheEntry),
+		maxSize:         maxSize,
+		ttl:             ttl,
 		cleanupInterval: cleanupInterval,
 	}
 

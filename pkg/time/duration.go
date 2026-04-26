@@ -11,37 +11,37 @@ import (
 type Duration time.Duration
 
 // Milliseconds returns the duration as milliseconds
-func (d Duration)Milliseconds() int64 {
+func (d Duration) Milliseconds() int64 {
 	return time.Duration(d).Milliseconds()
 }
 
 // Microseconds returns the duration as microseconds
-func (d Duration)Microseconds() int64 {
+func (d Duration) Microseconds() int64 {
 	return time.Duration(d).Microseconds()
 }
 
 // Nanoseconds returns the duration as nanoseconds
-func (d Duration)Nanoseconds() int64 {
+func (d Duration) Nanoseconds() int64 {
 	return time.Duration(d).Nanoseconds()
 }
 
 // Seconds returns the duration as seconds (float64)
-func (d Duration)Seconds() float64 {
+func (d Duration) Seconds() float64 {
 	return time.Duration(d).Seconds()
 }
 
 // String implements fmt.Stringer
-func (d Duration)String() string {
+func (d Duration) String() string {
 	return time.Duration(d).String()
 }
 
 // MarshalJSON implements json.Marshaler
-func (d Duration)MarshalJSON() ([]byte, error) {
+func (d Duration) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + time.Duration(d).String() + `"`), nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler
-func (d *Duration)UnmarshalJSON(data []byte) error {
+func (d *Duration) UnmarshalJSON(data []byte) error {
 	str := string(data)
 	if str == "null" {
 		return nil

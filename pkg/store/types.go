@@ -58,10 +58,10 @@ type Iterator interface {
 }
 
 type Query struct {
-	Prefix    string
-	Limit     int
-	Offset    string
-	Reverse   bool
+	Prefix  string
+	Limit   int
+	Offset  string
+	Reverse bool
 }
 
 func (s *Store) Query(q Query) (Iterator, error) {

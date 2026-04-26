@@ -14,23 +14,23 @@ import (
 const (
 	nodeRegistryPrefix = "/coco/nodes/"
 	heartbeatInterval  = 10 * time.Second
-	nodeTTL           = 30
+	nodeTTL            = 30
 )
 
 type NodeDiscovery struct {
-	mu         sync.RWMutex
-	nodeID     string
-	nodeAddr   string
-	etcdClient *clientv3.Client
+	mu            sync.RWMutex
+	nodeID        string
+	nodeAddr      string
+	etcdClient    *clientv3.Client
 	etcdEndpoints []string
-	capacity   NodeCapacity
-	registered bool
-	stopChan   chan struct{}
+	capacity      NodeCapacity
+	registered    bool
+	stopChan      chan struct{}
 }
 
 type NodeCapacity struct {
-	MemoryMB uint64
-	CPUCount int
+	MemoryMB     uint64
+	CPUCount     int
 	MaxSandboxes int
 }
 

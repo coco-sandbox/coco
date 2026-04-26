@@ -20,9 +20,9 @@ type storeTransaction struct {
 }
 
 type operation struct {
-	op     string
-	key    string
-	value  []byte
+	op    string
+	key   string
+	value []byte
 }
 
 func (s *Store) BeginTransaction(ctx context.Context) (Transaction, error) {

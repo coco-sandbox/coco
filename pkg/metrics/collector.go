@@ -8,10 +8,10 @@ import (
 )
 
 type Collector struct {
-	mu          sync.RWMutex
-	lastCollect time.Time
+	mu           sync.RWMutex
+	lastCollect  time.Time
 	collectCount uint64
-	errors      uint64
+	errors       uint64
 }
 
 func NewCollector() *Collector {
@@ -68,9 +68,9 @@ func (c *Collector) RecordError() {
 }
 
 type MetricsCollector struct {
-	mu          sync.RWMutex
-	collectors  []prometheus.Collector
-	interval    time.Duration
+	mu         sync.RWMutex
+	collectors []prometheus.Collector
+	interval   time.Duration
 	stopCh     chan struct{}
 }
 
@@ -78,7 +78,7 @@ func NewMetricsCollector(interval time.Duration) *MetricsCollector {
 	return &MetricsCollector{
 		collectors: make([]prometheus.Collector, 0),
 		interval:   interval,
-		stopCh:    make(chan struct{}),
+		stopCh:     make(chan struct{}),
 	}
 }
 

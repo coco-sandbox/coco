@@ -110,8 +110,8 @@ func (s *MasterScheduler) randomNode(nodes []*scheduler.NodeEntry) *scheduler.No
 }
 
 type ScheduleRequest struct {
-	MemoryMB  uint64
-	VCPUs     int
-	Labels    map[string]string
-	Strategy  scheduler.Strategy
+	MemoryMB uint64
+	VCPUs    int
+	Labels   map[string]string
+	Strategy scheduler.Strategy
 }

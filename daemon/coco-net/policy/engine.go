@@ -147,10 +147,10 @@ func (a Action) String() string {
 type Protocol uint8
 
 const (
-	ProtocolTCP Protocol = 6
-	ProtocolUDP Protocol = 17
+	ProtocolTCP  Protocol = 6
+	ProtocolUDP  Protocol = 17
 	ProtocolICMP Protocol = 1
-	ProtocolAny Protocol = 0
+	ProtocolAny  Protocol = 0
 )
 
 type Rule struct {

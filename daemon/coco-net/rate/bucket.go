@@ -105,8 +105,8 @@ func (b *Bucket) Reset() {
 }
 
 type MultiBucket struct {
-	mu      sync.RWMutex
-	buckets map[string]*Bucket
+	mu              sync.RWMutex
+	buckets         map[string]*Bucket
 	defaultRate     float64
 	defaultCapacity float64
 }

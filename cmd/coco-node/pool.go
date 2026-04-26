@@ -19,10 +19,10 @@ type NodePool struct {
 }
 
 type PoolStats struct {
-	ActiveCount    int
-	FreeCount     int
-	BootedCount   int
-	FailedCount   int
+	ActiveCount  int
+	FreeCount    int
+	BootedCount  int
+	FailedCount  int
 	LastRefillAt time.Time
 }
 
@@ -73,7 +73,7 @@ func (np *NodePool) GetStats() PoolStats {
 
 	active, free := np.vmPool.Stats()
 	return PoolStats{
-		ActiveCount:  active,
+		ActiveCount: active,
 		FreeCount:   free,
 	}
 }

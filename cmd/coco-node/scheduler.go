@@ -100,7 +100,7 @@ type SandboxRequest struct {
 	ID        string
 	Priority  int
 	CreatedAt time.Time
-	MemoryMB uint64
-	VCPUs    int
-	Template string
+	MemoryMB  uint64
+	VCPUs     int
+	Template  string
 }

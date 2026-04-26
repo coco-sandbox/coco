@@ -66,8 +66,8 @@ func (f *AffinityFilter) Name() string {
 
 type NodeAffinity struct {
 	NodeSelector map[string]string
-	Weight      int
-	Preference  AffinityPreference
+	Weight       int
+	Preference   AffinityPreference
 }
 
 func ParseAffinity(affinityStr string) (*AffinityFilter, error) {

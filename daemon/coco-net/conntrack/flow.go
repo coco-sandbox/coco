@@ -87,7 +87,7 @@ func (f *Flow) String() string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	return fmt.Sprintf("%s:%d -> %s:%d [%s] pkts=%d bytes=%d state=%s",
+	return fmt.Sprintf("%s:%d -> %s:%d [%d] pkts=%d bytes=%d state=%s",
 		f.SrcIP, f.SrcPort, f.DstIP, f.DstPort, f.Proto,
 		f.Packets, f.Bytes, f.StateString())
 }

@@ -10,7 +10,10 @@ func NewExecValidator() *ExecValidator {
 	return &ExecValidator{}
 }
 
-func (v *ExecValidator) ValidateCreate(req interface{ GetSandboxID() string; GetCommand() []string }) error {
+func (v *ExecValidator) ValidateCreate(req interface {
+	GetSandboxID() string
+	GetCommand() []string
+}) error {
 	if req.GetSandboxID() == "" {
 		return fmt.Errorf("sandbox_id is required")
 	}
@@ -22,7 +25,11 @@ func (v *ExecValidator) ValidateCreate(req interface{ GetSandboxID() string; Get
 	return nil
 }
 
-func (v *ExecValidator) ValidateResize(req interface{ GetSessionID() string; GetWidth() uint32; GetHeight() uint32 }) error {
+func (v *ExecValidator) ValidateResize(req interface {
+	GetSessionID() string
+	GetWidth() uint32
+	GetHeight() uint32
+}) error {
 	if req.GetSessionID() == "" {
 		return fmt.Errorf("session_id is required")
 	}
@@ -34,7 +41,10 @@ func (v *ExecValidator) ValidateResize(req interface{ GetSessionID() string; Get
 	return nil
 }
 
-func (v *ExecValidator) ValidateInput(req interface{ GetSessionID() string; GetData() []byte }) error {
+func (v *ExecValidator) ValidateInput(req interface {
+	GetSessionID() string
+	GetData() []byte
+}) error {
 	if req.GetSessionID() == "" {
 		return fmt.Errorf("session_id is required")
 	}

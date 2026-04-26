@@ -28,7 +28,7 @@ type Member struct {
 type MemberStatus string
 
 const (
-	StatusJoined   MemberStatus = "joined"
+	StatusJoined  MemberStatus = "joined"
 	StatusLeft    MemberStatus = "left"
 	StatusFailed  MemberStatus = "failed"
 	StatusUnknown MemberStatus = "unknown"

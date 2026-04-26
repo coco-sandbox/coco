@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	electionKey   = "/coco/master/leader"
-	masterPrefix  = "/coco/master/"
-	sessionTTL    = 10
+	electionKey  = "/coco/master/leader"
+	masterPrefix = "/coco/master/"
+	sessionTTL   = 10
 )
 
 type Election struct {
@@ -46,12 +46,12 @@ func NewElection(endpoints []string, onCampaign func(ctx context.Context) error,
 	election := concurrency.NewElection(session, electionKey)
 
 	return &Election{
-		client:    client,
-		session:   session,
-		election:  election,
-		leaderCh:  make(chan bool, 1),
+		client:     client,
+		session:    session,
+		election:   election,
+		leaderCh:   make(chan bool, 1),
 		onCampaign: onCampaign,
-		onResign:  onResign,
+		onResign:   onResign,
 	}, nil
 }
 

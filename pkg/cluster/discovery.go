@@ -10,18 +10,18 @@ import (
 )
 
 type Discovery struct {
-	mu           sync.RWMutex
-	client       *clientv3.Client
+	mu            sync.RWMutex
+	client        *clientv3.Client
 	etcdEndpoints []string
-	nodePrefix   string
-	ttl          time.Duration
-	stopCh       chan struct{}
+	nodePrefix    string
+	ttl           time.Duration
+	stopCh        chan struct{}
 }
 
 type DiscoveryConfig struct {
-	Endpoints []string
+	Endpoints  []string
 	NodePrefix string
-	TTL       time.Duration
+	TTL        time.Duration
 }
 
 func NewDiscovery(cfg DiscoveryConfig) (*Discovery, error) {
@@ -39,11 +39,11 @@ func NewDiscovery(cfg DiscoveryConfig) (*Discovery, error) {
 	}
 
 	return &Discovery{
-		client:       cli,
+		client:        cli,
 		etcdEndpoints: cfg.Endpoints,
-		nodePrefix:   cfg.NodePrefix,
-		ttl:          ttl,
-		stopCh:       make(chan struct{}),
+		nodePrefix:    cfg.NodePrefix,
+		ttl:           ttl,
+		stopCh:        make(chan struct{}),
 	}, nil
 }
 
@@ -110,7 +110,7 @@ func (d *Discovery) WatchNodes(ctx context.Context, callback func(Event)) {
 					eventType = "delete"
 				}
 				callback(Event{
-					Type: eventType,
+					Type:  eventType,
 					Key:   string(ev.Kv.Key),
 					Value: string(ev.Kv.Value),
 				})

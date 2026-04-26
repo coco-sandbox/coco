@@ -10,25 +10,25 @@ import (
 )
 
 type Config struct {
-	ListenAddr       string
-	GRPCAddr         string
-	ShutdownTimeout  time.Duration
+	ListenAddr      string
+	GRPCAddr        string
+	ShutdownTimeout time.Duration
 
-	DataDir      string
-	ImagesDir    string
-	StoreDir     string
-	Checkpoints  string
-	Hibernation  string
-	Replays      string
-	Templates    string
-	SnapshotDir  string
+	DataDir     string
+	ImagesDir   string
+	StoreDir    string
+	Checkpoints string
+	Hibernation string
+	Replays     string
+	Templates   string
+	SnapshotDir string
 
 	RuntimeDir string
 
 	VisorSocket string
 	NetSocket   string
 
-	ClusterEnabled     bool
+	ClusterEnabled    bool
 	ClusterPort       int
 	ClusterPeers      []string
 	ElectionTimeout   time.Duration
@@ -38,17 +38,17 @@ type Config struct {
 	RateLimitRPS     float64
 	RateLimitBurst   int
 
-	AuthEnabled  bool
-	MTLSEnabled  bool
+	AuthEnabled bool
+	MTLSEnabled bool
 	TLSCertFile string
 	TLSKeyFile  string
 
 	MetricsEnabled bool
-	MetricsPort   int
+	MetricsPort    int
 
-	NodeID       string
-	PoolSize     int
-	MasterAddr   string
+	NodeID     string
+	PoolSize   int
+	MasterAddr string
 
 	SchedulerStrategy string
 }

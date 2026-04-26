@@ -47,14 +47,14 @@ func (s *MasterServer) CreateSandbox(ctx context.Context, req *types.CreateSandb
 	}
 
 	sb := &types.Sandbox{
-		ID:        bootReq.SandboxID,
-		Name:      req.Name,
-		Template:  req.Template,
-		MemoryMB:  req.MemoryMB,
-		VCPUs:     req.VCPUs,
-		State:     types.SandboxStateCreating,
-		Labels:    req.Labels,
-		HostNode:  node.ID,
+		ID:       bootReq.SandboxID,
+		Name:     req.Name,
+		Template: req.Template,
+		MemoryMB: req.MemoryMB,
+		VCPUs:    req.VCPUs,
+		State:    types.SandboxStateCreating,
+		Labels:   req.Labels,
+		HostNode: node.ID,
 	}
 
 	s.mu.Lock()

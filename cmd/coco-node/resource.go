@@ -8,29 +8,29 @@ import (
 )
 
 type ResourceTracker struct {
-	mu          sync.RWMutex
-	nodeID      string
-	totalMemMB  uint64
-	usedMemMB   uint64
-	availMemMB  uint64
-	totalCPU    int
-	usedCPU     int
-	availCPU    int
-	sandboxMem  map[string]uint64
-	sandboxCPU  map[string]int
-	updatedAt   time.Time
+	mu         sync.RWMutex
+	nodeID     string
+	totalMemMB uint64
+	usedMemMB  uint64
+	availMemMB uint64
+	totalCPU   int
+	usedCPU    int
+	availCPU   int
+	sandboxMem map[string]uint64
+	sandboxCPU map[string]int
+	updatedAt  time.Time
 }
 
 func NewResourceTracker(nodeID string, totalMemMB uint64, totalCPU int) *ResourceTracker {
 	return &ResourceTracker{
-		nodeID:      nodeID,
-		totalMemMB:  totalMemMB,
-		totalCPU:    totalCPU,
-		availMemMB:  totalMemMB,
-		availCPU:    totalCPU,
-		sandboxMem:  make(map[string]uint64),
-		sandboxCPU:  make(map[string]int),
-		updatedAt:   time.Now(),
+		nodeID:     nodeID,
+		totalMemMB: totalMemMB,
+		totalCPU:   totalCPU,
+		availMemMB: totalMemMB,
+		availCPU:   totalCPU,
+		sandboxMem: make(map[string]uint64),
+		sandboxCPU: make(map[string]int),
+		updatedAt:  time.Now(),
 	}
 }
 
@@ -89,16 +89,16 @@ func (rt *ResourceTracker) GetUsage() ResourceUsage {
 	runtime.ReadMemStats(&memStats)
 
 	return ResourceUsage{
-		NodeID:        rt.nodeID,
-		TotalMemMB:    rt.totalMemMB,
-		UsedMemMB:     rt.usedMemMB,
+		NodeID:         rt.nodeID,
+		TotalMemMB:     rt.totalMemMB,
+		UsedMemMB:      rt.usedMemMB,
 		AvailableMemMB: rt.availMemMB,
-		TotalCPU:      rt.totalCPU,
-		UsedCPU:       rt.usedCPU,
-		AvailableCPU:  rt.availCPU,
-		SandboxCount:  len(rt.sandboxMem),
-		UpdatedAt:     rt.updatedAt,
-		HostMemUsed:   memStats.Alloc / (1024 * 1024),
+		TotalCPU:       rt.totalCPU,
+		UsedCPU:        rt.usedCPU,
+		AvailableCPU:   rt.availCPU,
+		SandboxCount:   len(rt.sandboxMem),
+		UpdatedAt:      rt.updatedAt,
+		HostMemUsed:    memStats.Alloc / (1024 * 1024),
 	}
 }
 
@@ -130,14 +130,14 @@ func (rt *ResourceTracker) Refresh() {
 }
 
 type ResourceUsage struct {
-	NodeID        string
-	TotalMemMB    uint64
-	UsedMemMB     uint64
+	NodeID         string
+	TotalMemMB     uint64
+	UsedMemMB      uint64
 	AvailableMemMB uint64
-	TotalCPU      int
-	UsedCPU       int
-	AvailableCPU  int
-	SandboxCount  int
-	UpdatedAt     time.Time
-	HostMemUsed   uint64
+	TotalCPU       int
+	UsedCPU        int
+	AvailableCPU   int
+	SandboxCount   int
+	UpdatedAt      time.Time
+	HostMemUsed    uint64
 }

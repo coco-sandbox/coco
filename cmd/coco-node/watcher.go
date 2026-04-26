@@ -8,9 +8,9 @@ import (
 )
 
 type NodeResources struct {
-	CPU      float64
-	Memory   int64
-	Disk     int64
+	CPU       float64
+	Memory    int64
+	Disk      int64
 	Sandboxes int
 }
 

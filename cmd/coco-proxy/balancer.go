@@ -50,7 +50,7 @@ func (wb *WeightedBalancer) SelectBackend() *Backend {
 
 type LeastConnectionsBalancer struct {
 	backends []*Backend
-	mu        sync.Mutex
+	mu       sync.Mutex
 }
 
 func NewLeastConnectionsBalancer() *LeastConnectionsBalancer {

@@ -7,10 +7,10 @@ import (
 )
 
 var (
-	ErrNotFound     = errors.New("visor not found")
-	ErrPoolFull     = errors.New("pool is full")
-	ErrAlreadyExists = errors.New("visor already exists")
-	ErrNotRunning   = errors.New("visor not running")
+	ErrNotFound       = errors.New("visor not found")
+	ErrPoolFull       = errors.New("pool is full")
+	ErrAlreadyExists  = errors.New("visor already exists")
+	ErrNotRunning     = errors.New("visor not running")
 	ErrAlreadyRunning = errors.New("visor already running")
 )
 

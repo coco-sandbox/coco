@@ -15,11 +15,11 @@ const (
 )
 
 type APIKey struct {
-	Key       string    `json:"key"`
-	Name      string    `json:"name"`
-	TenantID  string    `json:"tenant_id"`
-	Roles     []Role    `json:"roles"`
-	Expires   int64     `json:"expires,omitempty"`
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	TenantID string `json:"tenant_id"`
+	Roles    []Role `json:"roles"`
+	Expires  int64  `json:"expires,omitempty"`
 }
 
 type ClusterInfo struct {
