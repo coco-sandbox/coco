@@ -102,6 +102,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		handler = middleware.RateLimit(rateLimiter)(handler)
 	}
 	handler = middleware.Auth(auth, auditLogger)(handler)
+	handler = middleware.Tracing(handler)
 	handler = middleware.Logging(middleware.NewLogger())(handler)
 
 	server := &http.Server{
