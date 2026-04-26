@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/coco-sandbox/coco/pkg/api"
 )
 
 // Template represents a VM template
@@ -44,12 +46,11 @@ func NewTemplateHandler(service TemplateService) *TemplateHandler {
 func (h *TemplateHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	templates, err := h.service.List()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		api.WriteInternalError(w, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"items": templates,
 		"total": len(templates),
 	})
@@ -59,12 +60,11 @@ func (h *TemplateHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateHandler) HandleGet(w http.ResponseWriter, r *http.Request, id string) {
 	tpl, err := h.service.Get(id)
 	if err != nil {
-		http.Error(w, "template not found", http.StatusNotFound)
+		api.WriteNotFound(w, "template not found")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tpl)
+	writeJSON(w, http.StatusOK, tpl)
 }
 
 // HandleCreate handles POST /v1/templates
@@ -79,12 +79,12 @@ func (h *TemplateHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		api.WriteBadRequest(w, fmt.Sprintf("invalid request: %v", err))
 		return
 	}
 
 	if req.Name == "" || req.Rootfs == "" || req.Kernel == "" {
-		http.Error(w, "name, rootfs, and kernel are required", http.StatusBadRequest)
+		api.WriteBadRequest(w, "name, rootfs, and kernel are required")
 		return
 	}
 
@@ -109,19 +109,17 @@ func (h *TemplateHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.service.Create(tpl)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		api.WriteInternalError(w, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(created)
+	writeJSON(w, http.StatusCreated, created)
 }
 
 // HandleDelete handles DELETE /v1/templates/:id
 func (h *TemplateHandler) HandleDelete(w http.ResponseWriter, r *http.Request, id string) {
 	if err := h.service.Delete(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		api.WriteInternalError(w, err.Error())
 		return
 	}
 

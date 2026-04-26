@@ -35,15 +35,17 @@ func unimplemented() error {
 
 type MasterServer struct {
 	sched         *scheduler.Scheduler
+	fm            *FailoverManager
 	sandboxToNode map[string]string
 	sandboxStates map[string]v1.SandboxState
 	mu            sync.RWMutex
 	election      *Election
 }
 
-func NewMasterServer(sched *scheduler.Scheduler) *MasterServer {
+func NewMasterServer(sched *scheduler.Scheduler, fm *FailoverManager) *MasterServer {
 	return &MasterServer{
 		sched:         sched,
+		fm:            fm,
 		sandboxToNode: make(map[string]string),
 		sandboxStates: make(map[string]v1.SandboxState),
 	}
@@ -201,9 +203,52 @@ func (s *MasterServer) UpdateSandboxState(ctx context.Context, req *connect.Requ
 }
 
 func (s *MasterServer) InitiateFailover(ctx context.Context, req *connect.Request[v1.InitiateFailoverRequest]) (*connect.Response[v1.InitiateFailoverResponse], error) {
-	return nil, unimplemented()
+	if !s.IsLeader() {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("not leader"))
+	}
+	nodeID := req.Msg.GetFailedNodeId()
+	if nodeID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("failed_node_id is required"))
+	}
+
+	// Verify node exists
+	if _, err := s.sched.GetNode(nodeID); err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("node %s not found: %w", nodeID, err))
+	}
+
+	// Register node failure; FailoverManager tracks node and triggers restore loop
+	s.fm.RegisterNodeFailure(nodeID)
+
+	// Collect sandboxes on this node and register each with FailoverManager
+	s.mu.RLock()
+	var toMigrate []string
+	for sandboxID, sandboxNode := range s.sandboxToNode {
+		if sandboxNode == nodeID {
+			s.fm.RegisterSandboxFailure(sandboxID, nodeID)
+			toMigrate = append(toMigrate, sandboxID)
+		}
+	}
+	s.mu.RUnlock()
+
+	return connect.NewResponse(&v1.InitiateFailoverResponse{
+		Success:            true,
+		SandboxesToMigrate:  toMigrate,
+		MigrationCount:     int32(len(toMigrate)),
+	}), nil
 }
 
 func (s *MasterServer) GetFailoverStatus(ctx context.Context, req *connect.Request[v1.GetFailoverStatusRequest]) (*connect.Response[v1.GetFailoverStatusResponse], error) {
-	return nil, unimplemented()
+	nodeID := req.Msg.GetNodeId()
+	if nodeID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("node_id is required"))
+	}
+
+	state, migrated, pending := s.fm.GetNodeFailoverStatus(nodeID)
+
+	return connect.NewResponse(&v1.GetFailoverStatusResponse{
+		NodeId:             nodeID,
+		State:              state,
+		SandboxesMigrated:  migrated,
+		SandboxesPending:   pending,
+	}), nil
 }

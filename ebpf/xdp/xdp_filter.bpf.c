@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The Coco Sandbox Authors
 
 #include <linux/bpf.h>
+#include <linux/icmp.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
@@ -20,7 +21,7 @@ int xdp_filter_prog(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
 
     struct ethhdr *eth = data;
-    if (eth + 1 > data_end)
+    if ((void *)(eth + 1) > data_end)
         return XDP_DROP;
 
     __u16 proto = bpf_ntohs(eth->h_proto);

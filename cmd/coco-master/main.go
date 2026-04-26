@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
+	"github.com/coco-sandbox/coco/pkg/checkpoint"
 	"github.com/coco-sandbox/coco/pkg/cluster"
 	"github.com/coco-sandbox/coco/pkg/config"
 	"github.com/coco-sandbox/coco/pkg/metrics"
@@ -41,7 +42,18 @@ func main() {
 
 func run(ctx context.Context, cfg *config.Config) error {
 	sched := scheduler.NewScheduler()
-	masterServer := NewMasterServer(sched)
+
+	// Initialize checkpoint store and manager for failover
+	cpStore, err := checkpoint.NewStore("/var/lib/coco/checkpoints")
+	if err != nil {
+		return fmt.Errorf("failed to create checkpoint store: %w", err)
+	}
+	cpManager := checkpoint.NewCheckpointManager("/var/lib/coco/checkpoints", cpStore)
+
+	fm := NewFailoverManager(sched, cpManager)
+	go fm.Start(ctx)
+
+	masterServer := NewMasterServer(sched, fm)
 
 	if len(cfg.EtcdEndpoints) > 0 {
 		election, err := NewElection(cfg.EtcdEndpoints, nil, nil)

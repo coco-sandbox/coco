@@ -8,6 +8,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/coco-sandbox/coco/pkg/api"
 )
 
 var ErrUnauthorized = errors.New("unauthorized")
@@ -98,7 +100,7 @@ func Auth(auth Authenticator, audit *AuditLogger) func(http.Handler) http.Handle
 				if audit != nil {
 					audit.LogAuthFailure("", sourceIP, err.Error())
 				}
-				http.Error(w, err.Error(), http.StatusUnauthorized)
+				api.WriteUnauthorized(w, err.Error())
 				return
 			}
 

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
 	"github.com/coco-sandbox/coco/pkg/scheduler"
 )
 
@@ -211,4 +212,45 @@ func (f *FailoverManager) SetNodeFailureHandler(handler func(nodeID string)) {
 
 func (f *FailoverManager) SetSandboxFailureHandler(handler func(sandboxID, nodeID string)) {
 	f.onSandboxFail = handler
+}
+
+// GetNodeFailoverStatus returns the failover state for a specific node.
+// Returns the state, migrated/pending sandbox counts, and timestamps.
+func (f *FailoverManager) GetNodeFailoverStatus(nodeID string) (state v1.FailoverState, migrated, pending int32) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	node, ok := f.nodes[nodeID]
+	if !ok {
+		return v1.FailoverState_FAILOVER_STATE_HEALTHY, 0, 0
+	}
+
+	var pendingCount int32
+	for _, sb := range f.sandboxes {
+		if sb.NodeID == nodeID {
+			pendingCount++
+		}
+	}
+
+	if pendingCount > 0 {
+		return v1.FailoverState_FAILOVER_STATE_RECOVERING, 0, pendingCount
+	}
+	if node.Retries >= f.maxRetries {
+		return v1.FailoverState_FAILOVER_STATE_FAILED, 0, 0
+	}
+	return v1.FailoverState_FAILOVER_STATE_DEGRADED, 0, 0
+}
+
+// GetSandboxesOnNode returns IDs of sandboxes on the given node that have checkpoints.
+func (f *FailoverManager) GetSandboxesOnNode(nodeID string) []string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	var result []string
+	for _, sb := range f.sandboxes {
+		if sb.NodeID == nodeID && sb.HasCheckpoint {
+			result = append(result, sb.ID)
+		}
+	}
+	return result
 }

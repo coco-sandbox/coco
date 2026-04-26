@@ -60,3 +60,15 @@ func WriteInternalError(w http.ResponseWriter, message string) {
 func WriteServiceUnavailable(w http.ResponseWriter, message string) {
 	WriteError(w, ErrUnavailable, message, "", http.StatusServiceUnavailable)
 }
+
+func WriteResourceExhausted(w http.ResponseWriter, message string) {
+	WriteError(w, ErrResourceExhausted, message, "", http.StatusTooManyRequests)
+}
+
+func WriteAlreadyExists(w http.ResponseWriter, message string) {
+	WriteError(w, ErrAlreadyExists, message, "", http.StatusConflict)
+}
+
+func WriteTimeout(w http.ResponseWriter, message string) {
+	WriteError(w, ErrTimeout, message, "", http.StatusGatewayTimeout)
+}

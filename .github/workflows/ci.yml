@@ -21,44 +21,34 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-          cache-dependency-path: |
-            core/go.sum
-            ctl/go.sum
+          cache-dependency-path: go.sum
 
       - name: Go fmt
-        run: |
-          cd core && go fmt ./...
-          cd ../ctl && go fmt ./...
+        run: go fmt ./...
 
       - name: Go vet
-        run: |
-          cd core && go vet ./...
-          cd ../ctl && go vet ./...
+        run: go vet ./...
 
       - name: Build
-        run: |
-          cd core && go build -o coco-core .
-          cd ../ctl && go build -o cococtl .
+        run: make build-go
 
       - name: Run tests
-        run: |
-          cd core && go test -v -race -coverprofile=coverage.out ./...
-          cd ../ctl && go test -v ./...
+        run: make test-go
 
       - name: Build release binaries
         run: |
-          cd core && GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o coco-core .
-          cd ../ctl && GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o cococtl .
-          ls -la coco-core cococtl
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/coco-gateway ./cmd/coco-gateway
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/coco-master ./cmd/coco-master
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/coco-node ./cmd/coco-node
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/cococtl ./cmd/cococtl
+          ls -la bin/
 
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: go-coverage
-          path: |
-            core/coverage.out
-            ctl/coverage.out
+          path: coverage.out
           retention-days: 7
 
       - name: Upload release binaries
@@ -66,9 +56,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: go-binaries
-          path: |
-            core/coco-core
-            ctl/cococtl
+          path: bin/
           retention-days: 7
 
   zig:
@@ -79,31 +67,15 @@ jobs:
 
       - name: Check formatting
         run: |
-          zig fmt --check src/cocovisor/
-          zig fmt --check src/coconet/
-          zig fmt --check src/cocofork/
-          zig fmt --check src/cocod/
+          zig fmt --check daemon/coco-visor/src/
+          zig fmt --check daemon/coco-agent/src/
+          zig fmt --check daemon/coco-fork/src/
 
       - name: Build release
-        run: |
-          cd src/cocovisor && zig build -Drelease-safe
-          cd src/coconet && zig build -Drelease-safe
-          cd src/cocofork && zig build -Drelease-safe
-          cd src/cocod && zig build -Drelease-safe
-
-      - name: Build debug
-        run: |
-          cd src/cocovisor && zig build
-          cd src/coconet && zig build
-          cd src/cocofork && zig build
-          cd src/cocod && zig build
+        run: make build-zig
 
       - name: Test
-        run: |
-          cd src/cocovisor && zig build test
-          cd src/coconet && zig build test
-          cd src/cocofork && zig build test
-          cd src/cocod && zig build test
+        run: make test-zig
 
       - name: Upload release binaries
         if: always()
@@ -111,10 +83,9 @@ jobs:
         with:
           name: zig-binaries
           path: |
-            src/cocovisor/zig-out/bin/*
-            src/coconet/zig-out/bin/*
-            src/cocofork/zig-out/bin/*
-            src/cocod/zig-out/bin/*
+            daemon/coco-visor/zig-out/bin/*
+            daemon/coco-agent/zig-out/bin/*
+            daemon/coco-fork/zig-out/bin/*
           retention-days: 7
 
   eBPF:
@@ -129,32 +100,31 @@ jobs:
 
       - name: Compile eBPF programs
         run: |
-          cd c
-          clang -O2 -target bpf -c from_sandbox.bpf.c -o from_sandbox.o
-          clang -O2 -target bpf -c from_world.bpf.c -o from_world.o
-          clang -O2 -target bpf -c xdp_fwd.bpf.c -o xdp_fwd.o
-          llvm-objdump -hdr from_sandbox.o | head -20
-          llvm-objdump -hdr from_world.o | head -20
-          llvm-objdump -hdr xdp_fwd.o | head -20
+          cd ebpf
+          for f in xdp/*.bpf.c from_sandbox/*.bpf.c from_host/*.bpf.c from_world/*.bpf.c shaper/*.bpf.c; do
+            name=$(basename "$f" .bpf.c)
+            clang -O2 -target bpf -c "$f" -o "${name}.o" -Iheaders
+          done
 
       - name: Verify eBPF objects
         run: |
-          file c/from_sandbox.o c/from_world.o c/xdp_fwd.o
-          llvm-objdump -d c/from_sandbox.o | grep -c "^[0-9a-f]" || true
-          llvm-objdump -d c/from_world.o | grep -c "^[0-9a-f]" || true
-          llvm-objdump -d c/xdp_fwd.o | grep -c "^[0-9a-f]" || true
+          cd ebpf
+          file *.o
+          for f in *.o; do
+            llvm-objdump -d "$f" | grep -c "^[0-9a-f]" || true
+          done
 
       - name: Upload eBPF objects
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ebpf-objects
-          path: c/*.o
+          path: ebpf/*.o
           retention-days: 7
 
   docker:
     runs-on: ubuntu-latest
-    needs: [go, zig, eBPF]
+    needs: [go, zig]
     steps:
       - uses: actions/checkout@v4
 
@@ -168,10 +138,49 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push coco-gateway
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: cmd/coco-gateway/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}/coco-gateway:latest
+            ghcr.io/${{ github.repository }}/coco-gateway:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push coco-master
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: cmd/coco-master/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}/coco-master:latest
+            ghcr.io/${{ github.repository }}/coco-master:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push coco-node
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: cmd/coco-node/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}/coco-node:latest
+            ghcr.io/${{ github.repository }}/coco-node:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build and push cocovisor
         uses: docker/build-push-action@v5
         with:
-          context: src/cocovisor
+          context: daemon/coco-visor
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository }}/cocovisor:latest
@@ -180,22 +189,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push coco-core
-        uses: docker/build-push-action@v5
-        with:
-          context: core
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ghcr.io/${{ github.repository }}/coco-core:latest
-            ghcr.io/${{ github.repository }}/coco-core:${{ github.sha }}
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       - name: Build and push cococtl
         uses: docker/build-push-action@v5
         with:
-          context: ctl
+          context: .
+          file: cmd/cococtl/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository }}/cococtl:latest
@@ -224,20 +222,20 @@ jobs:
         run: |
           docker-compose up -d
 
-      - name: Wait for coco-core to be healthy
+      - name: Wait for coco-gateway to be healthy
         run: |
-          echo "Waiting for coco-core to be healthy..."
+          echo "Waiting for coco-gateway to be healthy..."
           for i in $(seq 1 60); do
             if curl -sf http://localhost:4747/health | grep -q '"healthy":true'; then
-              echo "coco-core is healthy after ${i} attempts"
+              echo "coco-gateway is healthy after ${i} attempts"
               exit 0
             fi
             echo "Attempt $i/60: still waiting..."
             sleep 2
           done
-          echo "Timeout waiting for coco-core to be healthy"
+          echo "Timeout waiting for coco-gateway to be healthy"
           curl -v http://localhost:4747/health || true
-          docker-compose logs coco-core || true
+          docker-compose logs || true
           exit 1
 
       - name: Run smoke tests

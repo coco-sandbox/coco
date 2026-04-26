@@ -13,7 +13,7 @@ static inline int parse_eth_protocol(struct xdp_md *ctx, __u8 *protocol) {
     void *data_end = (void *)(long)ctx->data_end;
 
     struct ethhdr *eth = data;
-    if (eth + 1 > data_end)
+    if ((void *)(eth + 1) > data_end)
         return -1;
 
     *protocol = eth->h_proto;
@@ -22,7 +22,7 @@ static inline int parse_eth_protocol(struct xdp_md *ctx, __u8 *protocol) {
 
 static inline int parse_ip_header(struct iphdr **ip_hdr, void *data, void *data_end) {
     struct iphdr *ip = data + sizeof(struct ethhdr);
-    if (ip + 1 > data_end)
+    if ((void *)(ip + 1) > data_end)
         return -1;
 
     *ip_hdr = ip;

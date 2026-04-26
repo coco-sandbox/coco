@@ -4,6 +4,8 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+
+	"github.com/coco-sandbox/coco/pkg/api"
 )
 
 type Recovery struct {
@@ -20,7 +22,7 @@ func (r *Recovery) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer func() {
 		if err := recover(); err != nil {
 			r.logger.Printf("panic recovered: %v\n%s", err, debug.Stack())
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			api.WriteInternalError(w, "internal server error")
 		}
 	}()
 
@@ -34,7 +36,7 @@ func RecoveryMiddleware() func(http.Handler) http.Handler {
 			defer func() {
 				if err := recover(); err != nil {
 					rec.logger.Printf("panic recovered: %v\n%s", err, debug.Stack())
-					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+					api.WriteInternalError(w, "internal server error")
 				}
 			}()
 			next.ServeHTTP(w, r)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/coco-sandbox/coco/pkg/api"
 	"github.com/coco-sandbox/coco/pkg/types"
 	"github.com/coco-sandbox/coco/pkg/visor"
 	"github.com/gorilla/websocket"
@@ -51,7 +52,7 @@ func (h *ExecHandler) HandleExec(w http.ResponseWriter, r *http.Request, sandbox
 
 	var req ExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		api.WriteBadRequest(w, fmt.Sprintf("invalid request: %v", err))
 		return
 	}
 
@@ -71,7 +72,7 @@ func (h *ExecHandler) HandleExec(w http.ResponseWriter, r *http.Request, sandbox
 	// Acquire visor client from pool
 	client, err := h.visorPool.Acquire()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to connect to visor: %v", err), http.StatusServiceUnavailable)
+		api.WriteServiceUnavailable(w, fmt.Sprintf("failed to connect to visor: %v", err))
 		return
 	}
 	defer h.visorPool.Release(client)
@@ -93,7 +94,7 @@ func (h *ExecHandler) HandleExec(w http.ResponseWriter, r *http.Request, sandbox
 	})
 
 	if err != nil {
-		http.Error(w, fmt.Sprintf("exec failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("exec failed: %v", err))
 		return
 	}
 
@@ -103,8 +104,7 @@ func (h *ExecHandler) HandleExec(w http.ResponseWriter, r *http.Request, sandbox
 		ExitCode: int(exitCode),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // HandleStreamingExec handles POST /v1/sandboxes/:id/streaming-exec
@@ -114,7 +114,7 @@ func (h *ExecHandler) HandleStreamingExec(w http.ResponseWriter, r *http.Request
 
 	var req ExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		api.WriteBadRequest(w, fmt.Sprintf("invalid request: %v", err))
 		return
 	}
 
@@ -124,7 +124,7 @@ func (h *ExecHandler) HandleStreamingExec(w http.ResponseWriter, r *http.Request
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		api.WriteInternalError(w, "streaming not supported")
 		return
 	}
 
@@ -144,7 +144,7 @@ func (h *ExecHandler) HandleStreamingExec(w http.ResponseWriter, r *http.Request
 	// Acquire visor client from pool
 	client, err := h.visorPool.Acquire()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to connect to visor: %v", err), http.StatusServiceUnavailable)
+		api.WriteServiceUnavailable(w, fmt.Sprintf("failed to connect to visor: %v", err))
 		return
 	}
 	defer h.visorPool.Release(client)
@@ -194,7 +194,7 @@ var upgrader = websocket.Upgrader{
 func (h *ExecHandler) HandleInteractiveExec(w http.ResponseWriter, r *http.Request, sandboxID string) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("websocket upgrade failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("websocket upgrade failed: %v", err))
 		return
 	}
 	defer conn.Close()
@@ -255,12 +255,12 @@ func (h *ExecHandler) HandleCreateCheckpoint(w http.ResponseWriter, r *http.Requ
 	}
 	var reqBody req
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		api.WriteBadRequest(w, "invalid request")
 		return
 	}
 
 	if h.checkpointClient == nil {
-		http.Error(w, "checkpoint service unavailable", http.StatusServiceUnavailable)
+		api.WriteServiceUnavailable(w, "checkpoint service unavailable")
 		return
 	}
 
@@ -269,12 +269,11 @@ func (h *ExecHandler) HandleCreateCheckpoint(w http.ResponseWriter, r *http.Requ
 		Description: reqBody.Description,
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("create checkpoint failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("create checkpoint failed: %v", err))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // HandleRestoreSandbox handles POST /v1/sandboxes/:id/restore
@@ -284,12 +283,12 @@ func (h *ExecHandler) HandleRestoreSandbox(w http.ResponseWriter, r *http.Reques
 	}
 	var reqBody req
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		api.WriteBadRequest(w, "invalid request")
 		return
 	}
 
 	if h.checkpointClient == nil {
-		http.Error(w, "checkpoint service unavailable", http.StatusServiceUnavailable)
+		api.WriteServiceUnavailable(w, "checkpoint service unavailable")
 		return
 	}
 
@@ -297,27 +296,25 @@ func (h *ExecHandler) HandleRestoreSandbox(w http.ResponseWriter, r *http.Reques
 		CheckpointID: reqBody.CheckpointID,
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("restore checkpoint failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("restore checkpoint failed: %v", err))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // HandleListCheckpoints handles GET /v1/sandboxes/:id/checkpoints
 func (h *ExecHandler) HandleListCheckpoints(w http.ResponseWriter, r *http.Request, sandboxID string) {
 	if h.checkpointClient == nil {
-		http.Error(w, "checkpoint service unavailable", http.StatusServiceUnavailable)
+		api.WriteServiceUnavailable(w, "checkpoint service unavailable")
 		return
 	}
 
 	resp, err := h.checkpointClient.List(r.Context(), sandboxID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("list checkpoints failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("list checkpoints failed: %v", err))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, http.StatusOK, resp)
 }
