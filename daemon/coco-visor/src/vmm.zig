@@ -6,6 +6,10 @@
 
 const std = @import("std");
 
+const clh = @import("clh.zig");
+const CLHClient = clh.CLHClient;
+const CLHError = clh.CLHError;
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -115,16 +119,26 @@ pub const VM = struct {
         std.debug.print("[vmm] Cloud Hypervisor config written to {s}\n", .{config_path});
         std.debug.print("[vmm] API socket: {s}\n", .{api_socket});
 
-        // TODO: Use posix.fork() + posix.execvpeZ() to spawn clh-remote
-        // For now, just simulate a successful boot with mock PID
-        self.pid = 10000 + self.config.vsock_cid * 100;
+        // Connect to Cloud Hypervisor
+        const clh_sock = try std.fmt.allocPrint(std.heap.page_allocator,
+            "/run/coco/vm/{s}/sock", .{self.config.id});
+        defer std.heap.page_allocator.free(clh_sock);
+
+        var clh_client = try CLHClient.connect(clh_sock);
+        defer clh_client.disconnect();
+
+        // Boot VM via Cloud Hypervisor
+        const result = try clh_client.boot(&self.config);
+
+        self.pid = result.pid;
+        self.vsock_cid = result.vsock_cid;
         self.state = .running;
 
         std.debug.print("[vmm] VM {s} booted: pid={d}, cid={d}\n", .{
-            self.config.id, self.pid, self.config.vsock_cid,
+            self.config.id, self.pid, self.vsock_cid,
         });
 
-        return .{ .pid = self.pid, .vsock_cid = self.config.vsock_cid };
+        return result;
     }
 
     fn writeClhConfig(self: *VM, path: []const u8) VMMError!void {
