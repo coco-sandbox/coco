@@ -11,17 +11,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const vmm_module = b.addModule("vmm", .{
-        .root_source_file = b.path("src/vmm.zig"),
-    });
-    const api_module = b.addModule("api", .{
-        .root_source_file = b.path("src/api.zig"),
-    });
-
-    exe.root_module.addImport("vmm", vmm_module);
-    exe.root_module.addImport("api", api_module);
-    api_module.addImport("vmm", vmm_module);
-
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

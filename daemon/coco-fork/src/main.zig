@@ -206,7 +206,6 @@ const ForkManager = struct {
 
     /// pauseVM sends a pause command to the VM via clh-remote
     fn pauseVM(self: *ForkManager, vm_id: []const u8) ForkError!void {
-        _ = self;
         const cmd = std.fmt.allocPrint(self.allocator,
             "clh-remote pause --vm-url unix://{s}/{s}/sock",
             .{VM_SOCK_DIR, vm_id}) catch return error.AllocFailed;
@@ -217,7 +216,6 @@ const ForkManager = struct {
 
     /// resumeVM sends a resume command to the VM via clh-remote
     fn resumeVM(self: *ForkManager, vm_id: []const u8) ForkError!void {
-        _ = self;
         const cmd = std.fmt.allocPrint(self.allocator,
             "clh-remote resume --vm-url unix://{s}/{s}/sock",
             .{VM_SOCK_DIR, vm_id}) catch return error.AllocFailed;
@@ -228,7 +226,6 @@ const ForkManager = struct {
 
     /// createMemorySnapshot saves VM memory to a snapshot file
     fn createMemorySnapshot(self: *ForkManager, vm_id: []const u8, path: []const u8) ForkError!void {
-        _ = self;
         const cmd = std.fmt.allocPrint(self.allocator,
             "clh-remote snapshot-save --vm-url unix://{s}/{s}/sock --snapshot-path {s}",
             .{VM_SOCK_DIR, vm_id, path}) catch return error.AllocFailed;
@@ -239,7 +236,6 @@ const ForkManager = struct {
 
     /// cloneMemory creates a CoW clone of the memory image using reflink
     fn cloneMemory(self: *ForkManager, src: []const u8, dst: []const u8) ForkError!void {
-        _ = self;
         // Use reflink=auto for CoW clone - instant copy, blocks only on write
         const cmd = std.fmt.allocPrint(self.allocator,
             "cp --reflink=auto {s} {s}", .{src, dst}) catch return error.AllocFailed;
@@ -250,7 +246,6 @@ const ForkManager = struct {
 
     /// bootFromSnapshot starts a VM from a snapshot using clh-remote
     fn bootFromSnapshot(self: *ForkManager, vm_id: []const u8, snapshot_path: []const u8) ForkError!void {
-        _ = self;
         const cmd = std.fmt.allocPrint(self.allocator,
             "clh-remote snapshot-restore --vm-url unix://{s}/{s}/sock --snapshot-path {s}",
             .{VM_SOCK_DIR, vm_id, snapshot_path}) catch return error.AllocFailed;

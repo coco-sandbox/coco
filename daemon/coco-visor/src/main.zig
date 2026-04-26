@@ -5,7 +5,7 @@
 //! Listens on /run/coco/visor.sock for boot/exec/destroy/pause/resume requests.
 
 const std = @import("std");
-const vmm = @import("vmm");
+const vmm = @import("vmm.zig");
 
 // =============================================================================
 // Protocol Constants

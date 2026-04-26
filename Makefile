@@ -29,7 +29,6 @@ build-zig:
 	cd daemon/coco-visor && zig build -Doptimize=ReleaseSafe
 	cd daemon/coco-agent && zig build -Doptimize=ReleaseSafe
 	cd daemon/coco-fork && zig build -Doptimize=ReleaseSafe
-	cd daemon/coco-net && zig build -Doptimize=ReleaseSafe
 
 test-go:
 	go test ./pkg/... ./cmd/...
