@@ -251,18 +251,133 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
     const base = @sizeOf(ExecRequest);
 
     const cmd = payload[base..][0..req.cmd_len];
-    const args = payload[base + req.cmd_len ..][0..req.args_len];
-    _ = payload[base + req.cmd_len + req.args_len ..][0..req.env_len]; // env (unused in stub)
-    _ = payload[base + req.cmd_len + req.args_len + req.env_len ..][0..req.working_dir_len]; // working_dir (unused in stub)
+    const args_raw = payload[base + req.cmd_len ..][0..req.args_len];
+    const env_raw = payload[base + req.cmd_len + req.args_len ..][0..req.env_len];
+    const workdir = payload[base + req.cmd_len + req.args_len + req.env_len ..][0..req.working_dir_len];
 
-    std.debug.print("[cocovisor] Exec: {s} args={s}\n", .{ cmd, args });
+    // Parse null-terminated args into a slice
+    var args_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
+    defer args_list.deinit();
+    var arg_start: usize = 0;
+    for (args_raw, 0..) |byte, i| {
+        if (byte == 0) {
+            try args_list.append(args_raw[arg_start..i]);
+            arg_start = i + 1;
+        }
+    }
 
-    // TODO: Use posix.fork() + posix.execvpeZ() for real exec
-    // For skeleton, return mock output
-    const mock_output = "mock exec output";
+    // Parse null-terminated env into key=value pairs
+    var env_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
+    defer env_list.deinit();
+    var env_start: usize = 0;
+    for (env_raw, 0..) |byte, i| {
+        if (byte == 0) {
+            if (env_start < i) {
+                try env_list.append(env_raw[env_start..i]);
+            }
+            env_start = i + 1;
+        }
+    }
 
-    sendExecChunk(sock, 1, mock_output, 0) catch {};
-    sendExecChunk(sock, 3, "", 0) catch {}; // exit chunk
+    std.debug.print("[cocovisor] Exec: {s} with {d} args\n", .{ cmd, args_list.items.len });
+
+    // Create pipes for stdout and stderr
+    var stdout_pipe: [2]std.os.fd_t = undefined;
+    var stderr_pipe: [2]std.os.fd_t = undefined;
+    try std.os.pipe2(&stdout_pipe, .{ .nonblock = true });
+    try std.os.pipe2(&stderr_pipe, .{ .nonblock = true });
+    defer {
+        std.os.close(stdout_pipe[0]);
+        std.os.close(stdout_pipe[1]);
+        std.os.close(stderr_pipe[0]);
+        std.os.close(stderr_pipe[1]);
+    }
+
+    // Fork child process
+    const pid = try std.os.fork();
+    if (pid == 0) {
+        // Child: set up environment and exec
+        std.os.close(stdout_pipe[0]);
+        std.os.close(stderr_pipe[0]);
+
+        // Redirect stdout and stderr
+        try std.os.dup2(stdout_pipe[1], std.os.STDOUT_FILENO);
+        try std.os.dup2(stderr_pipe[1], std.os.STDERR_FILENO);
+        std.os.close(stdout_pipe[1]);
+        std.os.close(stderr_pipe[1]);
+
+        // Set working directory if provided
+        if (workdir.len > 0) {
+            std.os.chdir(workdir) catch {};
+        }
+
+        // Set environment variables
+        for (env_list.items) |env_pair| {
+            const eq_idx = std.mem.indexOfScalar(u8, env_pair, '=') orelse continue;
+            const key = env_pair[0..eq_idx];
+            const value = env_pair[eq_idx + 1..];
+            std.os.setenv(key, value, 1) catch {};
+        }
+
+        // Convert args to null-terminated C strings
+        var argv = std.ArrayList([*:0]const u8).init(std.heap.page_allocator);
+        defer argv.deinit();
+        try argv.append(@ptrCast(cmd));
+        for (args_list.items) |arg| {
+            try argv.append(@ptrCast(arg));
+        }
+        try argv.append(null);
+
+        // Execute the command
+        std.os.execveZ(cmd, argv.items.ptr, env_list.items.ptr.ptr) catch {
+            std.debug.print("[cocovisor] Exec failed for {s}\n", .{cmd});
+            std.os.exit(1);
+        };
+        unreachable;
+    }
+
+    // Parent: close child ends of pipes
+    std.os.close(stdout_pipe[1]);
+    std.os.close(stderr_pipe[1]);
+
+    // Read stdout and stream back
+    var stdout_buf: [4096]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var exit_code: u32 = 0;
+    var stdout_done = false;
+    var stderr_done = false;
+
+    while (!stdout_done or !stderr_done) {
+        // Poll stdout
+        if (!stdout_done) {
+            const n = std.posix.read(stdout_pipe[0], &stdout_buf);
+            if (n) |len| {
+                try sendExecChunk(sock, 1, stdout_buf[0..len], 0);
+            } else |_| {
+                stdout_done = true;
+            }
+        }
+        // Poll stderr
+        if (!stderr_done) {
+            const n = std.posix.read(stderr_pipe[0], &stderr_buf);
+            if (n) |len| {
+                try sendExecChunk(sock, 2, stderr_buf[0..len], 0);
+            } else |_| {
+                stderr_done = true;
+            }
+        }
+    }
+
+    // Wait for child to finish and get exit code
+    var status: c_int = undefined;
+    _ = std.os.waitpid(pid, &status, 0);
+    if (std.os.WIFEXITED(status)) {
+        exit_code = @as(u32, @intCast(std.os.WEXITSTATUS(status)));
+    }
+
+    // Send exit chunk
+    try sendExecChunk(sock, 3, "", exit_code);
+    std.debug.print("[cocovisor] Exec complete: exit_code={d}\n", .{exit_code});
 }
 
 fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {

@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -30,7 +31,7 @@ type server struct {
 	config      *config.Config
 	mux         *http.ServeMux
 	server      *http.Server
-	store       *store.Store
+	store       *store.BadgerStore
 	cluster     *cluster.Manager
 	metrics     *metrics.Metrics
 	templateMgr *template.Manager
@@ -64,10 +65,10 @@ func (s *server) init() error {
 	// Initialize template manager
 	s.templateMgr = template.NewManager(s.config.Templates)
 
-	// Initialize store
-	st, err := store.New(s.config.StoreDir)
+	// Initialize BadgerDB store
+	st, err := store.NewBadgerStore(s.config.StoreDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open store: %w", err)
 	}
 	s.store = st
 
@@ -278,7 +279,7 @@ func handleClusterHealth(w http.ResponseWriter, r *http.Request) {
 // SandboxService implementation
 
 type sandboxService struct {
-	store   *store.Store
+	store   *store.BadgerStore
 	metrics *metrics.Metrics
 }
 
