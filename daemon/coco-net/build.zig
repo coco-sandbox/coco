@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "coconet",
-        .root_source_file = b.path("cmd/main.zig"),
+        .rootSourceFile = b.path("cmd/main.zig"),
         .target = target,
         .optimize = optimize,
     });
