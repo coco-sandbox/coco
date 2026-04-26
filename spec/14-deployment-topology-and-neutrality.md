@@ -48,7 +48,23 @@ Coco stays **neutral**: it is an **engine**; **your** platform (separate repo) c
 
 ---
 
-## 4. Related reading
+## 4. Work distribution for multi-cluster deployments
+
+For deployments that span **multiple Coco clusters** (for example, to achieve geographic distribution or to aggregate capacity from community contributors), the **platform layer** (a separate repository) handles:
+
+| Concern | Where it lives | Coco core responsibility |
+|---------|---------------|------------------------|
+| **Work queue** | External system (Redis, RabbitMQ, Kafka, etc.) | Not part of Coco |
+| **Routing** | Platform layer decides which cluster handles a request | Only schedules within one cluster |
+| **Node allowlisting** | Platform layer validates and approves node operators | Node registration happens via Master (per `07-cluster.md`) |
+| **Reputation / scoring** | Platform layer policy | Not part of Coco |
+| **Payment / incentives** | Platform layer | Not part of Coco |
+
+The platform layer calls the **Gateway API** of one or more Coco clusters. Each cluster operates independently with its own Master and etcd. This architecture keeps Coco **neutral** and **simple**: it provides isolation and execution; the platform decides *who* runs *where*.
+
+---
+
+## 5. Related reading
 
 | Topic | Document |
 |-------|----------|
