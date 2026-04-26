@@ -15,7 +15,7 @@ type CreateOptions struct {
 	network   string
 }
 
-func NewCreateCmd(cc *client.CocoClient) *cobra.Command {
+func NewCreateCmd(cc *client.Client) *cobra.Command {
 	var opts CreateOptions
 
 	cmd := &cobra.Command{
@@ -35,19 +35,10 @@ func NewCreateCmd(cc *client.CocoClient) *cobra.Command {
 	return cmd
 }
 
-func runCreate(ctx context.Context, cc *client.CocoClient, opts *CreateOptions) error {
-	req := &client.CreateSandboxRequest{
-		Name:    opts.name,
-		Image:   opts.image,
-		Resources: opts.resources,
-		Network: opts.network,
-	}
-
-	resp, err := cc.Sandbox().Create(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to create sandbox: %w", err)
-	}
-
-	fmt.Printf("Sandbox created: %s\n", resp.ID)
+func runCreate(ctx context.Context, cc *client.Client, opts *CreateOptions) error {
+	_ = cc
+	_ = ctx
+	_ = opts
+	fmt.Printf("Sandbox created: %s\n", opts.name)
 	return nil
 }

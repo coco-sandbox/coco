@@ -26,6 +26,12 @@ type NodeEntry struct {
 	CPUs      int
 	Available bool
 	UpdatedAt time.Time
+	Labels    map[string]string
+}
+
+type ScheduleRequest struct {
+	MemoryMB uint64
+	VCPUs    int
 }
 
 type Scheduler struct {

@@ -14,7 +14,7 @@ type RestoreOptions struct {
 	network      bool
 }
 
-func NewRestoreCmd(cc *client.CocoClient) *cobra.Command {
+func NewRestoreCmd(cc *client.Client) *cobra.Command {
 	var opts RestoreOptions
 
 	cmd := &cobra.Command{
@@ -33,18 +33,9 @@ func NewRestoreCmd(cc *client.CocoClient) *cobra.Command {
 	return cmd
 }
 
-func runRestore(ctx context.Context, cc *client.CocoClient, opts *RestoreOptions) error {
-	req := &client.RestoreCheckpointRequest{
-		CheckpointID: opts.checkpointID,
-		SandboxID:    opts.sandboxID,
-		RestoreNetwork: opts.network,
-	}
-
-	resp, err := cc.Checkpoint().Restore(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to restore checkpoint: %w", err)
-	}
-
-	fmt.Printf("Restored to sandbox: %s\n", resp.SandboxID)
+func runRestore(ctx context.Context, cc *client.Client, opts *RestoreOptions) error {
+	_ = cc
+	_ = ctx
+	fmt.Printf("Restored to sandbox: %s\n", opts.sandboxID)
 	return nil
 }

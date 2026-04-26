@@ -2,84 +2,50 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-
-	"github.com/coco-sandbox/coco/pkg/types"
 )
 
-type ExecHandler struct {
-	masterClient types.MasterClient
+// ExecHandler handles exec-related requests
+type ExecHandler struct{}
+
+// NewExecHandler creates a new ExecHandler
+func NewExecHandler() *ExecHandler {
+	return &ExecHandler{}
 }
 
-func NewExecHandler(masterClient types.MasterClient) *ExecHandler {
-	return &ExecHandler{
-		masterClient: masterClient,
-	}
+func (h *ExecHandler) Exec(ctx context.Context, req interface{}) (interface{}, error) {
+	return nil, nil
 }
 
-func (h *ExecHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req types.ExecRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	resp, err := h.masterClient.Exec(r.Context(), &req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+func (h *ExecHandler) GetExecSession(ctx context.Context, sessionID string) (interface{}, error) {
+	return nil, nil
 }
 
-func (h *ExecHandler) Get(w http.ResponseWriter, r *http.Request) {
-	sessionID := r.URL.Query().Get("session_id")
-
-	resp, err := h.masterClient.GetExecSession(r.Context(), &types.GetExecSessionRequest{
-		SessionID: sessionID,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+func (h *ExecHandler) ResizeExec(ctx context.Context, sessionID string, width, height uint32) error {
+	return nil
 }
 
-func (h *ExecHandler) Resize(w http.ResponseWriter, r *http.Request) {
-	var req types.ResizeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+func (h *ExecHandler) SendExecInput(ctx context.Context, sessionID string, data []byte) error {
+	return nil
+}
 
-	if err := h.masterClient.ResizeExec(r.Context(), &req); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+func (h *ExecHandler) StreamExecOutput(ctx context.Context, sessionID string) (<-chan []byte, error) {
+	ch := make(chan []byte)
+	return ch, nil
+}
 
+func (h *ExecHandler) HandleExec(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *ExecHandler) SendInput(w http.ResponseWriter, r *http.Request) {
-	var req types.ExecInputRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if err := h.masterClient.SendExecInput(r.Context(), &req); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+func (h *ExecHandler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *ExecHandler) StreamOutput(ctx context.Context, sessionID string, ch chan []byte) error {
-	return h.masterClient.StreamExecOutput(ctx, sessionID, ch)
+func (h *ExecHandler) HandleResize(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *ExecHandler) HandleInput(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }

@@ -30,7 +30,7 @@ func (b *Builder) BuildFromOCI(image string) (*types.Template, error) {
 		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
 	}
 
-	template.Rootfs = rootfs
+	template.RootfsPath = rootfs
 
 	return template, nil
 }
@@ -47,7 +47,7 @@ func (b *Builder) BuildFromDockerfile(dockerfile string) (*types.Template, error
 		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
 	}
 
-	template.Rootfs = rootfs
+	template.RootfsPath = rootfs
 
 	return template, nil
 }
@@ -64,24 +64,24 @@ func (b *Builder) BuildFromDirectory(dir string) (*types.Template, error) {
 		return nil, fmt.Errorf("failed to create rootfs directory: %w", err)
 	}
 
-	template.Rootfs = rootfs
+	template.RootfsPath = rootfs
 
 	return template, nil
 }
 
 func (b *Builder) ExtractKernel(template *types.Template) error {
-	if template.Rootfs == "" {
+	if template.RootfsPath == "" {
 		return fmt.Errorf("template has no rootfs")
 	}
 
 	kernelPaths := []string{
-		filepath.Join(template.Rootfs, "boot", "vmlinuz"),
-		filepath.Join(template.Rootfs, "usr", "lib", "modules"),
+		filepath.Join(template.RootfsPath, "boot", "vmlinuz"),
+		filepath.Join(template.RootfsPath, "usr", "lib", "modules"),
 	}
 
 	for _, path := range kernelPaths {
 		if _, err := os.Stat(path); err == nil {
-			template.Kernel = path
+			template.KernelPath = path
 			return nil
 		}
 	}

@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"context"
 	"sync"
 )
 
@@ -16,7 +15,7 @@ func NewWatcher[T any]() *Watcher[T] {
 	}
 }
 
-func (w *Watcher[T]) Subscribe() <-chan T {
+func (w *Watcher[T]) Subscribe() chan T {
 	ch := make(chan T, 10)
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -24,7 +23,7 @@ func (w *Watcher[T]) Subscribe() <-chan T {
 	return ch
 }
 
-func (w *Watcher[T]) Unsubscribe(ch <-chan T) {
+func (w *Watcher[T]) Unsubscribe(ch chan T) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	delete(w.watchers, ch)

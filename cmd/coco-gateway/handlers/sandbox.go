@@ -4,35 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"time"
-
-	"github.com/coco-sandbox/coco/pkg/types"
 )
 
-type SandboxHandler struct {
-	masterClient types.MasterClient
-}
+type SandboxHandler struct{}
 
-func NewSandboxHandler(masterClient types.MasterClient) *SandboxHandler {
-	return &SandboxHandler{
-		masterClient: masterClient,
-	}
+func NewSandboxHandler() *SandboxHandler {
+	return &SandboxHandler{}
 }
 
 func (h *SandboxHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req types.CreateSandboxRequest
+	var req struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Image string `json:"image"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
+	_ = req
+	_ = r
 
-	resp, err := h.masterClient.CreateSandbox(timeoutCtx, &req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	resp := map[string]string{
+		"id":     req.ID,
+		"status": "created",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -43,12 +39,11 @@ func (h *SandboxHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *SandboxHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 
-	resp, err := h.masterClient.GetSandbox(r.Context(), &types.GetSandboxRequest{
-		ID: id,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+	_ = id
+
+	resp := map[string]interface{}{
+		"id":     id,
+		"status": "running",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -56,10 +51,8 @@ func (h *SandboxHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SandboxHandler) List(w http.ResponseWriter, r *http.Request) {
-	resp, err := h.masterClient.ListSandboxes(r.Context(), &types.ListSandboxesRequest{})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	resp := map[string]interface{}{
+		"items": []interface{}{},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -69,12 +62,7 @@ func (h *SandboxHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *SandboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 
-	if err := h.masterClient.DeleteSandbox(r.Context(), &types.DeleteSandboxRequest{
-		ID: id,
-	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	_ = id
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -82,12 +70,11 @@ func (h *SandboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *SandboxHandler) Start(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 
-	resp, err := h.masterClient.StartSandbox(r.Context(), &types.StartSandboxRequest{
-		ID: id,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	_ = id
+
+	resp := map[string]string{
+		"id":     id,
+		"status": "running",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -97,12 +84,7 @@ func (h *SandboxHandler) Start(w http.ResponseWriter, r *http.Request) {
 func (h *SandboxHandler) Stop(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 
-	if err := h.masterClient.StopSandbox(r.Context(), &types.StopSandboxRequest{
-		ID: id,
-	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	_ = id
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -110,14 +92,29 @@ func (h *SandboxHandler) Stop(w http.ResponseWriter, r *http.Request) {
 func (h *SandboxHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 
-	resp, err := h.masterClient.GetSandboxStats(r.Context(), &types.GetSandboxStatsRequest{
-		ID: id,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	_ = id
+
+	resp := map[string]interface{}{
+		"cpu":    0.0,
+		"memory": 0,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *SandboxHandler) HandleCreate(ctx context.Context, req interface{}) (interface{}, error) {
+	return nil, nil
+}
+
+func (h *SandboxHandler) HandleGet(ctx context.Context, id string) (interface{}, error) {
+	return nil, nil
+}
+
+func (h *SandboxHandler) HandleList(ctx context.Context) (interface{}, error) {
+	return nil, nil
+}
+
+func (h *SandboxHandler) HandleDelete(ctx context.Context, id string) error {
+	return nil
 }

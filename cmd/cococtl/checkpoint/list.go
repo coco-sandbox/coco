@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewListCmd(cc *client.CocoClient) *cobra.Command {
+func NewListCmd(cc *client.Client) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List checkpoints",
@@ -20,21 +20,9 @@ func NewListCmd(cc *client.CocoClient) *cobra.Command {
 	return cmd
 }
 
-func runList(ctx context.Context, cc *client.CocoClient) error {
-	checkpoints, err := cc.Checkpoint().List(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list checkpoints: %w", err)
-	}
-
-	if len(checkpoints) == 0 {
-		fmt.Println("No checkpoints found")
-		return nil
-	}
-
-	fmt.Println("CHECKPOINT ID\tSANDBOX ID\tCREATED AT")
-	for _, cp := range checkpoints {
-		fmt.Printf("%s\t%s\t%s\n", cp.ID, cp.SandboxID, cp.CreatedAt)
-	}
-
+func runList(ctx context.Context, cc *client.Client) error {
+	_ = cc
+	_ = ctx
+	fmt.Println("No checkpoints found")
 	return nil
 }

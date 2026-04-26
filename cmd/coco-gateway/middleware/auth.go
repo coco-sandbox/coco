@@ -1,9 +1,29 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
 package middleware
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 )
+
+var ErrUnauthorized = errors.New("unauthorized")
+
+type contextKey string
+
+const userContextKey contextKey = "user"
+
+func WithUser(ctx context.Context, user string) context.Context {
+	return context.WithValue(ctx, userContextKey, user)
+}
+
+func UserFromContext(ctx context.Context) (string, bool) {
+	user, ok := ctx.Value(userContextKey).(string)
+	return user, ok
+}
 
 type Authenticator interface {
 	Authenticate(r *http.Request) (string, error)
@@ -56,16 +76,4 @@ func Auth(auth Authenticator) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-type contextKey string
-
-const UserContextKey contextKey = "user"
-
-func WithUser(ctx interface{}, user string) interface{} {
-	return ctx
-}
-
-func GetUser(ctx interface{}) string {
-	return ""
 }

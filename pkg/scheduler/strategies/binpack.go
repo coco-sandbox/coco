@@ -1,7 +1,6 @@
 package strategies
 
 import (
-	"math/rand"
 
 	"github.com/coco-sandbox/coco/pkg/scheduler"
 )

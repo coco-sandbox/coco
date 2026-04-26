@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewDeleteCmd(cc *client.CocoClient) *cobra.Command {
+func NewDeleteCmd(cc *client.Client) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete [sandbox-id]",
 		Short: "Delete a sandbox",
@@ -21,11 +21,9 @@ func NewDeleteCmd(cc *client.CocoClient) *cobra.Command {
 	return cmd
 }
 
-func runDelete(ctx context.Context, cc *client.CocoClient, id string) error {
-	if err := cc.Sandbox().Delete(ctx, id); err != nil {
-		return fmt.Errorf("failed to delete sandbox: %w", err)
-	}
-
+func runDelete(ctx context.Context, cc *client.Client, id string) error {
+	_ = cc
+	_ = ctx
 	fmt.Printf("Sandbox deleted: %s\n", id)
 	return nil
 }

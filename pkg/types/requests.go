@@ -3,7 +3,11 @@
 
 package types
 
-import "time"
+import (
+	"context"
+
+	"time"
+)
 
 type CreateSandboxResponse struct {
 	Sandbox *Sandbox `json:"sandbox"`
@@ -13,8 +17,35 @@ type GetSandboxRequest struct {
 	ID string `json:"id"`
 }
 
+type GetSandboxStatsRequest struct {
+	ID string `json:"id"`
+}
+
+type GetSandboxStatsResponse struct {
+	ID        string `json:"id"`
+	MemoryMB  uint64 `json:"memory_mb"`
+	VCPUs     int32  `json:"vcpus"`
+	UptimeSec int64  `json:"uptime_sec"`
+}
+
 type GetSandboxResponse struct {
 	Sandbox *Sandbox `json:"sandbox"`
+}
+
+type ListSandboxesRequest struct {
+	Limit  int      `json:"limit"`
+	Offset int      `json:"offset"`
+	Filter string   `json:"filter"`
+	Labels []string `json:"labels"`
+}
+
+type StartSandboxRequest struct {
+	ID string `json:"id"`
+}
+
+type StopSandboxRequest struct {
+	ID      string `json:"id"`
+	Timeout int    `json:"timeout"`
 }
 
 type ListSandboxesResponse struct {
@@ -134,6 +165,65 @@ type BuildTemplateRequest struct {
 type BuildTemplateResponse struct {
 	BuildID string `json:"build_id"`
 	Status  string `json:"status"`
+}
+
+// =============================================================================
+// Master Client Interface (used by gateway handlers)
+// =============================================================================
+
+// MasterClient is the interface for the master service client
+type MasterClient interface {
+	CreateSandbox(ctx context.Context, req *CreateSandboxRequest) (*GetSandboxResponse, error)
+	GetSandbox(ctx context.Context, req *GetSandboxRequest) (*GetSandboxResponse, error)
+	GetSandboxStats(ctx context.Context, req *GetSandboxStatsRequest) (*GetSandboxStatsResponse, error)
+	ListSandboxes(ctx context.Context, req *ListSandboxesRequest) (*ListSandboxesResponse, error)
+	StartSandbox(ctx context.Context, req *StartSandboxRequest) (*GetSandboxResponse, error)
+	StopSandbox(ctx context.Context, req *StopSandboxRequest) (*GetSandboxResponse, error)
+	DeleteSandbox(ctx context.Context, req *DeleteSandboxRequest) (*DeleteSandboxResponse, error)
+	Exec(ctx context.Context, req *ExecRequest) (*ExecResponse, error)
+	GetExecSession(ctx context.Context, req *GetExecSessionRequest) (*GetExecSessionResponse, error)
+	ResizeExec(ctx context.Context, req *ResizeRequest) (*ResizeResponse, error)
+	SendExecInput(ctx context.Context, req *ExecInputRequest) (*ExecInputResponse, error)
+	StreamExecOutput(ctx context.Context, req *ExecOutputRequest) (*ExecOutputResponse, error)
+}
+
+// Response types for MasterClient
+type DeleteSandboxResponse struct{}
+type ExecResponse struct{}
+type ResizeResponse struct{}
+type ExecInputResponse struct{}
+type ExecOutputRequest struct{}
+type ExecOutputResponse struct{}
+
+// =============================================================================
+// Exec Service Types (spec 2.2)
+// =============================================================================
+
+type ExecSession struct {
+	SessionID string `json:"session_id"`
+	SandboxID string `json:"sandbox_id"`
+	PID       int64  `json:"pid"`
+	State     string `json:"state"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+type GetExecSessionRequest struct {
+	SessionID string `json:"session_id"`
+}
+
+type GetExecSessionResponse struct {
+	Session *ExecSession `json:"session"`
+}
+
+type ExecInputRequest struct {
+	SessionID string `json:"session_id"`
+	Data      []byte `json:"data"`
+}
+
+type ResizeRequest struct {
+	SessionID string `json:"session_id"`
+	Width     uint32 `json:"width"`
+	Height    uint32 `json:"height"`
 }
 
 // =============================================================================

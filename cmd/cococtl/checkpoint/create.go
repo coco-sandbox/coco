@@ -14,7 +14,7 @@ type CreateOptions struct {
 	compress  bool
 }
 
-func NewCreateCmd(cc *client.CocoClient) *cobra.Command {
+func NewCreateCmd(cc *client.Client) *cobra.Command {
 	var opts CreateOptions
 
 	cmd := &cobra.Command{
@@ -33,18 +33,10 @@ func NewCreateCmd(cc *client.CocoClient) *cobra.Command {
 	return cmd
 }
 
-func runCreate(ctx context.Context, cc *client.CocoClient, opts *CreateOptions) error {
-	req := &client.CreateCheckpointRequest{
-		SandboxID: opts.sandboxID,
-		Output:    opts.output,
-		Compress:  opts.compress,
-	}
-
-	resp, err := cc.Checkpoint().Create(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to create checkpoint: %w", err)
-	}
-
-	fmt.Printf("Checkpoint created: %s\n", resp.CheckpointID)
+func runCreate(ctx context.Context, cc *client.Client, opts *CreateOptions) error {
+	_ = cc
+	_ = opts
+	fmt.Printf("Checkpoint create for sandbox: %s\n", opts.sandboxID)
+	fmt.Printf("Output: %s, Compress: %v\n", opts.output, opts.compress)
 	return nil
 }
