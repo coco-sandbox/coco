@@ -157,7 +157,17 @@ func (s *Scheduler) binpack(nodes []*NodeEntry) *NodeEntry {
 			selected = node
 			continue
 		}
-		if node.Sandboxes > selected.Sandboxes {
+		if selected.Sandboxes == 0 {
+			selected = node
+			continue
+		}
+		if node.Sandboxes == 0 {
+			continue
+		}
+		const mbPerSandbox = 512
+		selectedFullness := float64(selected.MemMB) / float64(selected.Sandboxes*mbPerSandbox)
+		nodeFullness := float64(node.MemMB) / float64(node.Sandboxes*mbPerSandbox)
+		if nodeFullness > selectedFullness {
 			selected = node
 		}
 	}

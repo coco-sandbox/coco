@@ -126,7 +126,7 @@ func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 
 			rw := &RateLimitResponseWriter{
 				ResponseWriter: w,
-				limit:          100,
+				limit:          int(limiter.capacity),
 				remaining:      remaining,
 				reset:          reset,
 			}
