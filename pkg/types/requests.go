@@ -266,7 +266,7 @@ type CheckpointClient interface {
 }
 
 type RestoreResponse struct {
-	SandboxID string `json:"sandbox_id"`
-	VsockCID  uint32 `json:"vsock_cid"`
-	DurationMs int64 `json:"duration_ms"`
+	SandboxID  string `json:"sandbox_id"`
+	VsockCID   uint32 `json:"vsock_cid"`
+	DurationMs int64  `json:"duration_ms"`
 }

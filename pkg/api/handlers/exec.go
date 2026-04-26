@@ -14,14 +14,14 @@ import (
 
 // ExecHandler handles code execution requests
 type ExecHandler struct {
-	visorPool       *visor.Pool
+	visorPool        *visor.Pool
 	checkpointClient types.CheckpointClient
 }
 
 // NewExecHandler creates a new ExecHandler with the given visor connection pool and checkpoint client
 func NewExecHandler(visorPool *visor.Pool, checkpointClient types.CheckpointClient) *ExecHandler {
 	return &ExecHandler{
-		visorPool:       visorPool,
+		visorPool:        visorPool,
 		checkpointClient: checkpointClient,
 	}
 }

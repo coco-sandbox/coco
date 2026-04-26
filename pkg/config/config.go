@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -39,6 +40,7 @@ type Config struct {
 	RateLimitBurst   int
 
 	AuthEnabled bool
+	APIKeys     map[string]string
 	MTLSEnabled bool
 	TLSCertFile string
 	TLSKeyFile  string
@@ -79,6 +81,7 @@ func Default() *Config {
 		RateLimitRPS:      100,
 		RateLimitBurst:    200,
 		AuthEnabled:       false,
+		APIKeys:           make(map[string]string),
 		MTLSEnabled:       false,
 		MetricsEnabled:    true,
 		MetricsPort:       9090,
@@ -124,6 +127,14 @@ func Load() *Config {
 	}
 	if endpoints := os.Getenv("COCO_ETCD_ENDPOINTS"); endpoints != "" {
 		cfg.EtcdEndpoints = splitCSV(endpoints)
+	}
+	if keys := os.Getenv("COCO_API_KEYS"); keys != "" {
+		for _, pair := range splitCSV(keys) {
+			parts := strings.SplitN(pair, ":", 2)
+			if len(parts) == 2 {
+				cfg.APIKeys[parts[0]] = parts[1]
+			}
+		}
 	}
 
 	return cfg

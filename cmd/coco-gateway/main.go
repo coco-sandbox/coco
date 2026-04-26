@@ -13,8 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
 	"github.com/coco-sandbox/coco/pkg/config"
-	"github.com/coco-sandbox/coco/pkg/middleware"
+	"github.com/coco-sandbox/coco/pkg/metrics"
 )
 
 func main() {
@@ -34,26 +35,40 @@ func main() {
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
+	metrics.Register()
+
+	auth := middleware.NewTokenAuth()
+	for token, user := range cfg.APIKeys {
+		auth.AddToken(token, user)
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"healthy":true}`))
+		http.Redirect(w, r, "/health/live", http.StatusMovedPermanently)
 	})
 
-	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ready":true}`))
+		w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ready"}`))
+	})
+
+	mux.Handle("/metrics", metrics.Handler())
 
 	gw := NewGatewayServer(cfg.MasterAddr, nil)
-	registerRoutes(mux, gw)
+	registerRoutes(mux, gw, auth)
 
-	handler := middleware.RecoveryMiddleware(mux)
-	handler = middleware.CORSMiddleware(handler)
-	handler = middleware.LoggingMiddleware(middleware.LogFunc())(handler)
+	handler := middleware.RecoveryMiddleware()(mux)
+	handler = middleware.CORS(middleware.DefaultCORSConfig())(handler)
+	handler = middleware.Auth(auth)(handler)
+	handler = middleware.Logging(middleware.NewLogger())(handler)
 
 	server := &http.Server{
 		Addr:         cfg.ListenAddr,

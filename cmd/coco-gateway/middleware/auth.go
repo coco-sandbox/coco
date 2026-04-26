@@ -44,6 +44,10 @@ func (t *TokenAuth) AddToken(token, user string) {
 }
 
 func (t *TokenAuth) Authenticate(r *http.Request) (string, error) {
+	if len(t.tokens) == 0 {
+		return "anonymous", nil
+	}
+
 	auth := r.Header.Get("Authorization")
 	if auth == "" {
 		return "", ErrUnauthorized
@@ -64,8 +68,19 @@ func (t *TokenAuth) Authenticate(r *http.Request) (string, error) {
 }
 
 func Auth(auth Authenticator) func(http.Handler) http.Handler {
+	skipPaths := map[string]bool{
+		"/health":       true,
+		"/health/live":  true,
+		"/health/ready": true,
+		"/metrics":      true,
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if skipPaths[r.URL.Path] {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			user, err := auth.Authenticate(r)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusUnauthorized)

@@ -17,6 +17,7 @@ import (
 	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
 	"github.com/coco-sandbox/coco/pkg/cluster"
 	"github.com/coco-sandbox/coco/pkg/config"
+	"github.com/coco-sandbox/coco/pkg/metrics"
 	"github.com/coco-sandbox/coco/pkg/scheduler"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -107,6 +108,22 @@ func run(ctx context.Context, cfg *config.Config) error {
 	mux := http.NewServeMux()
 	path, handler := v1connect.NewMasterServiceHandler(masterServer)
 	mux.Handle(path, handler)
+
+	metrics.Register()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/health/live", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ready"}`))
+	})
+	mux.Handle("/metrics", metrics.Handler())
 
 	httpServer := &http.Server{
 		Addr:    cfg.GRPCAddr,

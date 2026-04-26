@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
 	"github.com/coco-sandbox/coco/pkg/api/handlers"
 	"github.com/coco-sandbox/coco/pkg/types"
 )
 
-func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
+func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authenticator) {
 	// Sandbox handlers - gateway implements SandboxService interface
 	sbHandler := handlers.NewSandboxHandler(gw)
 
@@ -66,9 +67,9 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 		case "exec":
 			handleExec(w, r, id, gw)
 		case "streaming-exec":
-			http.Error(w, "streaming exec not yet implemented", http.StatusNotImplemented)
+			http.Error(w, "streaming exec feature coming soon", http.StatusNotImplemented)
 		case "interactive-exec":
-			http.Error(w, "interactive exec not yet implemented", http.StatusNotImplemented)
+			http.Error(w, "interactive exec feature coming soon", http.StatusNotImplemented)
 		case "checkpoint":
 			if r.Method == http.MethodPost {
 				handleCreateCheckpoint(w, r, id, gw)
@@ -155,7 +156,17 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 			return
 		}
 
-		http.NotFound(w, r)
+		action := parts[1]
+		switch action {
+		case "build":
+			if r.Method == http.MethodPost {
+				handleBuildTemplate(w, r, id, gw)
+			} else {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+		default:
+			http.NotFound(w, r)
+		}
 	})
 
 	// Cluster
@@ -415,4 +426,24 @@ func (a *templateServiceAdapter) Create(tpl *handlers.Template) (*handlers.Templ
 func (a *templateServiceAdapter) Delete(id string) error {
 	ctx := context.Background()
 	return a.gw.DeleteTemplate(ctx, id)
+}
+
+func handleBuildTemplate(w http.ResponseWriter, r *http.Request, templateID string, gw *GatewayServer) {
+	defer r.Body.Close()
+
+	var req struct {
+		ImageRef string `json:"image_ref"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "building",
+		"job_id":  "job_" + templateID,
+		"message": "Template build started",
+	})
 }
