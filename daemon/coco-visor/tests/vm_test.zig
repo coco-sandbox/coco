@@ -70,7 +70,7 @@ test "checkpoint metadata" {
 
 test "fork manager init" {
     const allocator = std.heap.page_allocator;
-    var fm = fork.ForkManager.init(allocator, "/tmp/coco-test");
+    const fm = fork.ForkManager.init(allocator, "/tmp/coco-test");
 
     try testing.expect(fm.base_dir.len > 0);
 }
