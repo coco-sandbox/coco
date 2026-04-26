@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/coco-sandbox/coco/internal/types"
+	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 // SandboxService defines the interface for sandbox operations

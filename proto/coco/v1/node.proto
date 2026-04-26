@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package coco.v1;
+
+option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
+
+import "proto/coco/v1/coco.proto";
+import "google/protobuf/timestamp.proto";
+
+service NodeService {
+  rpc BootSandbox(BootSandboxRequest) returns (BootSandboxResponse);
+  rpc DestroyVM(DestroyVMRequest) returns (DestroyVMResponse);
+  rpc PauseVM(PauseVMRequest) returns (PauseVMResponse);
+  rpc ResumeVM(ResumeVMRequest) returns (ResumeVMResponse);
+  rpc ExecVM(ExecVMRequest) returns (stream ExecChunk);
+  rpc GetNodeStatus(GetNodeStatusRequest) returns (NodeStatus);
+  rpc RegisterNode(NodeInfo) returns (RegisterNodeResponse);
+}
+
+message BootSandboxRequest {
+  string sandbox_id = 1;
+  string template = 2;
+  int32 memory_mb = 3;
+  int32 vcpus = 4;
+}
+
+message BootSandboxResponse {
+  Sandbox sandbox = 1;
+}
+
+message DestroyVMRequest {
+  string sandbox_id = 1;
+}
+
+message DestroyVMResponse {
+}
+
+message PauseVMRequest {
+  string sandbox_id = 1;
+}
+
+message PauseVMResponse {
+}
+
+message ResumeVMRequest {
+  string sandbox_id = 1;
+}
+
+message ResumeVMResponse {
+}
+
+message ExecVMRequest {
+  string sandbox_id = 1;
+  string cmd = 2;
+  repeated string args = 3;
+  repeated string env = 4;
+  string working_dir = 5;
+}
+
+message GetNodeStatusRequest {
+}
+
+message GetNodeStatusResponse {
+  NodeStatus status = 1;
+}
+
+message NodeStatus {
+  string node_id = 1;
+  int32 active_sandboxes = 2;
+  int32 pool_free = 3;
+  uint64 memory_used_mb = 4;
+  int32 cpu_percent = 5;
+  bool healthy = 6;
+  google.protobuf.Timestamp last_update = 7;
+}
+
+message NodeInfo {
+  string node_id = 1;
+  string addr = 2;
+  uint64 memory_mb = 3;
+  int32 cpus = 4;
+  int32 pool_size = 5;
+}
+
+message RegisterNodeResponse {
+  bool success = 1;
+  string message = 2;
+}

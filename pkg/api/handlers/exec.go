@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"coco/pkg/visor"
+	"github.com/coco-sandbox/coco/pkg/visor"
 )
 
 // ExecHandler handles code execution requests

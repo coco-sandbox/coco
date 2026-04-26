@@ -4,12 +4,12 @@
 package store
 
 import (
-    "encoding/json"
-    "fmt"
-    "sync"
+	"encoding/json"
+	"fmt"
+	"sync"
 
-    "github.com/coco-sandbox/coco/internal/types"
-    "github.com/dgraph-io/badger/v4"
+	"github.com/coco-sandbox/coco/pkg/types"
+	"github.com/dgraph-io/badger/v4"
 )
 
 // BadgerStore implements persistent sandbox storage using BadgerDB

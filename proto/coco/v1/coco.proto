@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package coco.v1;
+
+option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
+
+import "google/protobuf/timestamp.proto";
+
+service GatewayService {
+  rpc CreateSandbox(CreateSandboxRequest) returns (CreateSandboxResponse);
+  rpc GetSandbox(GetSandboxRequest) returns (GetSandboxResponse);
+  rpc ListSandboxes(ListSandboxesRequest) returns (ListSandboxesResponse);
+  rpc DeleteSandbox(DeleteSandboxRequest) returns (DeleteSandboxResponse);
+  rpc PauseSandbox(PauseSandboxRequest) returns (PauseSandboxResponse);
+  rpc ResumeSandbox(ResumeSandboxRequest) returns (ResumeSandboxResponse);
+  rpc ForkSandbox(ForkSandboxRequest) returns (ForkSandboxResponse);
+  rpc ExecSandbox(ExecSandboxRequest) returns (stream ExecChunk);
+}
+
+message CreateSandboxRequest {
+  string name = 1;
+  string template = 2;
+  int32 memory_mb = 3;
+  int32 vcpus = 4;
+  map<string, string> labels = 5;
+}
+
+message CreateSandboxResponse {
+  Sandbox sandbox = 1;
+}
+
+message GetSandboxRequest {
+  string id = 1;
+}
+
+message GetSandboxResponse {
+  Sandbox sandbox = 1;
+}
+
+message ListSandboxesRequest {
+}
+
+message ListSandboxesResponse {
+  repeated Sandbox sandboxes = 1;
+}
+
+message DeleteSandboxRequest {
+  string id = 1;
+}
+
+message DeleteSandboxResponse {
+}
+
+message PauseSandboxRequest {
+  string id = 1;
+}
+
+message PauseSandboxResponse {
+}
+
+message ResumeSandboxRequest {
+  string id = 1;
+}
+
+message ResumeSandboxResponse {
+}
+
+message ForkSandboxRequest {
+  string parent_id = 1;
+  string name = 2;
+  map<string, string> labels = 3;
+}
+
+message ForkSandboxResponse {
+  Sandbox sandbox = 1;
+}
+
+message ExecSandboxRequest {
+  string sandbox_id = 1;
+  string cmd = 2;
+  repeated string args = 3;
+  repeated string env = 4;
+  string working_dir = 5;
+  int64 timeout_ms = 6;
+}
+
+message ExecChunk {
+  int32 stream_type = 1;
+  bytes data = 2;
+  int32 exit_code = 3;
+}
+
+message Sandbox {
+  string id = 1;
+  string name = 2;
+  int32 state = 3;
+  string template = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  string host_node = 7;
+  uint32 vsock_cid = 8;
+  int32 pid = 9;
+  int32 memory_mb = 10;
+  int32 vcpus = 11;
+  string parent_id = 12;
+  map<string, string> labels = 13;
+}

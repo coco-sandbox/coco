@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package coco.v1;
+
+option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
+
+// Checkpoint and replay-related messages (placeholder for future implementation)

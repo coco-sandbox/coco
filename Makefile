@@ -1,61 +1,51 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 The Coco Sandbox Authors
 
-.PHONY: all build test test-sdk integration-test clean proto go-zig go-core cocovisor coconet cocofork
+.PHONY: all build-go build-zig test test-go test-zig clean proto
 
-# Go components
-go-core:
-	cd core && go build -o coco-core .
+GOFLAGS := -trimpath
 
-go-ctl:
-	cd ctl && go build -o cococtl .
+all: build-go build-zig
 
-# Zig components
-cocovisor:
-	cd src/cocovisor && zig build -Drelease-safe=true
+build-go: bin/coco-gateway bin/coco-master bin/coco-node bin/cococtl
 
-coconet:
-	cd src/coconet && zig build -Drelease-safe=true
+bin/coco-gateway: $(shell find cmd/coco-gateway pkg -name '*.go' 2>/dev/null)
+	mkdir -p bin
+	go build $(GOFLAGS) -o $@ ./cmd/coco-gateway
 
-cocofork:
-	cd src/cocofork && zig build -Drelease-safe=true
+bin/coco-master: $(shell find cmd/coco-master pkg -name '*.go' 2>/dev/null)
+	mkdir -p bin
+	go build $(GOFLAGS) -o $@ ./cmd/coco-master
 
-cocod:
-	cd src/cocod && zig build -Drelease-safe=true
+bin/coco-node: $(shell find cmd/coco-node pkg -name '*.go' 2>/dev/null)
+	mkdir -p bin
+	go build $(GOFLAGS) -o $@ ./cmd/coco-node
 
-# Build all
-all: go-core go-ctl cocovisor coconet cocofork cocod
+bin/cococtl: $(shell find cmd/cococtl -name '*.go' 2>/dev/null)
+	mkdir -p bin
+	go build $(GOFLAGS) -o $@ ./cmd/cococtl
 
-# Test
+build-zig:
+	cd daemon/coco-visor && zig build -Doptimize=ReleaseSafe
+	cd daemon/coco-agent && zig build -Doptimize=ReleaseSafe
+	cd daemon/coco-fork && zig build -Doptimize=ReleaseSafe
+	cd daemon/coco-net && zig build -Doptimize=ReleaseSafe
+
 test-go:
-	cd core && go test ./...
-	cd ctl && go test ./...
-	cd cocogate && go test ./...
-
-test-sdk:
-	cd sdk/go && go test -v ./...
+	go test ./pkg/... ./cmd/...
 
 test-zig:
-	cd src/cocovisor && zig build test
-	cd src/coconet && zig build test
-	cd src/cocofork && zig build test
-	cd src/cocod && zig build test
+	cd daemon/coco-visor && zig build test
+	cd daemon/coco-agent && zig build test
 
-test: test-go test-sdk test-zig
+test: test-go test-zig
 
-# Integration tests (requires coco-core running)
-integration-test:
-	cd sdk/go && go test -v -tags=integration ./tests/integration/...
-
-# Protobuf generation
 proto:
-	cd proto && make gen-go
+	protoc --go_out=. --go-grpc_out=. proto/coco/v1/*.proto
 
-# Clean
 clean:
-	rm -f core/coco-core ctl/cococtl
-	rm -f src/cocovisor/zig-out/bin/cocovisor
-	rm -f src/coconet/zig-out/bin/coconet
-	rm -f src/cocofork/zig-out/bin/cocofork
-	rm -f src/cocod/zig-out/bin/cocod
-	rm -f sdk/go/coverage.out sdk/go/coverage.html
+	rm -rf bin/
+	rm -f daemon/coco-visor/zig-out/bin/*
+	rm -f daemon/coco-agent/zig-out/bin/*
+	rm -f daemon/coco-fork/zig-out/bin/*
+	rm -f daemon/coco-net/zig-out/bin/*

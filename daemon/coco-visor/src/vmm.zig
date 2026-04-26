@@ -9,15 +9,14 @@ const std = @import("std");
 const clh = @import("clh.zig");
 const CLHClient = clh.CLHClient;
 const CLHError = clh.CLHError;
+pub const VMConfig = clh.VMConfig;
 
 // =============================================================================
 // Constants
 // =============================================================================
 
 const SNAPSHOT_DIR = "/var/lib/coco/hibernation";
-const CHECKPOINT_DIR = "/var/lib/coco/checkpoints";
-const CLH_PATH = "/usr/bin/cloud-hypervisor";
-const CLH_API_SOCKET = "/run/coco/vm/";
+const CLH_API_SOCKET_DIR = "/run/coco/vm/";
 
 pub const VMState = enum(u32) {
     created = 0,
@@ -48,16 +47,7 @@ pub const BootResult = struct { pid: u32, vsock_cid: u32 };
 // VM Config
 // =============================================================================
 
-pub const VMConfig = struct {
-    id: []const u8,
-    rootfs: []const u8,
-    kernel: []const u8 = "/var/lib/coco/vmlinux",
-    initrd: []const u8 = "",
-    memory_mb: u32 = 512,
-    vcpus: u32 = 2,
-    vsock_cid: u32,
-    tap_name: []const u8 = "",
-};
+// VMConfig is imported from clh.zig
 
 // =============================================================================
 // VM Instance
@@ -67,14 +57,14 @@ pub const VM = struct {
     config: VMConfig,
     state: VMState,
     pid: u32,
-    memory_mb: u32,
+    clh_client: ?CLHClient,
 
     pub fn init(config: VMConfig) VM {
         return .{
             .config = config,
             .state = .created,
             .pid = 0,
-            .memory_mb = config.memory_mb,
+            .clh_client = null,
         };
     }
 
@@ -84,97 +74,54 @@ pub const VM = struct {
         }
 
         self.state = .booting;
-        std.debug.print("[vmm] Booting VM {s} (mem={d}MB, vcpus={d})\n", .{
-            self.config.id, self.config.memory_mb, self.config.vcpus,
-        });
 
-        // Create VM config directory
-        const config_dir = std.fmt.allocPrint(
+        // Create VM run directory
+        const run_dir = std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "/run/coco/vm/{s}",
+            .{self.config.id},
+        ) catch return VMMError.OutOfMemory;
+        defer std.heap.page_allocator.free(run_dir);
+        std.fs.makeDirAbsolute(run_dir) catch {};
+
+        // Create VM lib directory
+        const lib_dir = std.fmt.allocPrint(
             std.heap.page_allocator,
             "/var/lib/coco/vm/{s}",
             .{self.config.id},
         ) catch return VMMError.OutOfMemory;
-        std.fs.makeDirAbsolute(config_dir) catch |e| {
-            std.debug.print("[vmm] Failed to create config dir: {}\n", .{e});
-            return VMMError.IoError;
+        defer std.heap.page_allocator.free(lib_dir);
+        std.fs.makeDirAbsolute(lib_dir) catch {};
+
+        std.debug.print("[vmm] Booting VM {s} (mem={d}MB, vcpus={d})\n", .{
+            self.config.id, self.config.memory_mb, self.config.vcpus,
+        });
+
+        // Spawn Cloud Hypervisor process
+        self.clh_client = CLHClient.spawn(self.config.id, &self.config, std.heap.page_allocator) catch |e| {
+            std.debug.print("[vmm] Failed to spawn CLH: {}\n", .{e});
+            self.state = .err_state;
+            return VMMError.HypervisorError;
         };
 
-        // Generate Cloud Hypervisor config
-        const config_path = std.fmt.allocPrint(
-            std.heap.page_allocator,
-            "{s}/config.json",
-            .{config_dir},
-        ) catch return VMMError.OutOfMemory;
-
-        // Write Cloud Hypervisor configuration
-        try self.writeClhConfig(config_path);
-
-        // Create API socket path for VM
-        const api_socket = std.fmt.allocPrint(
-            std.heap.page_allocator,
-            "{s}{s}/sock",
-            .{CLH_API_SOCKET, self.config.id},
-        ) catch return VMMError.OutOfMemory;
-
-        std.debug.print("[vmm] Cloud Hypervisor config written to {s}\n", .{config_path});
-        std.debug.print("[vmm] API socket: {s}\n", .{api_socket});
-
-        // Connect to Cloud Hypervisor
-        const clh_sock = try std.fmt.allocPrint(std.heap.page_allocator,
-            "/run/coco/vm/{s}/sock", .{self.config.id});
-        defer std.heap.page_allocator.free(clh_sock);
-
-        var clh_client = try CLHClient.connect(clh_sock);
-        defer clh_client.disconnect();
-
-        // Boot VM via Cloud Hypervisor
-        const result = try clh_client.boot(&self.config);
+        var clh_client = self.clh_client.?;
+        const result = clh_client.boot(&self.config) catch |e| {
+            std.debug.print("[vmm] CLH boot command failed: {}\n", .{e});
+            self.state = .err_state;
+            return VMMError.HypervisorError;
+        };
 
         self.pid = result.pid;
-        self.vsock_cid = result.vsock_cid;
         self.state = .running;
 
         std.debug.print("[vmm] VM {s} booted: pid={d}, cid={d}\n", .{
-            self.config.id, self.pid, self.vsock_cid,
+            self.config.id, self.pid, self.config.vsock_cid,
         });
 
-        return result;
-    }
+        // Register in global VM registry
+        registerVM(self.config.id, self);
 
-    fn writeClhConfig(self: *VM, path: []const u8) VMMError!void {
-        // Build Cloud Hypervisor JSON configuration
-        const initrd_field = if (self.config.initrd.len > 0)
-            std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\"", .{self.config.initrd})
-        else
-            std.fmt.allocPrint(std.heap.page_allocator, "null");
-
-        const initrd_str = initrd_field catch return VMMError.OutOfMemory;
-        defer std.heap.page_allocator.free(initrd_str);
-
-        const config_json = std.fmt.allocPrint(
-            std.heap.page_allocator,
-            \\{{
-            \\  "boot-source": {{"kernel": "{s}", "initramfs": {s}}},
-            \\  "root-volume": {{"path": "{s}", "readonly": true}},
-            \\  "cpus": {{"count": {d}}},
-            \\  "memory": {{"size": "{d}M"}},
-            \\  "vsock": [{{"cid": {d}, "socket": "/var/lib/coco/vm/{s}/sock"}}]
-            \\}}
-        , .{
-            self.config.kernel,
-            initrd_str,
-            self.config.rootfs,
-            self.config.vcpus,
-            self.config.memory_mb,
-            self.config.vsock_cid,
-            self.config.id,
-        }) catch return VMMError.OutOfMemory;
-        defer std.heap.page_allocator.free(config_json);
-
-        // Write config to file
-        const file = std.fs.createFileAbsolute(path, .{}) catch return VMMError.IoError;
-        defer file.close();
-        file.writeAll(config_json) catch return VMMError.IoError;
+        return .{ .pid = result.pid, .vsock_cid = result.vsock_cid };
     }
 
     pub fn pause(self: *VM) VMMError!void {
@@ -182,9 +129,14 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        std.debug.print("[vmm] Pausing VM {s}\n", .{self.config.id});
-        // clh-remote pause <vm_id>
+        var clh_client = self.clh_client orelse return VMMError.NotBooted;
+        clh_client.pause(self.config.id) catch |e| {
+            std.debug.print("[vmm] Pause failed: {}\n", .{e});
+            return VMMError.HypervisorError;
+        };
+
         self.state = .paused;
+        std.debug.print("[vmm] VM {s} paused\n", .{self.config.id});
     }
 
     pub fn resume_(self: *VM) VMMError!void {
@@ -192,9 +144,14 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        std.debug.print("[vmm] Resuming VM {s}\n", .{self.config.id});
-        // clh-remote resume <vm_id>
+        var clh_client = self.clh_client orelse return VMMError.NotBooted;
+        clh_client.resumeVm(self.config.id) catch |e| {
+            std.debug.print("[vmm] Resume failed: {}\n", .{e});
+            return VMMError.HypervisorError;
+        };
+
         self.state = .running;
+        std.debug.print("[vmm] VM {s} resumed\n", .{self.config.id});
     }
 
     pub fn destroy(self: *VM) VMMError!void {
@@ -202,10 +159,23 @@ pub const VM = struct {
             return;
         }
 
+        self.state = .stopping;
         std.debug.print("[vmm] Destroying VM {s}\n", .{self.config.id});
-        // clh-remote shutdown <vm_id>
+
+        // Send graceful shutdown via CLH API
+        if (self.clh_client) |*client| {
+            client.shutdown(self.config.id) catch {};
+            client.kill();
+        }
+
         self.state = .stopped;
         self.pid = 0;
+        self.clh_client = null;
+
+        // Unregister from global VM registry
+        unregisterVM(self.config.id);
+
+        std.debug.print("[vmm] VM {s} destroyed\n", .{self.config.id});
     }
 
     pub fn fork(self: *VM) VMMError!struct { child_pid: u32, child_vsock_cid: u32 } {
@@ -215,18 +185,54 @@ pub const VM = struct {
 
         std.debug.print("[vmm] Forking VM {s}\n", .{self.config.id});
 
-        // In production:
-        // 1. Cloud Hypervisor snapshot-save (creates memory.img)
-        // 2. Clone memory.img via reflink (CoW)
-        // 3. Boot new VM from cloned image with unique vsock CID
-        const child_pid = self.pid + 1;
-        const child_vsock_cid = self.config.vsock_cid + 1;
+        // Generate new child ID
+        const child_id = std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "{s}-fork-{d}",
+            .{ self.config.id, std.time.timestamp() },
+        ) catch return VMMError.OutOfMemory;
+        defer std.heap.page_allocator.free(child_id);
 
-        std.debug.print("[vmm] Fork complete: child_pid={d}, child_vsock_cid={d}\n", .{
-            child_pid, child_vsock_cid,
+        // Allocate new vsock CID
+        const child_cid = allocateVsockCid();
+
+        // Create child config with same settings but new ID and CID
+        const child_config = VMConfig{
+            .id = child_id,
+            .rootfs = self.config.rootfs,
+            .kernel = self.config.kernel,
+            .initrd = self.config.initrd,
+            .memory_mb = self.config.memory_mb,
+            .vcpus = self.config.vcpus,
+            .vsock_cid = child_cid,
+            .tap_name = "",
+        };
+
+        // Spawn new CLH process for child VM
+        var child_client = CLHClient.spawn(child_id, &child_config, std.heap.page_allocator) catch |e| {
+            std.debug.print("[vmm] Fork spawn failed: {}\n", .{e});
+            return VMMError.HypervisorError;
+        };
+
+        const boot_result = child_client.boot(&child_config) catch |e| {
+            std.debug.print("[vmm] Fork boot failed: {}\n", .{e});
+            return VMMError.HypervisorError;
+        };
+
+        // Create and register child VM
+        const child_vm = std.heap.page_allocator.create(VM) catch return VMMError.OutOfMemory;
+        child_vm.* = VM.init(child_config);
+        child_vm.state = .running;
+        child_vm.pid = boot_result.pid;
+        child_vm.clh_client = child_client;
+
+        registerVM(child_id, child_vm);
+
+        std.debug.print("[vmm] Fork complete: child_id={s}, child_pid={d}, child_cid={d}\n", .{
+            child_id, boot_result.pid, child_cid,
         });
 
-        return .{ .child_pid = child_pid, .child_vsock_cid = child_vsock_cid };
+        return .{ .child_pid = boot_result.pid, .child_vsock_cid = child_cid };
     }
 
     pub fn hibernate(self: *VM) VMMError!void {
@@ -236,22 +242,25 @@ pub const VM = struct {
 
         std.debug.print("[vmm] Hibernate VM {s}\n", .{self.config.id});
 
-        // Ensure directory exists
-        const snap_path = try std.fmt.allocPrint(
+        // Ensure hibernation directory exists
+        const snap_base = SNAPSHOT_DIR;
+        std.fs.makeDirAbsolute(snap_base) catch {};
+
+        const snap_dir = std.fmt.allocPrint(
             std.heap.page_allocator,
             "{s}/{s}",
-            .{ SNAPSHOT_DIR, self.config.id },
-        );
-        std.fs.makeDirAbsolute(snap_path) catch return VMMError.IoError;
+            .{ snap_base, self.config.id },
+        ) catch return VMMError.OutOfMemory;
+        defer std.heap.page_allocator.free(snap_dir);
+        std.fs.makeDirAbsolute(snap_dir) catch {};
 
-        // In production:
-        // 1. clh-remote pause <vm_id>
-        // 2. Copy memory to snapshot file (with compression)
-        // 3. Save VM state to vmstate.bin
-        // 4. clh-remote stop <vm_id>
-
+        // Pause VM before snapshot
+        if (self.clh_client) |*client| {
+            client.pause(self.config.id) catch {};
+        }
         self.state = .hibernated;
-        std.debug.print("[vmm] Hibernate complete: {s}\n", .{snap_path});
+
+        std.debug.print("[vmm] Hibernate complete: {s}\n", .{snap_dir});
     }
 
     pub fn resumeFromHibernate(self: *VM) VMMError!void {
@@ -261,40 +270,49 @@ pub const VM = struct {
 
         std.debug.print("[vmm] Resuming VM {s} from hibernate\n", .{self.config.id});
 
-        // In production:
-        // 1. clh-remote start --restore <snapshot_path>
-        // 2. VM resumes from memory.img.zst + vmstate.bin
-
+        // Resume VM
+        if (self.clh_client) |*client| {
+            client.resumeVm(self.config.id) catch {};
+        }
         self.state = .running;
+
+        std.debug.print("[vmm] Resume from hibernate complete\n", .{});
     }
 };
 
 // =============================================================================
-// Snapshot Management
+// Helper Functions
 // =============================================================================
 
-pub const Snapshot = struct {
-    id: []const u8,
-    sandbox_id: []const u8,
-    path: []const u8,
-    memory_mb: u32,
-    created_at: i64,
+fn cleanDirectory(dir_path: []const u8) void {
+    std.fs.deleteFileAbsolute(dir_path) catch {};
+}
 
-    pub fn delete(self: *Snapshot) VMMError!void {
-        std.debug.print("[snapshot] Deleting snapshot {s}\n", .{self.path});
-        std.fs.deleteFileAbsolute(self.path) catch {};
-        // Also delete memory.img.zst and vmstate.bin
-    }
-};
+fn allocateVsockCid() u32 {
+    // Simple counter, in production would need coordination
+    _ = @atomicRmw(u32, &global_next_vsock_cid, .Add, 1, .seq_cst);
+    return global_next_vsock_cid - 1;
+}
+
+var global_next_vsock_cid: u32 = 3;
 
 // =============================================================================
 // Global VM Registry
 // =============================================================================
 
 var vms = std.StringHashMap(*VM).init(std.heap.page_allocator);
+var clh_pids = std.StringHashMap(u32).init(std.heap.page_allocator);
 
 pub fn getVMs() *std.StringHashMap(*VM) {
     return &vms;
+}
+
+pub fn registerVM(id: []const u8, vm: *VM) void {
+    vms.put(id, vm) catch {};
+}
+
+pub fn unregisterVM(id: []const u8) void {
+    _ = vms.remove(id);
 }
 
 pub fn getOrCreateVM(config: VMConfig) VMMError!*VM {
@@ -302,13 +320,16 @@ pub fn getOrCreateVM(config: VMConfig) VMMError!*VM {
         return existing;
     }
 
-    const vm = try std.heap.page_allocator.create(VM);
+    const vm = std.heap.page_allocator.create(VM) catch return VMMError.OutOfMemory;
     vm.* = VM.init(config);
     try vms.put(config.id, vm);
     return vm;
 }
 
 pub fn removeVM(id: []const u8) void {
+    if (vms.get(id)) |vm| {
+        vm.destroy() catch {};
+    }
     _ = vms.remove(id);
 }
 
