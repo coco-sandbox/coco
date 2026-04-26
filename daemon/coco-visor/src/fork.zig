@@ -27,7 +27,7 @@ pub const ForkManager = struct {
 
     fn detectBtrfs(path: []const u8) bool {
         var buf: [256]u8 = undefined;
-        const full_path = std.fmt.bufPrint(&buf, "{s}/.", .{ path }) catch return false;
+        const full_path = std.fmt.bufPrint(&buf, "{s}/.", .{path}) catch return false;
 
         const stat_result = fs.statAbsolute(full_path) catch return false;
         _ = stat_result;

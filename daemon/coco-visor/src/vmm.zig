@@ -11,6 +11,7 @@ const vm_mod = @import("vm.zig");
 const vsock = @import("vsock.zig");
 const fork_mod = @import("fork.zig");
 const checkpoint_mod = @import("checkpoint.zig");
+const agent_registry = @import("agent_registry.zig");
 
 pub const VMConfig = vm_mod.VmConfig;
 pub const SNAPSHOT_DIR = "/var/lib/coco/hibernation";
@@ -112,22 +113,18 @@ pub const VM = struct {
 
         self.pid = @intCast(std.os.linux.getpid());
 
-        var retry_count: u32 = 0;
-        const max_retries = 30;
         var agent_fd: i32 = -1;
-
-        while (retry_count < max_retries) {
-            agent_fd = vsock.connectToAgent(self.config.vsock_cid, 4747) catch {
-                retry_count += 1;
-                if (retry_count >= max_retries) break;
-                std.time.sleep(200 * std.time.ns_per_ms);
-                continue;
-            };
-            break;
+        var retry: u32 = 0;
+        while (retry < 30) : (retry += 1) {
+            if (agent_registry.get(self.config.vsock_cid)) |fd| {
+                agent_fd = fd;
+                break;
+            }
+            std.time.sleep(200 * std.time.ns_per_ms);
         }
 
         if (agent_fd < 0) {
-            std.debug.print("[vmm] Failed to connect to agent after {d} retries\n", .{max_retries});
+            std.debug.print("[vmm] Failed to get agent from registry after 30 retries\n", .{});
             vm.destroy();
             self.state = .err_state;
             return VMMError.HypervisorError;
@@ -244,7 +241,21 @@ pub const VM = struct {
         var fork_manager = fork_mod.ForkManager.init(std.heap.page_allocator, "/var/lib/coco/templates");
         fork_manager.createFork(self.config.id, child_id);
 
-        var child_vm = vm_mod.Vm.create(&child_config, self.memory_ptr.?, self.memory_size, std.heap.page_allocator) catch |e| {
+        const child_mem_size = self.memory_size;
+        const child_mem = posix.mmap(
+            null,
+            child_mem_size,
+            posix.PROT.READ | posix.PROT.WRITE,
+            posix.MAP{ .TYPE = .SHARED, .ANONYMOUS = true },
+            -1,
+            0,
+        ) catch {
+            self.resume_() catch {};
+            return VMMError.OutOfMemory;
+        };
+        @memcpy(child_mem[0..child_mem_size], self.memory_ptr.?[0..child_mem_size]);
+
+        var child_vm = vm_mod.Vm.create(&child_config, child_mem.ptr, child_mem_size, std.heap.page_allocator) catch |e| {
             std.debug.print("[vmm] Fork VM create failed: {}\n", .{e});
             self.resume_() catch {};
             return VMMError.HypervisorError;
@@ -258,14 +269,13 @@ pub const VM = struct {
         };
 
         var child_agent_fd: i32 = -1;
-        var retry_count: u32 = 0;
-        while (retry_count < 30) {
-            child_agent_fd = vsock.connectToAgent(child_cid, 4747) catch {
-                retry_count += 1;
-                std.time.sleep(200 * std.time.ns_per_ms);
-                continue;
-            };
-            break;
+        var retry: u32 = 0;
+        while (retry < 30) : (retry += 1) {
+            if (agent_registry.get(child_cid)) |fd| {
+                child_agent_fd = fd;
+                break;
+            }
+            std.time.sleep(200 * std.time.ns_per_ms);
         }
 
         if (child_agent_fd < 0) {
@@ -294,8 +304,8 @@ pub const VM = struct {
         };
         child_vm_ptr.vm_instance.?.* = child_vm;
         child_vm_ptr.agent_fd = child_agent_fd;
-        child_vm_ptr.memory_ptr = self.memory_ptr;
-        child_vm_ptr.memory_size = self.memory_size;
+        child_vm_ptr.memory_ptr = child_mem.ptr;
+        child_vm_ptr.memory_size = child_mem_size;
 
         registerVM(child_id, child_vm_ptr);
 
@@ -416,7 +426,7 @@ pub const VM = struct {
     }
 };
 
-fn allocateVsockCid() u32 {
+pub fn allocateVsockCid() u32 {
     _ = @atomicRmw(u32, &global_next_vsock_cid, .Add, 1, .seq_cst);
     return global_next_vsock_cid - 1;
 }

@@ -40,11 +40,11 @@ pub fn restoreFromSnapshot(
     const checkpoint_dir = std.fmt.allocPrint(allocator, "{any}/{any}", .{ checkpoint.SNAPSHOT_DIR, id }) catch return RestoreError.OutOfMemory;
     defer allocator.free(checkpoint_dir);
 
-    const cpu_path = std.fmt.allocPrint(allocator, "{any}/cpu.bin", .{ checkpoint_dir }) catch return RestoreError.OutOfMemory;
+    const cpu_path = std.fmt.allocPrint(allocator, "{any}/cpu.bin", .{checkpoint_dir}) catch return RestoreError.OutOfMemory;
     defer allocator.free(cpu_path);
     checkpoint_mgr.loadCpuState(cpu_path);
 
-    const devices_path = std.fmt.allocPrint(allocator, "{any}/devices.bin", .{ checkpoint_dir }) catch return RestoreError.OutOfMemory;
+    const devices_path = std.fmt.allocPrint(allocator, "{any}/devices.bin", .{checkpoint_dir}) catch return RestoreError.OutOfMemory;
     defer allocator.free(devices_path);
     checkpoint_mgr.loadDeviceState(devices_path);
 

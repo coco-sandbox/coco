@@ -50,7 +50,10 @@ pub const VmPool = struct {
         var i: u32 = 0;
         while (i < count) : (i += 1) {
             const vm = self.allocator.create(vmm.VM) catch continue;
-            vm.* = vmm.VM.init(self.config);
+
+            var vm_config = self.config;
+            vm_config.vsock_cid = vmm.allocateVsockCid();
+            vm.* = vmm.VM.init(vm_config);
 
             const result = vm.boot() catch {
                 self.allocator.destroy(vm);
@@ -81,7 +84,10 @@ pub const VmPool = struct {
 
         if (self.pool.items.len < self.max_size) {
             const vm = self.allocator.create(vmm.VM) catch return null;
-            vm.* = vmm.VM.init(self.config);
+
+            var vm_config = self.config;
+            vm_config.vsock_cid = vmm.allocateVsockCid();
+            vm.* = vmm.VM.init(vm_config);
 
             vm.boot() catch {
                 self.allocator.destroy(vm);
@@ -170,7 +176,10 @@ pub const VmPool = struct {
             var i: u32 = 0;
             while (i < to_create) : (i += 1) {
                 const vm = self.allocator.create(vmm.VM) catch continue;
-                vm.* = vmm.VM.init(self.config);
+
+                var vm_config = self.config;
+                vm_config.vsock_cid = vmm.allocateVsockCid();
+                vm.* = vmm.VM.init(vm_config);
 
                 vm.boot() catch {
                     self.allocator.destroy(vm);

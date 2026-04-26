@@ -130,7 +130,7 @@ pub const VCpu = struct {
     }
 
     pub fn deinit(self: *VCpu) void {
-        const aligned_ptr = @as([*]align(std.heap.page_size_min) u8, @alignCast(@ptrCast(self.kvm_run)));
+        const aligned_ptr = @as([*]align(std.heap.page_size_min) u8, @ptrCast(@alignCast(self.kvm_run)));
         const slice = aligned_ptr[0..self.mmap_size];
         posix.munmap(slice);
         posix.close(self.fd);

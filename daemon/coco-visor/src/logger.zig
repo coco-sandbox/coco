@@ -51,9 +51,7 @@ pub fn log(level: LogLevel, comptime fmt: []const u8, args: anytype) void {
     const message = std.fmt.bufPrint(&msg_buf, fmt, args) catch "message too long";
 
     var json_buf: [512]u8 = undefined;
-    const json_str = std.fmt.bufPrint(&json_buf, "{{\"timestamp\":\"{s}\",\"level\":\"{s}\",\"component\":\"coco-visor\",\"message\":\"{s}\"}}\n", .{
-        ts_str, level_str, message
-    }) catch "log line too long";
+    const json_str = std.fmt.bufPrint(&json_buf, "{{\"timestamp\":\"{s}\",\"level\":\"{s}\",\"component\":\"coco-visor\",\"message\":\"{s}\"}}\n", .{ ts_str, level_str, message }) catch "log line too long";
 
     std.debug.print("{s}", .{json_str});
 }

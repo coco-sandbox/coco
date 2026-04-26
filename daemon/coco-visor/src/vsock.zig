@@ -19,7 +19,8 @@ pub fn openAndAssignCid(cid: u32) !i32 {
     const fd = try posix.open("/dev/vhost-vsock", .{ .ACCMODE = .RDWR }, 0);
     errdefer posix.close(fd);
 
-    const rc = std.os.linux.ioctl(fd, VHOST_VSOCK_SET_GUEST_CID, @intFromPtr(&cid));
+    var cid64: u64 = cid;
+    const rc = std.os.linux.ioctl(fd, VHOST_VSOCK_SET_GUEST_CID, @intFromPtr(&cid64));
     if (rc < 0)
         return error.VhostVsockSetCidFailed;
 

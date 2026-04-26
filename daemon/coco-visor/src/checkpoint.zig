@@ -55,7 +55,7 @@ pub const CheckpointWriter = struct {
 
         while (written < mem_size) {
             const to_write = @min(CHUNK_SIZE, mem_size - written);
-            const chunk = mem_ptr[written..written + to_write];
+            const chunk = mem_ptr[written .. written + to_write];
             self.writeChunk(chunk, chunk_idx);
             written += to_write;
             chunk_idx += 1;
@@ -123,7 +123,7 @@ pub const CheckpointReader = struct {
             if (comp_read < comp_size) break;
 
             const decompressed = self.decompress(comp_buf[0..comp_read], @min(to_read, CHUNK_SIZE));
-            @memcpy(mem_ptr[read_total..read_total + decompressed.len], decompressed);
+            @memcpy(mem_ptr[read_total .. read_total + decompressed.len], decompressed);
             read_total += decompressed.len;
 
             if (comp_size > orig_size) {
@@ -186,7 +186,7 @@ pub const CheckpointManager = struct {
 
         fs.cwd().makeDir(checkpoint_dir) catch {};
 
-        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.zst", .{ checkpoint_dir }) catch return 0;
+        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.zst", .{checkpoint_dir}) catch return 0;
         defer self.allocator.free(mem_file_path);
 
         const mem_fd = posix.open(mem_file_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644) catch return 0;
@@ -196,17 +196,17 @@ pub const CheckpointManager = struct {
 
         const written = writer.writeMemory(mem_ptr, mem_size);
 
-        const meta_path = std.fmt.allocPrint(self.allocator, "{s}/metadata.json", .{ checkpoint_dir }) catch return 0;
+        const meta_path = std.fmt.allocPrint(self.allocator, "{s}/metadata.json", .{checkpoint_dir}) catch return 0;
         defer self.allocator.free(meta_path);
 
         var meta = metadata;
         meta.compressed_size = written;
         self.writeMetadata(meta_path, meta);
 
-        const cpu_path = std.fmt.allocPrint(self.allocator, "{s}/cpu.bin", .{ checkpoint_dir }) catch return written;
+        const cpu_path = std.fmt.allocPrint(self.allocator, "{s}/cpu.bin", .{checkpoint_dir}) catch return written;
         self.saveCpuState(cpu_path);
 
-        const devices_path = std.fmt.allocPrint(self.allocator, "{s}/devices.bin", .{ checkpoint_dir }) catch return written;
+        const devices_path = std.fmt.allocPrint(self.allocator, "{s}/devices.bin", .{checkpoint_dir}) catch return written;
         self.saveDeviceState(devices_path);
 
         return written;
@@ -253,7 +253,7 @@ pub const CheckpointManager = struct {
         };
         defer self.allocator.free(checkpoint_dir);
 
-        const meta_path = std.fmt.allocPrint(self.allocator, "{s}/metadata.json", .{ checkpoint_dir }) catch return .{
+        const meta_path = std.fmt.allocPrint(self.allocator, "{s}/metadata.json", .{checkpoint_dir}) catch return .{
             .id = "",
             .memory_size = 0,
             .compressed_size = 0,
@@ -267,7 +267,7 @@ pub const CheckpointManager = struct {
 
         const metadata = self.readMetadata(meta_path);
 
-        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.zst", .{ checkpoint_dir }) catch return metadata;
+        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.zst", .{checkpoint_dir}) catch return metadata;
         defer self.allocator.free(mem_file_path);
 
         const mem_fd = posix.open(mem_file_path, .{ .ACCMODE = .RDONLY }, 0) catch return metadata;

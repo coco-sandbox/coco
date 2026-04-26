@@ -11,6 +11,8 @@ const vmm = @import("vmm.zig");
 const config = @import("config.zig");
 const logger = @import("logger.zig");
 const metrics = @import("metrics.zig");
+const agent_registry = @import("agent_registry.zig");
+const vsock = @import("vsock.zig");
 
 // =============================================================================
 // Protocol Constants
@@ -603,10 +605,7 @@ fn handleHealthReady(sock: std.net.Stream) !void {
 fn handleHealth(sock: std.net.Stream) !void {
     const vm_count = vmm.getVMs().count();
     var response_buf: [256]u8 = undefined;
-    const response = std.fmt.bufPrint(&response_buf,
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{{\"status\":\"ok\",\"visor\":\"running\",\"sandboxes\":{d}}}",
-        .{vm_count}
-    ) catch return;
+    const response = std.fmt.bufPrint(&response_buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{{\"status\":\"ok\",\"visor\":\"running\",\"sandboxes\":{d}}}", .{vm_count}) catch return;
 
     try sock.writeAll(response);
 }
@@ -620,20 +619,35 @@ fn handleNotFound(sock: std.net.Stream) !void {
 // Unix Socket
 // =============================================================================
 
-fn createUnixSocket(socket_path: [*:0]const u8) !i32 {
-    const socket_fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0);
-    errdefer std.posix.close(socket_fd);
+const AF_UNIX = 1;
 
-    var addr: std.posix.sockaddr_un = undefined;
-    addr.family = std.posix.AF.UNIX;
+fn createUnixSocket(socket_path: [*:0]const u8) !i32 {
+    const posix = std.posix;
+    const socket_fd = try posix.socket(AF_UNIX, posix.SOCK.STREAM, 0);
+    errdefer posix.close(socket_fd);
+
+    var addr: posix.sockaddr_un = undefined;
+    addr.family = AF_UNIX;
     const path_len = std.mem.len(socket_path);
     if (path_len >= addr.path.len) return error.SocketPathTooLong;
     @memcpy(addr.path[0..path_len], socket_path[0..path_len]);
 
-    try std.posix.bind(socket_fd, @ptrCast(&addr), @sizeOf(std.posix.sockaddr_un));
-    try std.posix.listen(socket_fd, 128);
+    try posix.bind(socket_fd, @ptrCast(&addr), @sizeOf(posix.sockaddr_un));
+    try posix.listen(socket_fd, 128);
 
     return socket_fd;
+}
+
+// =============================================================================
+// VSock Accept Loop
+// =============================================================================
+
+fn vsockAcceptLoop(server_fd: i32) void {
+    while (true) {
+        const result = vsock.acceptAgent(server_fd) catch continue;
+        agent_registry.register(result.guest_cid, result.fd);
+        logger.info("Agent connected from CID={d}", .{result.guest_cid});
+    }
 }
 
 // =============================================================================
@@ -664,28 +678,41 @@ pub fn main() !void {
     const template_dir_null: [*:0]const u8 = @ptrCast(global_config.template_dir);
     _ = linux.mkdir(template_dir_null, 0o755);
 
-    const listen_socket: usize = 0;
-    _ = listen_socket;
+    agent_registry.init();
 
-    logger.info("Listening on {s}", .{global_config.socket_path});
-    logger.info("Protocol: BOOT={d}, EXEC={d}, DESTROY={d}, PAUSE={d}, RESUME={d}, GET_STATE={d}, FORK={d}, HIBERNATE={d}", .{
-        REQ_BOOT, REQ_EXEC, REQ_DESTROY, REQ_PAUSE, REQ_RESUME, REQ_GET_STATE, REQ_FORK, REQ_HIBERNATE,
-    });
+    const socket_fd = try createUnixSocket(socket_path_null);
+    defer std.posix.close(socket_fd);
+
+    const vsock_server_fd = vsock.createServer(global_config.vsock_port) catch |e| blk: {
+        logger.warn("VSock server failed: {}", .{e});
+        break :blk -1;
+    };
+    if (vsock_server_fd >= 0) {
+        const vt = std.Thread.spawn(.{}, vsockAcceptLoop, .{vsock_server_fd}) catch null;
+        if (vt) |t| t.detach();
+        logger.info("VSock server listening on port {d}", .{global_config.vsock_port});
+    }
 
     if (global_config.metrics_enabled) {
-        const metrics_thread = std.Thread.spawn(.{}, startHttpServer, .{global_config.metrics_port}) catch null;
-        if (metrics_thread) |t| t.detach();
-        logger.info("Metrics server started on port {d}", .{global_config.metrics_port});
+        const mt = std.Thread.spawn(.{}, startHttpServer, .{global_config.metrics_port}) catch null;
+        if (mt) |t| t.detach();
+    }
+    if (global_config.health_enabled) {
+        const ht = std.Thread.spawn(.{}, startHttpServer, .{global_config.health_port}) catch null;
+        if (ht) |t| t.detach();
     }
 
-    if (global_config.health_enabled) {
-        const health_thread = std.Thread.spawn(.{}, startHttpServer, .{global_config.health_port}) catch null;
-        if (health_thread) |t| t.detach();
-        logger.info("Health server started on port {d}", .{global_config.health_port});
-    }
+    logger.info("Listening on {s}", .{global_config.socket_path});
 
     while (true) {
-        var i: u64 = 0;
-        while (i < 1_000_000_000) : (i += 1) {}
+        var addr: std.posix.sockaddr_un = undefined;
+        var addr_len: std.posix.socklen_t = @sizeOf(std.posix.sockaddr_un);
+        const client_fd = std.posix.accept(socket_fd, @ptrCast(&addr), &addr_len, 0) catch continue;
+        const stream = std.net.Stream{ .handle = client_fd };
+        const thread = std.Thread.spawn(.{}, handleConnection, .{stream}) catch {
+            stream.close();
+            continue;
+        };
+        thread.detach();
     }
 }
