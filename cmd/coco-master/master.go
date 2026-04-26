@@ -23,7 +23,7 @@ func nodeEntryToProto(n *scheduler.NodeEntry) *v1.Node {
 		Healthy:         n.Available,
 		ActiveSandboxes: int32(n.Sandboxes),
 		MemoryUsedMb:    n.MemMB,
-		LastSeen:        timestamppb.New(n.UpdatedAt),
+		LastSeen:        n.UpdatedAt.Unix(),
 	}
 }
 

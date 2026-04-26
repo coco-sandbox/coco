@@ -17,16 +17,35 @@ echo "Proto dir: $PROTO_DIR"
 echo "Output dir: $OUT_DIR"
 
 # Check prerequisites
-command -v protoc >/dev/null 2>&1 || { echo "protoc not found"; exit 1; }
-command -v protoc-gen-go >/dev/null 2>&1 || { echo "protoc-gen-go not found"; exit 1; }
-command -v protoc-gen-connect-go >/dev/null 2>&1 || { echo "protoc-gen-connect-go not found"; exit 1; }
+if ! command -v protoc >/dev/null 2>&1; then
+    echo "protoc not found"
+    exit 1
+fi
 
-# Clean output directory
-rm -rf "$OUT_DIR/github.com"
-mkdir -p "$OUT_DIR"
+# Add Go bin to PATH
+export PATH="$PATH:$(go env GOPATH)/bin"
 
-# Generate with explicit module mapping to pkg/api/v1
-echo "Generating Go + Connect code..."
+if ! command -v protoc-gen-go >/dev/null 2>&1; then
+    echo "protoc-gen-go not found in PATH"
+    exit 1
+fi
+
+if ! command -v protoc-gen-connect-go >/dev/null 2>&1; then
+    echo "protoc-gen-connect-go not found in PATH"
+    exit 1
+fi
+
+# Clean output directories
+rm -rf "$OUT_DIR/github.com" "$OUT_DIR/pkg"
+rm -rf "$OUT_DIR/api/v1" "$OUT_DIR/api/v1connect" "$OUT_DIR/api/internal"
+mkdir -p "$OUT_DIR/api/v1"
+mkdir -p "$OUT_DIR/api/v1connect"
+mkdir -p "$OUT_DIR/api/internal"
+
+cd "$ROOT_DIR"
+
+# Generate public API (proto/coco/v1/)
+echo "Generating public API..."
 protoc \
     --go_out="$OUT_DIR" \
     --go_opt=Mproto/coco/v1/coco.proto=github.com/coco-sandbox/coco/pkg/api/v1 \
@@ -48,12 +67,45 @@ protoc \
     -I"$PROTO_DIR" \
     "$PROTO_DIR"/coco/v1/*.proto
 
-# Move files to correct location
-mkdir -p "$OUT_DIR/api/v1"
-mv "$OUT_DIR/github.com/coco-sandbox/coco/pkg/api/v1/"* "$OUT_DIR/api/v1/" 2>/dev/null || true
-rm -rf "$OUT_DIR/github.com"
+# Generate internal API (proto/internal/)
+echo "Generating internal API..."
+protoc \
+    --go_out="$OUT_DIR" \
+    --go_opt=Mproto/internal/visor.proto=github.com/coco-sandbox/coco/pkg/api/internal \
+    --go_opt=Mproto/internal/agent.proto=github.com/coco-sandbox/coco/pkg/api/internal \
+    --go_opt=module=github.com/coco-sandbox/coco \
+    -I"$ROOT_DIR" \
+    -I"$PROTO_DIR" \
+    "$PROTO_DIR"/internal/*.proto
+
+# Move files from nested pkg/pkg/ to correct location
+if [ -d "$OUT_DIR/pkg/api/v1" ]; then
+    cp -r "$OUT_DIR/pkg/api/v1/"* "$OUT_DIR/api/v1/"
+    rm -rf "$OUT_DIR/pkg"
+fi
+
+# Move connect files to correct location
+if [ -d "$OUT_DIR/pkg/api/v1/v1connect" ]; then
+    cp -r "$OUT_DIR/pkg/api/v1/v1connect/"* "$OUT_DIR/api/v1connect/"
+fi
+
+# Also check direct output location
+if [ -d "$OUT_DIR/github.com/coco-sandbox/coco/pkg/api/v1" ]; then
+    cp -r "$OUT_DIR/github.com/coco-sandbox/coco/pkg/api/v1/"* "$OUT_DIR/api/v1/"
+    rm -rf "$OUT_DIR/github.com"
+fi
+
+# Move internal files
+if [ -d "$OUT_DIR/github.com/coco-sandbox/coco/pkg/api/internal" ]; then
+    cp -r "$OUT_DIR/github.com/coco-sandbox/coco/pkg/api/internal/"* "$OUT_DIR/api/internal/"
+fi
 
 echo "=== Generated files ==="
-find "$OUT_DIR" -type f -name "*.go" | sort
+echo "Public API:"
+find "$OUT_DIR/api/v1" -type f -name "*.go" 2>/dev/null | sort
+find "$OUT_DIR/api/v1connect" -type f -name "*.go" 2>/dev/null | sort
+echo ""
+echo "Internal API:"
+find "$OUT_DIR/api/internal" -type f -name "*.go" 2>/dev/null | sort
 echo ""
 echo "✅ Proto generation complete"

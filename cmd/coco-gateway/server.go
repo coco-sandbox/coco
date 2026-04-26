@@ -155,7 +155,7 @@ func (g *GatewayServer) GetClusterInfo(ctx context.Context) (*types.ClusterInfoR
 	}
 	ci := resp.Msg.GetCluster()
 	out := &types.ClusterInfoResponse{
-		ID:           ci.GetClusterId(),
+		ID:           ci.GetId(),
 		NumNodes:     int(ci.GetNodeCount()),
 		NumSandboxes: int(ci.GetSandboxCount()),
 	}
@@ -210,8 +210,8 @@ func protoNodeToInfo(n *v1.Node) *types.NodeInfo {
 		Sandboxes: int(n.GetActiveSandboxes()),
 		Available: n.GetHealthy(),
 	}
-	if n.GetLastSeen() != nil {
-		out.LastSeen = n.GetLastSeen().AsTime()
+	if n.GetLastSeen() > 0 {
+		out.LastSeen = time.Unix(n.GetLastSeen(), 0)
 		out.UpdatedAt = out.LastSeen
 	}
 	return out

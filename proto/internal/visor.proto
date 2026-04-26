@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package coco.internal;
 
+option go_package = "github.com/coco-sandbox/coco/pkg/api/internal";
+
 message VisorRequest {
   string id = 1;
   RequestType type = 2;

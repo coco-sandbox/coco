@@ -2,12 +2,18 @@ syntax = "proto3";
 
 package coco.v1;
 
+option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
+
+import "google/protobuf/timestamp.proto";
+
 message ClusterInfo {
-  string name = 1;
-  int32 node_count = 2;
-  int32 sandbox_count = 3;
-  string leader = 4;
-  string version = 5;
+  string id = 1;
+  string name = 2;
+  int32 node_count = 3;
+  int32 sandbox_count = 4;
+  string leader = 5;
+  string version = 6;
+  google.protobuf.Timestamp updated_at = 7;
 }
 
 message Node {
@@ -17,6 +23,10 @@ message Node {
   int32 sandbox_count = 4;
   NodeResources resources = 5;
   int64 last_seen = 6;
+  bool healthy = 7;
+  string addr = 8;
+  uint64 memory_used_mb = 9;
+  int32 active_sandboxes = 10;
 }
 
 message NodeResources {
