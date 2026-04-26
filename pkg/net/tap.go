@@ -130,3 +130,15 @@ func (m *TAPManager) Get(name string) (*TAPDevice, error) {
     }
     return dev, nil
 }
+
+// ListDevices returns a list of all TAP devices
+func (m *TAPManager) ListDevices() []*TAPDevice {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+
+    devices := make([]*TAPDevice, 0, len(m.devices))
+    for _, dev := range m.devices {
+        devices = append(devices, dev)
+    }
+    return devices
+}

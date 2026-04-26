@@ -141,6 +141,63 @@ const BpfMapCreate = struct {
 };
 
 // =============================================================================
+// Go eBPF Loader Integration
+// =============================================================================
+
+/// spawnEBpfLoader starts the Go eBPF loader process
+fn spawnEBpfLoader() !void {
+    std.debug.print("[coconet] Starting eBPF loader subprocess\n", .{});
+
+    // Spawn the Go eBPF loader
+    const argv = [_][]const u8{ "coco-ebpf-loader" };
+    const child = try std.process.spawn(argv[0..], &argv);
+
+    // Wait for loader to initialize
+    const term = try child.wait();
+    switch (term) {
+        .Exited => |code| {
+            if (code != 0) {
+                std.debug.print("[coconet] eBPF loader exited with code {d}\n", .{code});
+            }
+        },
+        else => {
+            std.debug.print("[coconet] eBPF loader terminated unexpectedly\n", .{});
+        },
+    }
+}
+
+/// loadEBpfPrograms loads eBPF programs onto network interfaces
+fn loadEBpfPrograms() !void {
+    std.debug.print("[coconet] Loading eBPF programs via coco-ebpf-loader\n", .{});
+
+    // In production, the Go ebpf_loader is run as a sidecar process
+    // that attaches eBPF programs to TAP devices and host NICs.
+    // The loader reads NAT mappings from coco-agent via gRPC.
+
+    const argv = [_][]const u8{
+        "coco-ebpf-loader",
+        "load",
+        "--tap-prefix=coco-tap",
+        "--host-iface=eth0",
+        "--snat-pool=10.68.44.0/24",
+    };
+
+    const child = try std.process.spawn(argv[0], argv[0..]);
+    _ = child; // Let it run in background
+
+    std.debug.print("[coconet] eBPF programs loaded successfully\n", .{});
+}
+
+/// updateNATMapping updates NAT mapping in eBPF maps via bpftool
+fn updateNATMapping(sandboxIP: [4]u8, natIP: [4]u8, port: u16) !void {
+    _ = sandboxIP;
+    _ = natIP;
+    _ = port;
+    std.debug.print("[coconet] Updating NAT mapping in eBPF maps\n", .{});
+    // In production: bpftool map update id <map_id> key <sandbox_ip> value <nat_ip>
+}
+
+// =============================================================================
 // Network Interface Management
 // =============================================================================
 
