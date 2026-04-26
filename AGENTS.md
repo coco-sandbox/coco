@@ -4,14 +4,29 @@
 
 ```bash
 make all           # Build everything (Go + Zig)
-make build-go      # Go: gateway, master, node, cococtl
-make build-zig     # Zig: visor, agent, fork (net excluded)
+make build-go      # Go: gateway, master, node, checkpoint, net, cococtl
+make build-zig     # Zig: visor, agent, fork (net excluded - built as Go)
 make proto         # Generate Go from proto/coco/v1/*.proto
-make test          # Run all tests
+make test          # Run all tests (go test + zig build test)
 make clean         # Remove bin/ and zig-out/
 ```
 
-**After modifying proto files, run `make proto` before building.**
+**Proto → build order required:** After modifying proto files, run `make proto` before building.
+
+**Individual Go binaries:**
+```bash
+go build -o bin/coco-gateway ./cmd/coco-gateway
+go build -o bin/coco-master ./cmd/coco-master
+go build -o bin/coco-node ./cmd/coco-node
+```
+
+**Individual Zig components:**
+```bash
+cd daemon/coco-visor && zig build -Doptimize=ReleaseSafe
+cd daemon/coco-agent && zig build -Doptimize=ReleaseSafe
+```
+
+**Individual test (Go):** `go test ./pkg/api/...` or `go test -run TestName ./pkg/...`
 
 ## Linting
 
@@ -25,6 +40,7 @@ cd daemon/coco-visor && zig fmt --check  # Zig format check
 - Control plane (Go): Gateway (REST) → Master (gRPC) → Node (gRPC)
 - Data plane (Zig): Visor (Unix socket) → Agent (VSock)
 - Network: Go + C/eBPF (XDP filters)
+- Checkpoint/Restore: Go (daemon/coco-checkpoint)
 - Go binaries: `bin/`, Zig binaries: `daemon/*/zig-out/bin/`
 
 ## Requirements
@@ -45,12 +61,14 @@ cd daemon/coco-visor && zig fmt --check  # Zig format check
 ## eBPF Compilation
 
 ```bash
-cd ebpf && clang -O2 -target bpf -c <file>.bpf.c -o <file>.o
+cd ebpf && clang -O2 -target bpf -c <file>.bpf.c -o <file>.o -Iheaders
 ```
 
 ## Testing
 
-Integration tests require docker-compose. Health endpoint: `http://localhost:4747/health`
+- `make test-go` - Go tests only
+- `make test-zig` - Zig tests only
+- Integration tests require docker-compose. Health endpoint: `http://localhost:4747/health`
 
 ## Style Rules
 
