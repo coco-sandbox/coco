@@ -106,8 +106,7 @@ pub const KvmRun = extern struct {
 
 fn ioctl(fd: i32, request: u32, arg: usize) !i32 {
     const rc = linux.ioctl(fd, request, arg);
-    if (rc > @as(usize, @bitCast(@as(isize, std.math.maxInt(i32)))))
-        return error.IoctlFailed;
+    if (rc < 0) return error.IoctlFailed;
     return @intCast(rc);
 }
 

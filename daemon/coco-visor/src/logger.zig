@@ -14,9 +14,9 @@ pub const LogLevel = enum(u8) {
 };
 
 var current_level: LogLevel = .info;
-var log_writer: ?std.io.AnyWriter = null;
+var log_writer: ?*const fn ([]const u8) void = null;
 
-pub fn init(level: LogLevel, writer: std.io.AnyWriter) void {
+pub fn init(level: LogLevel, writer: *const fn ([]const u8) void) void {
     current_level = level;
     log_writer = writer;
 }
@@ -62,7 +62,7 @@ pub fn log(level: LogLevel, comptime fmt: []const u8, args: anytype) void {
     json_buf.appendSlice("\"}\n") catch return;
 
     if (log_writer) |w| {
-        w.writeAll(json_buf.items) catch {};
+        w.*(json_buf.items);
     } else {
         std.debug.print("{s}\n", .{json_buf.items});
     }

@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const posix = std.posix;
+const fs = std.fs;
 
 pub const CheckpointError = error{
     OpenFailed,
@@ -79,6 +80,14 @@ pub const CheckpointWriter = struct {
     fn compress(_: *CheckpointWriter, data: []const u8) []const u8 {
         return data;
     }
+
+    pub fn compressData(data: []const u8) []const u8 {
+        return data;
+    }
+
+    pub fn decompressData(data: []const u8, _: usize) []const u8 {
+        return data;
+    }
 };
 
 pub const CheckpointReader = struct {
@@ -137,6 +146,11 @@ pub const CheckpointReader = struct {
         _ = max_size;
         return data;
     }
+
+    pub fn decompressData(data: []const u8, max_size: usize) []u8 {
+        _ = max_size;
+        return data;
+    }
 };
 
 fn ZSTD_isError(code: usize) bool {
@@ -167,12 +181,12 @@ pub const CheckpointManager = struct {
         mem_size: u64,
         metadata: CheckpointMetadata,
     ) u64 {
-        const checkpoint_dir = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ self.base_dir, id }) catch return 0;
+        const checkpoint_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, id }) catch return 0;
         defer self.allocator.free(checkpoint_dir);
 
-        std.fs.cwd().makeDir(checkpoint_dir) catch {};
+        fs.cwd().makeDir(checkpoint_dir) catch {};
 
-        const mem_file_path = std.fmt.allocPrint(self.allocator, "{any}/memory.zst", .{ checkpoint_dir }) catch return 0;
+        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.zst", .{ checkpoint_dir }) catch return 0;
         defer self.allocator.free(mem_file_path);
 
         const mem_fd = posix.open(mem_file_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644) catch return 0;
@@ -182,17 +196,17 @@ pub const CheckpointManager = struct {
 
         const written = writer.writeMemory(mem_ptr, mem_size);
 
-        const meta_path = std.fmt.allocPrint(self.allocator, "{any}/metadata.json", .{ checkpoint_dir }) catch return 0;
+        const meta_path = std.fmt.allocPrint(self.allocator, "{s}/metadata.json", .{ checkpoint_dir }) catch return 0;
         defer self.allocator.free(meta_path);
 
         var meta = metadata;
         meta.compressed_size = written;
         self.writeMetadata(meta_path, meta);
 
-        const cpu_path = std.fmt.allocPrint(self.allocator, "{any}/cpu.bin", .{ checkpoint_dir }) catch return written;
+        const cpu_path = std.fmt.allocPrint(self.allocator, "{s}/cpu.bin", .{ checkpoint_dir }) catch return written;
         self.saveCpuState(cpu_path);
 
-        const devices_path = std.fmt.allocPrint(self.allocator, "{any}/devices.bin", .{ checkpoint_dir }) catch return written;
+        const devices_path = std.fmt.allocPrint(self.allocator, "{s}/devices.bin", .{ checkpoint_dir }) catch return written;
         self.saveDeviceState(devices_path);
 
         return written;
@@ -227,7 +241,7 @@ pub const CheckpointManager = struct {
         id: []const u8,
         mem_ptr: [*]u8,
     ) CheckpointMetadata {
-        const checkpoint_dir = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ self.base_dir, id }) catch return .{
+        const checkpoint_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, id }) catch return .{
             .id = "",
             .memory_size = 0,
             .compressed_size = 0,
@@ -239,7 +253,7 @@ pub const CheckpointManager = struct {
         };
         defer self.allocator.free(checkpoint_dir);
 
-        const meta_path = std.fmt.allocPrint(self.allocator, "{any}/metadata.json", .{ checkpoint_dir }) catch return .{
+        const meta_path = std.fmt.allocPrint(self.allocator, "{s}/metadata.json", .{ checkpoint_dir }) catch return .{
             .id = "",
             .memory_size = 0,
             .compressed_size = 0,
@@ -253,7 +267,7 @@ pub const CheckpointManager = struct {
 
         const metadata = self.readMetadata(meta_path);
 
-        const mem_file_path = std.fmt.allocPrint(self.allocator, "{any}/memory.zst", .{ checkpoint_dir }) catch return metadata;
+        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.zst", .{ checkpoint_dir }) catch return metadata;
         defer self.allocator.free(mem_file_path);
 
         const mem_fd = posix.open(mem_file_path, .{ .ACCMODE = .RDONLY }, 0) catch return metadata;
@@ -292,7 +306,7 @@ pub const CheckpointManager = struct {
     }
 
     fn writeMetadata(self: *CheckpointManager, path: []const u8, meta: CheckpointMetadata) void {
-        const file = std.fs.createFileAbsolute(path, .{}) catch return;
+        const file = fs.createFileAbsolute(path, .{}) catch return;
         defer file.close();
 
         var json = std.ArrayList(u8).init(self.allocator);
@@ -317,7 +331,7 @@ pub const CheckpointManager = struct {
 
     fn readMetadata(self: *CheckpointManager, path: []const u8) CheckpointMetadata {
         _ = self;
-        const file = std.fs.openFileAbsolute(path, .{}) catch return .{
+        const file = fs.openFileAbsolute(path, .{}) catch return .{
             .id = "",
             .memory_size = 0,
             .compressed_size = 0,
@@ -355,17 +369,17 @@ pub const CheckpointManager = struct {
     }
 
     pub fn deleteCheckpoint(self: *CheckpointManager, id: []const u8) void {
-        const checkpoint_dir = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ self.base_dir, id }) catch return;
+        const checkpoint_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, id }) catch return;
         defer self.allocator.free(checkpoint_dir);
 
-        std.fs.deleteTreeAbsolute(checkpoint_dir) catch {};
+        fs.deleteTreeAbsolute(checkpoint_dir) catch {};
     }
 
     pub fn listCheckpoints(self: *CheckpointManager) []const []const u8 {
         var list = std.ArrayList([]const u8).init(self.allocator);
 
-        std.fs.cwd().openDir(self.base_dir, .{ .iterate = true }) catch return &[_][]const u8{};
-        var dir = std.fs.cwd().openDir(self.base_dir, .{ .iterate = true }) catch return &[_][]const u8{};
+        fs.cwd().openDir(self.base_dir, .{ .iterate = true }) catch return &[_][]const u8{};
+        var dir = fs.cwd().openDir(self.base_dir, .{ .iterate = true }) catch return &[_][]const u8{};
         defer dir.close();
 
         var iter = dir.iterate();

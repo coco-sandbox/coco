@@ -6,6 +6,7 @@
 //! Provides metrics on port 9090 and health checks on port 4748.
 
 const std = @import("std");
+const fs = std.fs;
 const vmm = @import("vmm.zig");
 const config = @import("config.zig");
 const logger = @import("logger.zig");
@@ -159,30 +160,40 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     const start = std.time.nanoTimestamp();
     const base = @sizeOf(BootRequest);
 
-    // Extract variable-length string fields in protocol order
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     const sandbox_id = try std.fmt.allocPrint(
-        std.heap.page_allocator,
-        "{any}",
+        allocator,
+        "{s}",
         .{payload[base..][0..req.sandbox_id_len]},
     );
+    errdefer allocator.free(sandbox_id);
+
     const rootfs = try std.fmt.allocPrint(
-        std.heap.page_allocator,
-        "{any}",
+        allocator,
+        "{s}",
         .{payload[base + req.sandbox_id_len ..][0..req.rootfs_path_len]},
     );
+    errdefer allocator.free(rootfs);
+
     const kernel = try std.fmt.allocPrint(
-        std.heap.page_allocator,
-        "{any}",
+        allocator,
+        "{s}",
         .{payload[base + req.sandbox_id_len + req.rootfs_path_len ..][0..req.kernel_path_len]},
     );
+    errdefer allocator.free(kernel);
+
     const initrd = if (req.initrd_path_len > 0)
         try std.fmt.allocPrint(
-            std.heap.page_allocator,
-            "{any}",
+            allocator,
+            "{s}",
             .{payload[base + req.sandbox_id_len + req.rootfs_path_len + req.kernel_path_len ..][0..req.initrd_path_len]},
         )
     else
         "";
+    errdefer if (req.initrd_path_len > 0) allocator.free(initrd);
 
     const vsock_cid = next_vsock_cid;
     next_vsock_cid +%= 1;
@@ -198,7 +209,8 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
         .vsock_cid = vsock_cid,
     };
 
-    var vm = std.heap.page_allocator.create(vmm.VM) catch return;
+    var vm = allocator.create(vmm.VM) catch return;
+    errdefer allocator.destroy(vm);
     vm.* = vmm.VM.init(vm_config);
     const result = vm.boot() catch |e| {
         std.debug.print("[cocovisor] Boot failed: {}\n", .{e});
@@ -209,7 +221,7 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     const duration = @as(u64, @intCast(std.time.nanoTimestamp() - start));
     vmm.getMetrics().recordBoot(duration);
 
-    std.debug.print("[cocovisor] Boot sandbox {any} (cid={d}, pid={d}) in {d}µs\n", .{
+    std.debug.print("[cocovisor] Boot sandbox {s} (cid={d}, pid={d}) in {d}µs\n", .{
         sandbox_id, result.vsock_cid, result.pid, duration / 1000,
     });
 
@@ -285,7 +297,7 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
         }
     }
 
-    std.debug.print("[cocovisor] Exec: {any} with {d} args\n", .{ cmd, args_list.items.len });
+    std.debug.print("[cocovisor] Exec: {s} with {d} args\n", .{ cmd, args_list.items.len });
 
     // Create pipes for stdout and stderr
     const stdout_pipe = try std.posix.pipe2(.{});
@@ -332,7 +344,7 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
         const child_argv: [*:null]const ?[*:0]const u8 = @ptrCast(argv.items.ptr);
         const env: [*:null]const ?[*:0]const u8 = @ptrFromInt(@intFromPtr(&empty_env));
         std.posix.execveZ(path, child_argv, env) catch {
-            std.debug.print("[cocovisor] Exec failed for {any}\n", .{cmd});
+            std.debug.print("[cocovisor] Exec failed for {s}\n", .{cmd});
             std.posix.exit(1);
         };
         unreachable;
@@ -384,7 +396,7 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
 
 fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
-    std.debug.print("[cocovisor] Destroy: {any}\n", .{id});
+    std.debug.print("[cocovisor] Destroy: {s}\n", .{id});
 
     vmm.removeVM(id);
 
@@ -397,7 +409,7 @@ fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
 
 fn handlePause(sock: std.net.Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
-    std.debug.print("[cocovisor] Pause: {any}\n", .{id});
+    std.debug.print("[cocovisor] Pause: {s}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
         vm.pause() catch {};
@@ -411,7 +423,7 @@ fn handlePause(sock: std.net.Stream, payload: []u8) !void {
 
 fn handleResume(sock: std.net.Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
-    std.debug.print("[cocovisor] Resume: {any}\n", .{id});
+    std.debug.print("[cocovisor] Resume: {s}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
         vm.resume_() catch {};
@@ -441,7 +453,7 @@ fn handleFork(sock: std.net.Stream, payload: []u8) !void {
     const child_name_len = r32(payload[4 + parent_id_len .. 8 + parent_id_len]);
     _ = child_name_len;
 
-    std.debug.print("[cocovisor] Fork: {any}\n", .{parent_id});
+    std.debug.print("[cocovisor] Fork: {s}\n", .{parent_id});
 
     if (vmm.getVMs().get(parent_id)) |parent_vm| {
         const result = parent_vm.fork() catch |e| {
@@ -472,7 +484,7 @@ fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
     const start = std.time.nanoTimestamp();
     const id = payload[0..payload.len];
 
-    std.debug.print("[cocovisor] Hibernate: {any}\n", .{id});
+    std.debug.print("[cocovisor] Hibernate: {s}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
         _ = vm.hibernate() catch |e| {
@@ -498,7 +510,7 @@ fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
 
 fn handleResumeHibernated(sock: std.net.Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
-    std.debug.print("[cocovisor] Resume from hibernate: {any}\n", .{id});
+    std.debug.print("[cocovisor] Resume from hibernate: {s}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
         _ = vm.resumeFromHibernate() catch |e| {
@@ -625,7 +637,12 @@ fn handleNotFound(sock: std.net.Stream) !void {
 pub fn main() !void {
     global_config = config.loadConfig();
 
-    logger.init(logger.LogLevel.info, std.io.getStdErr().writer().any());
+    const log_fn = struct {
+        fn log(msg: []const u8) void {
+            std.debug.print("{s}\n", .{msg});
+        }
+    }.log;
+    logger.init(logger.LogLevel.info, &log_fn);
     const log_lvl = switch (global_config.log_level[0]) {
         'd' => logger.LogLevel.debug,
         'w' => logger.LogLevel.warn,
@@ -636,16 +653,16 @@ pub fn main() !void {
 
     logger.info("Starting cocovisor daemon", .{});
 
-    std.fs.deleteFileAbsolute(global_config.socket_path) catch {};
-    std.fs.makeDirAbsolute("/run/coco") catch {};
-    std.fs.makeDirAbsolute(global_config.checkpoint_dir) catch {};
-    std.fs.makeDirAbsolute(global_config.hibernation_dir) catch {};
-    std.fs.makeDirAbsolute(global_config.template_dir) catch {};
+    fs.deleteFileAbsolute(global_config.socket_path) catch {};
+    fs.makeDirAbsolute("/run/coco") catch {};
+    fs.makeDirAbsolute(global_config.checkpoint_dir) catch {};
+    fs.makeDirAbsolute(global_config.hibernation_dir) catch {};
+    fs.makeDirAbsolute(global_config.template_dir) catch {};
 
     const sock_addr = try std.net.Address.initUnix(global_config.socket_path);
     var listener = try sock_addr.listen(.{ .reuse_address = true });
 
-    logger.info("Listening on {any}", .{global_config.socket_path});
+    logger.info("Listening on {s}", .{global_config.socket_path});
     logger.info("Protocol: BOOT={d}, EXEC={d}, DESTROY={d}, PAUSE={d}, RESUME={d}, GET_STATE={d}, FORK={d}, HIBERNATE={d}", .{
         REQ_BOOT, REQ_EXEC, REQ_DESTROY, REQ_PAUSE, REQ_RESUME, REQ_GET_STATE, REQ_FORK, REQ_HIBERNATE,
     });

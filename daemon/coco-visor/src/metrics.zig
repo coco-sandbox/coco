@@ -119,7 +119,7 @@ pub const Metrics = struct {
         return self.boot_times[idx];
     }
 
-    pub fn formatPrometheus(self: *Metrics, writer: std.io.AnyWriter) !void {
+    pub fn formatPrometheus(self: *Metrics, writer: anytype) !void {
         try writer.writeAll("# HELP coco_sandbox_count Current number of sandboxes by state.\n");
         try writer.writeAll("# TYPE coco_sandbox_count gauge\n");
         try writer.print("coco_sandbox_count{{state=\"active\"}} {d}\n", .{self.active_sandboxes});
