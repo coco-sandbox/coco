@@ -1,10 +1,15 @@
 package net
 
 import (
+	"os"
 	"testing"
 )
 
 func TestTAPManagerCreate(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root privileges")
+	}
+
 	mgr := NewTAPManager()
 
 	tap, err := mgr.Create("vnet1")
@@ -15,11 +20,14 @@ func TestTAPManagerCreate(t *testing.T) {
 		t.Errorf("Expected name vnet1, got %s", tap.Name)
 	}
 
-	// Cleanup
 	mgr.Destroy("vnet1")
 }
 
 func TestTAPManagerIPAssignment(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root privileges")
+	}
+
 	mgr := NewTAPManager()
 
 	tap, err := mgr.Create("vnet2")

@@ -1,6 +1,7 @@
 package net
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -15,7 +16,8 @@ func TestIPAMAllocate(t *testing.T) {
 		t.Fatal("IP should not be empty")
 	}
 
-	// Should be in subnet 169.254.68.0/24
+	ip = strings.Split(ip, "/")[0]
+
 	if ip[:14] != "169.254.68." {
 		t.Errorf("IP should be in subnet 169.254.68.0/24, got %s", ip)
 	}
@@ -28,7 +30,8 @@ func TestIPAMRelease(t *testing.T) {
 	ipam.Release(ip1)
 
 	ip2, _ := ipam.Allocate()
-	// Should get same IP back since it was released
+	ip1 = strings.Split(ip1, "/")[0]
+	ip2 = strings.Split(ip2, "/")[0]
 	if ip1 != ip2 {
 		t.Logf("Note: IPAM doesn't guarantee same IP on realloc (acceptable for this design)")
 	}
