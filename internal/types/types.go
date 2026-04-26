@@ -92,6 +92,13 @@ type Replay struct {
 	Path      string    `json:"path,omitempty"`
 }
 
+// ReplayEvent represents a single event in a replay
+type ReplayEvent struct {
+	Type      string `json:"type"`
+	Timestamp int64  `json:"timestamp"`
+	Data      string `json:"data"`
+}
+
 // ClusterNode represents a node in the Coco cluster
 type ClusterNode struct {
 	ID        string    `json:"id"`
