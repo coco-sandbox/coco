@@ -4,6 +4,7 @@
 //! Cocod — Guest agent running inside MicroVM as PID 1.
 //! Listens on vsock for exec commands from the host.
 //! Streams stdout/stderr back via vsock connection.
+//! Falls back to TCP for development environments.
 
 const std = @import("std");
 const posix = std.posix;
@@ -122,16 +123,22 @@ fn setupSignalHandlers() void {
 
 /// connectToHost establishes a connection to the host.
 /// Uses COCO_VSOCK_PORT env var.
-/// Falls back to TCP connection since AF_VSOCK is not in Zig std.
+/// First attempts VSock (cid=2 is host), falls back to TCP for development.
 fn connectToHost(port: u16) !std.net.Stream {
-    // In a real vsock implementation, we would use:
-    //   const addr = try std.net.Address.initVsock(cid, port);
-    // Since Zig 0.14.0 std doesn't include vsock support, we use TCP
-    // with the expectation that the hypervisor maps vsock port to a TCP port.
+    // Try VSock first (cid=2 is the host)
+    const vsock_addr = std.net.Address.initVsock(2, port);
+    log("Connecting to vsock://2:{d}", .{port});
 
-    const loopback = try std.net.Address.parseIp("127.0.0.1", port);
-    log("Connecting to 127.0.0.1:{d} (vsock fallback)", .{port});
-    return try std.net.tcpConnectToAddress(loopback);
+    if (std.net.Dial.connect(vsock_addr)) |conn| {
+        log("Connected via VSock", .{});
+        return conn;
+    } else |_| {
+        // VSock not available, fall back to TCP for development
+        log("VSock not available, falling back to TCP", .{});
+        const loopback = try std.net.Address.parseIp("127.0.0.1", port);
+        log("Connecting to 127.0.0.1:{d} (TCP fallback)", .{port});
+        return try std.net.tcpConnectToAddress(loopback);
+    }
 }
 
 /// sendChunk sends a stream chunk to host with proper framing
@@ -411,7 +418,7 @@ pub fn main() !void {
     }
 
     log("Guest agent starting (PID 1)", .{});
-    log("VSock port: {d} (TCP fallback)", .{vsock_port_val});
+    log("VSock port: {d} (VSock preferred, TCP fallback)", .{vsock_port_val});
 
     // Setup PID 1
     try setupPid1();
