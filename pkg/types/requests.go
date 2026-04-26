@@ -252,3 +252,21 @@ type ListCheckpointsResponse struct {
 type RestoreCheckpointRequest struct {
 	CheckpointID string `json:"checkpoint_id"`
 }
+
+// =============================================================================
+// Checkpoint Client Interface
+// =============================================================================
+
+type CheckpointClient interface {
+	Create(ctx context.Context, req *CreateCheckpointRequest) (*CreateCheckpointResponse, error)
+	List(ctx context.Context, sandboxID string) (*ListCheckpointsResponse, error)
+	Get(ctx context.Context, checkpointID string) (*GetCheckpointResponse, error)
+	Delete(ctx context.Context, checkpointID string) error
+	Restore(ctx context.Context, req *RestoreCheckpointRequest) (*RestoreResponse, error)
+}
+
+type RestoreResponse struct {
+	SandboxID string `json:"sandbox_id"`
+	VsockCID  uint32 `json:"vsock_cid"`
+	DurationMs int64 `json:"duration_ms"`
+}

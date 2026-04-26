@@ -8,17 +8,22 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/coco-sandbox/coco/pkg/types"
 	"github.com/coco-sandbox/coco/pkg/visor"
 )
 
 // ExecHandler handles code execution requests
 type ExecHandler struct {
-	visorPool *visor.Pool
+	visorPool       *visor.Pool
+	checkpointClient types.CheckpointClient
 }
 
-// NewExecHandler creates a new ExecHandler with the given visor connection pool
-func NewExecHandler(visorPool *visor.Pool) *ExecHandler {
-	return &ExecHandler{visorPool: visorPool}
+// NewExecHandler creates a new ExecHandler with the given visor connection pool and checkpoint client
+func NewExecHandler(visorPool *visor.Pool, checkpointClient types.CheckpointClient) *ExecHandler {
+	return &ExecHandler{
+		visorPool:       visorPool,
+		checkpointClient: checkpointClient,
+	}
 }
 
 // ExecRequest represents a request to execute code
@@ -195,8 +200,23 @@ func (h *ExecHandler) HandleCreateCheckpoint(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	// TODO: wire to master
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+
+	if h.checkpointClient == nil {
+		http.Error(w, "checkpoint service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	resp, err := h.checkpointClient.Create(r.Context(), &types.CreateCheckpointRequest{
+		Name:        reqBody.Name,
+		Description: reqBody.Description,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("create checkpoint failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // HandleRestoreSandbox handles POST /v1/sandboxes/:id/restore
@@ -209,12 +229,37 @@ func (h *ExecHandler) HandleRestoreSandbox(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	// TODO: wire to master
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+
+	if h.checkpointClient == nil {
+		http.Error(w, "checkpoint service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	resp, err := h.checkpointClient.Restore(r.Context(), &types.RestoreCheckpointRequest{
+		CheckpointID: reqBody.CheckpointID,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("restore checkpoint failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // HandleListCheckpoints handles GET /v1/sandboxes/:id/checkpoints
 func (h *ExecHandler) HandleListCheckpoints(w http.ResponseWriter, r *http.Request, sandboxID string) {
-	// TODO: wire to master
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	if h.checkpointClient == nil {
+		http.Error(w, "checkpoint service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	resp, err := h.checkpointClient.List(r.Context(), sandboxID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("list checkpoints failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

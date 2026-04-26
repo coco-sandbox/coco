@@ -15,8 +15,8 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 	// Sandbox handlers - gateway implements SandboxService interface
 	sbHandler := handlers.NewSandboxHandler(gw)
 
-	// Exec handler - needs visor pool (TODO: wire properly)
-	execHandler := handlers.NewExecHandler(nil)
+	// Exec handler - wired with checkpoint client
+	execHandler := handlers.NewExecHandler(nil, nil)
 
 	// Sandbox CRUD
 	mux.HandleFunc("/v1/sandboxes", func(w http.ResponseWriter, r *http.Request) {
