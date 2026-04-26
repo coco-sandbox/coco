@@ -36,9 +36,10 @@ pub fn reflinkFile(src_path: []const u8, dst_path: []const u8) !void {
     defer posix.close(dst_fd);
 
     const stat = try posix.fstat(src_fd);
-    const copied = try reflinkCopy(src_fd, dst_fd, 0, 0, @intCast(stat.size));
+    const size = @as(u64, @intCast(stat.size));
+    const copied = try reflinkCopy(src_fd, dst_fd, 0, 0, size);
 
-    if (copied != @intCast(stat.size)) {
+    if (copied != size) {
         return ReflinkError.CopyFileRangeFailed;
     }
 }
@@ -60,20 +61,14 @@ pub fn isBtrfs(filesystem: []const u8) bool {
 }
 
 pub fn getFilesystemType(path: []const u8) ?[]u8 {
-    var buffer: [4096]u8 = undefined;
-    const mount_point = std.fs.cwd().openFile(path, .{}) catch return null;
-    defer mount_point.close();
-
-    const stat = mount_point.stat() catch return null;
-
+    _ = path;
     return null;
 }
 
 pub fn deduplicateFiles(files: [][]const u8) !void {
     if (files.len < 2) return;
 
-    for (files[1..], 0..) |file, i| {
-        const reflink_result = reflinkFile(files[0], file);
-        _ = reflink_result;
+    for (files[1..]) |file| {
+        reflinkFile(files[0], file) catch {};
     }
 }
