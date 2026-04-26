@@ -101,9 +101,17 @@ func (d *Discovery) WatchNodes(ctx context.Context, callback func(Event)) {
 			return
 		case resp := <-ch:
 			for _, ev := range resp.Events {
+				eventType := "unknown"
+				if ev.IsCreate() {
+					eventType = "put"
+				} else if ev.IsModify() {
+					eventType = "put"
+				} else if ev.Type == clientv3.EventTypeDelete {
+					eventType = "delete"
+				}
 				callback(Event{
-					Type: ev.Type,
-					Key:  string(ev.Kv.Key),
+					Type: eventType,
+					Key:   string(ev.Kv.Key),
 					Value: string(ev.Kv.Value),
 				})
 			}

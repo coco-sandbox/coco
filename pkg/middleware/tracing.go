@@ -22,6 +22,7 @@ func Tracing(next http.Handler) http.Handler {
 			),
 		)
 		defer span.End()
+		_ = ctx
 
 		wrapped := &tracingResponseWriter{ResponseWriter: w, span: span}
 
