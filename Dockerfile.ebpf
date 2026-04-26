@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y \
     clang \
     llvm \
     linux-libc-dev \
+    libc6-dev \
     libbpf-dev \
-    linux-headers-generic \
     make \
     git \
     && rm -rf /var/lib/apt/lists/*

@@ -27,26 +27,31 @@ xdp:
 		-D__TARGET_ARCH_$(ARCH) \
 		-Iheaders \
 		-I/usr/include \
+		-I/usr/include/bpf \
 		-c xdp/xdp_filter.bpf.c -o $(EBPF_OUT)/xdp/xdp_filter.o
 	$(CLANG) -O2 -target bpf -g -Wall -Werror \
 		-D__TARGET_ARCH_$(ARCH) \
 		-Iheaders \
 		-I/usr/include \
+		-I/usr/include/bpf \
 		-c xdp/xdp_fwd.bpf.c -o $(EBPF_OUT)/xdp/xdp_fwd.o
 	$(CLANG) -O2 -target bpf -Wall -Werror \
 		-D__TARGET_ARCH_$(ARCH) \
 		-Iheaders \
 		-I/usr/include \
+		-I/usr/include/bpf \
 		-c xdp/xdp_nat.bpf.c -o $(EBPF_OUT)/xdp/xdp_nat.o
 	$(CLANG) -O2 -target bpf -g -Wall -Werror \
 		-D__TARGET_ARCH_$(ARCH) \
 		-Iheaders \
 		-I/usr/include \
+		-I/usr/include/bpf \
 		-c xdp/xdp_conntrack.bpf.c -o $(EBPF_OUT)/xdp/xdp_conntrack.o
 	$(CLANG) -O2 -target bpf -g -Wall -Werror \
 		-D__TARGET_ARCH_$(ARCH) \
 		-Iheaders \
 		-I/usr/include \
+		-I/usr/include/bpf \
 		-c xdp/xdp_stats.bpf.c -o $(EBPF_OUT)/xdp/xdp_stats.o
 
 from_host:
@@ -55,6 +60,7 @@ from_host:
 		-D__TARGET_ARCH_$(ARCH) \
 		-Iheaders \
 		-I/usr/include \
+		-I/usr/include/bpf \
 		-c from_host/from_host.bpf.c -o $(EBPF_OUT)/from_host/from_host.o
 
 from_sandbox:
@@ -63,6 +69,7 @@ from_sandbox:
 		-D__TARGET_ARCH_$(ARCH) \
 		-Iheaders \
 		-I/usr/include \
+		-I/usr/include/bpf \
 		-c from_sandbox/from_sandbox.bpf.c -o $(EBPF_OUT)/from_sandbox/from_sandbox.o
 
 from_world:
@@ -71,6 +78,7 @@ from_world:
 		-D__TARGET_ARCH_$(ARCH) \
 		-Iheaders \
 		-I/usr/include \
+		-I/usr/include/bpf \
 		-c from_world/from_world.bpf.c -o $(EBPF_OUT)/from_world/from_world.o
 
 clean:
