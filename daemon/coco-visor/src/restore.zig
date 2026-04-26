@@ -26,7 +26,7 @@ pub fn restoreFromSnapshot(
     _mem_size: u64,
     allocator: std.mem.Allocator,
 ) !RestoreResult {
-    const start = std.time.nanoTimestamp();
+    const start = sc.nanoTimestamp();
 
     var checkpoint_mgr = checkpoint.CheckpointManager.init(allocator);
     defer checkpoint_mgr.deinit();
@@ -48,7 +48,7 @@ pub fn restoreFromSnapshot(
     defer allocator.free(devices_path);
     checkpoint_mgr.loadDeviceState(devices_path);
 
-    const duration = @as(u64, std.time.nanoTimestamp() - start);
+    const duration = @as(u64, sc.nanoTimestamp() - start);
     const duration_ms = @as(u32, @intCast(@divTrunc(duration, 1_000_000)));
 
     return RestoreResult{

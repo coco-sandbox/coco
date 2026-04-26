@@ -1,4 +1,5 @@
 const std = @import("std");
+const sc = @import("syscall.zig");
 const posix = std.posix;
 const linux = std.os.linux;
 
@@ -111,7 +112,7 @@ fn ioctl(fd: i32, request: u32, arg: usize) !i32 {
 }
 
 pub fn open() !i32 {
-    return try std.posix.open("/dev/kvm", .{ .ACCMODE = .RDWR }, 0);
+    return try sc.open("/dev/kvm", .{ .ACCMODE = .RDWR }, 0);
 }
 
 pub fn createVm(kvm_fd: i32) !i32 {

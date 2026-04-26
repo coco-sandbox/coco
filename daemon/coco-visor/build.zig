@@ -4,13 +4,17 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const root_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    root_module.link_libc = true;
+    root_module.linkSystemLibrary("zstd", .{});
+
     const exe = b.addExecutable(.{
         .name = "cocovisor",
-        .root_module = b.createModule(.{ 
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = root_module,
     });
 
     b.installArtifact(exe);

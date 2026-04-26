@@ -5,6 +5,7 @@
 //! Handles MicroVM lifecycle: boot, fork, hibernate, pause, resume.
 
 const std = @import("std");
+const sc = @import("syscall.zig");
 const posix = std.posix;
 
 const vm_mod = @import("vm.zig");
@@ -87,7 +88,7 @@ pub const VM = struct {
         const mem_slice = posix.mmap(
             null,
             mem_size,
-            posix.PROT.READ | posix.PROT.WRITE,
+            posix.PROT{ .READ = true, .WRITE = true },
             posix.MAP{ .TYPE = .SHARED, .ANONYMOUS = true },
             -1,
             0,
@@ -120,7 +121,7 @@ pub const VM = struct {
                 agent_fd = fd;
                 break;
             }
-            std.time.sleep(200 * std.time.ns_per_ms);
+            sc.sleep(200 * std.time.ns_per_ms);
         }
 
         if (agent_fd < 0) {
@@ -131,7 +132,7 @@ pub const VM = struct {
         }
 
         const vm_ptr = std.heap.page_allocator.create(vm_mod.Vm) catch {
-            posix.close(agent_fd);
+            sc.close(agent_fd);
             vm.destroy();
             return VMMError.OutOfMemory;
         };
@@ -183,7 +184,7 @@ pub const VM = struct {
         std.debug.print("[vmm] Destroying VM {any}\n", .{self.config.id});
 
         if (self.agent_fd >= 0) {
-            posix.close(self.agent_fd);
+            sc.close(self.agent_fd);
             self.agent_fd = -1;
         }
 
@@ -221,7 +222,7 @@ pub const VM = struct {
         const child_id = std.fmt.allocPrint(
             std.heap.page_allocator,
             "{any}-fork-{d}",
-            .{ self.config.id, std.time.timestamp() },
+            .{ self.config.id, sc.timestamp() },
         ) catch return VMMError.OutOfMemory;
         defer std.heap.page_allocator.free(child_id);
 
@@ -245,7 +246,7 @@ pub const VM = struct {
         const child_mem = posix.mmap(
             null,
             child_mem_size,
-            posix.PROT.READ | posix.PROT.WRITE,
+            posix.PROT{ .READ = true, .WRITE = true },
             posix.MAP{ .TYPE = .SHARED, .ANONYMOUS = true },
             -1,
             0,
@@ -275,7 +276,7 @@ pub const VM = struct {
                 child_agent_fd = fd;
                 break;
             }
-            std.time.sleep(200 * std.time.ns_per_ms);
+            sc.sleep(200 * std.time.ns_per_ms);
         }
 
         if (child_agent_fd < 0) {
@@ -285,7 +286,7 @@ pub const VM = struct {
         }
 
         const child_vm_ptr = std.heap.page_allocator.create(VM) catch {
-            posix.close(child_agent_fd);
+            sc.close(child_agent_fd);
             child_vm.destroy();
             self.resume_() catch {};
             return VMMError.OutOfMemory;
@@ -296,7 +297,7 @@ pub const VM = struct {
         child_vm_ptr.state = .running;
         child_vm_ptr.pid = child_pid;
         child_vm_ptr.vm_instance = std.heap.page_allocator.create(vm_mod.Vm) catch {
-            posix.close(child_agent_fd);
+            sc.close(child_agent_fd);
             child_vm.destroy();
             std.heap.page_allocator.destroy(child_vm_ptr);
             self.resume_() catch {};
@@ -323,11 +324,11 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        const start = std.time.nanoTimestamp();
+        const start = sc.nanoTimestamp();
 
         std.debug.print("[vmm] Hibernate VM {any}\n", .{self.config.id});
 
-        std.fs.makeDirAbsolute(SNAPSHOT_DIR) catch {};
+        sc.mkdir(SNAPSHOT_DIR, 0o755) catch {};
 
         const snap_dir = std.fmt.allocPrint(
             std.heap.page_allocator,
@@ -335,7 +336,7 @@ pub const VM = struct {
             .{ SNAPSHOT_DIR, self.config.id },
         ) catch return VMMError.OutOfMemory;
         defer std.heap.page_allocator.free(snap_dir);
-        std.fs.makeDirAbsolute(snap_dir) catch {};
+        sc.mkdir(snap_dir, 0o755) catch {};
 
         if (self.vm_instance) |vm| {
             vm.pause();
@@ -348,7 +349,7 @@ pub const VM = struct {
                 .id = self.config.id,
                 .memory_size = self.memory_size,
                 .compressed_size = 0,
-                .timestamp = std.time.timestamp(),
+                .timestamp = sc.timestamp(),
                 .memory_mb = self.config.memory_mb,
                 .vcpus = self.config.vcpus,
                 .kernel = self.config.kernel,
@@ -357,7 +358,7 @@ pub const VM = struct {
             _ = checkpoint.createCheckpoint(self.config.id, mem_ptr, self.memory_size, meta);
         }
 
-        const duration: i128 = std.time.nanoTimestamp() - start;
+        const duration: i128 = sc.nanoTimestamp() - start;
         const duration_ms = @as(u32, @intCast(@divTrunc(duration, 1_000_000)));
 
         global_metrics.recordHibernate(@intCast(duration));
@@ -373,6 +374,12 @@ pub const VM = struct {
         }
 
         std.debug.print("[vmm] Resuming VM {any} from hibernate\n", .{self.config.id});
+
+        if (self.memory_ptr) |mem_ptr| {
+            var checkpoint = checkpoint_mod.CheckpointManager.init(std.heap.page_allocator);
+            defer checkpoint.deinit();
+            _ = checkpoint.restoreCheckpoint(self.config.id, mem_ptr);
+        }
 
         if (self.vm_instance) |vm| {
             vm.resume_();
@@ -390,7 +397,7 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        const start = std.time.nanoTimestamp();
+        const start = sc.nanoTimestamp();
 
         if (self.state == .running) {
             try self.pause();
@@ -402,7 +409,7 @@ pub const VM = struct {
                 .id = self.config.id,
                 .memory_size = self.memory_size,
                 .compressed_size = 0,
-                .timestamp = std.time.timestamp(),
+                .timestamp = sc.timestamp(),
                 .memory_mb = self.config.memory_mb,
                 .vcpus = self.config.vcpus,
                 .kernel = self.config.kernel,
@@ -417,7 +424,7 @@ pub const VM = struct {
 
         try self.resume_();
 
-        const duration = @as(u64, std.time.nanoTimestamp() - start);
+        const duration = @as(u64, sc.nanoTimestamp() - start);
         const duration_ms = @as(u32, @intCast(@divTrunc(duration, 1_000_000)));
 
         std.debug.print("[vmm] Snapshot complete: {d}ms\n", .{duration_ms});

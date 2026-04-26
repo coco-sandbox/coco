@@ -1,4 +1,5 @@
 const std = @import("std");
+const sc = @import("syscall.zig");
 const posix = std.posix;
 
 const GDT_ADDR: u64 = 0x500;
@@ -75,7 +76,7 @@ pub const GuestMemory = struct {
         const ptr = try posix.mmap(
             null,
             size,
-            posix.PROT.READ | posix.PROT.WRITE,
+            posix.PROT{ .READ = true, .WRITE = true },
             posix.MAP{ .TYPE = .SHARED, .ANONYMOUS = true },
             -1,
             0,
@@ -101,60 +102,60 @@ pub const GuestMemory = struct {
     }
 };
 
+fn readFully(fd: i32, buf: []u8) !usize {
+    var total: usize = 0;
+    while (total < buf.len) {
+        const n = try sc.read(fd, buf[total..]);
+        if (n == 0) break;
+        total += n;
+    }
+    return total;
+}
+
 pub fn loadKernel(mem: *const GuestMemory, kernel_path: []const u8) !u64 {
-    const file = try std.fs.openFileAbsolute(kernel_path, .{});
-    defer file.close();
+    const fd = try sc.open(kernel_path, .{ .ACCMODE = .RDONLY }, 0);
+    defer sc.close(fd);
 
-    const stat = try file.stat();
-    if (stat.size < 512)
-        return error.KernelTooSmall;
+    const total_size = try sc.fileSize(fd);
+    if (total_size < 512) return error.KernelTooSmall;
 
+    _ = try sc.lseek(fd, 0x1F1, 0);
     var boot_header: [64]u8 = undefined;
-    try file.seekTo(0x1F1);
-    const n = try file.readAll(&boot_header);
-    if (n < 16)
-        return error.InvalidKernel;
+    const n = try readFully(fd, &boot_header);
+    if (n < 16) return error.InvalidKernel;
 
-    const header = std.mem.readInt(u32, boot_header[0x11..0x15], .little);
-    if (header != 0x53726448)
-        return error.InvalidKernelHeader;
+    const header_magic = std.mem.readInt(u32, boot_header[0x11..0x15], .little);
+    if (header_magic != 0x53726448) return error.InvalidKernelHeader;
 
     const setup_sects = boot_header[0];
     const setup_size = (@as(u64, setup_sects) + 1) * 512;
 
-    if (setup_size >= stat.size)
-        return error.InvalidSetupSize;
+    if (setup_size >= total_size) return error.InvalidSetupSize;
 
-    try file.seekTo(setup_size);
+    _ = try sc.lseek(fd, @intCast(setup_size), 0);
 
-    const kernel_size = stat.size - setup_size;
+    const kernel_size = total_size - setup_size;
     const kernel_dst = mem.sliceAt(KERNEL_LOAD_ADDR, @intCast(kernel_size));
-    const bytes_read = try file.readAll(kernel_dst);
+    const bytes_read = try readFully(fd, kernel_dst);
 
-    if (bytes_read != kernel_size)
-        return error.KernelReadFailed;
-
+    if (bytes_read != kernel_size) return error.KernelReadFailed;
     return KERNEL_LOAD_ADDR;
 }
 
 pub fn loadInitrd(mem: *const GuestMemory, initrd_path: []const u8) !struct { addr: u64, size: u64 } {
-    if (initrd_path.len == 0)
-        return .{ .addr = 0, .size = 0 };
+    if (initrd_path.len == 0) return .{ .addr = 0, .size = 0 };
 
-    const file = try std.fs.openFileAbsolute(initrd_path, .{});
-    defer file.close();
+    const fd = try sc.open(initrd_path, .{ .ACCMODE = .RDONLY }, 0);
+    defer sc.close(fd);
 
-    const stat = try file.stat();
-    if (stat.size == 0)
-        return .{ .addr = 0, .size = 0 };
+    const total_size = try sc.fileSize(fd);
+    if (total_size == 0) return .{ .addr = 0, .size = 0 };
 
-    const initrd_dst = mem.sliceAt(INITRD_LOAD_ADDR, @intCast(stat.size));
-    const bytes_read = try file.readAll(initrd_dst);
+    const initrd_dst = mem.sliceAt(INITRD_LOAD_ADDR, @intCast(total_size));
+    const bytes_read = try readFully(fd, initrd_dst);
 
-    if (bytes_read != stat.size)
-        return error.InitrdReadFailed;
-
-    return .{ .addr = INITRD_LOAD_ADDR, .size = stat.size };
+    if (bytes_read != total_size) return error.InitrdReadFailed;
+    return .{ .addr = INITRD_LOAD_ADDR, .size = total_size };
 }
 
 pub fn setupBootParams(mem: *const GuestMemory, cmdline: []const u8, mem_size_mb: u32, initrd_addr: u64, initrd_size: u64) !void {
@@ -179,37 +180,18 @@ pub fn setupBootParams(mem: *const GuestMemory, cmdline: []const u8, mem_size_mb
     bp.ramdisk_size = @intCast(initrd_size);
     bp.video_mode = 0xFFFF;
 
-    bp.e820_table[0] = .{
-        .addr = 0x0,
-        .size = LOWMEM_END,
-        .type = E820_RAM,
-    };
-
-    bp.e820_table[1] = .{
-        .addr = LOWMEM_END,
-        .size = 0xA0000 - LOWMEM_END,
-        .type = E820_RESERVED,
-    };
-
-    bp.e820_table[2] = .{
-        .addr = 0xF0000,
-        .size = 0x10000,
-        .type = E820_RESERVED,
-    };
+    bp.e820_table[0] = .{ .addr = 0x0, .size = LOWMEM_END, .type = E820_RAM };
+    bp.e820_table[1] = .{ .addr = LOWMEM_END, .size = 0xA0000 - LOWMEM_END, .type = E820_RESERVED };
+    bp.e820_table[2] = .{ .addr = 0xF0000, .size = 0x10000, .type = E820_RESERVED };
 
     const mem_bytes = @as(u64, mem_size_mb) * 1024 * 1024;
-    bp.e820_table[3] = .{
-        .addr = 0x100000,
-        .size = mem_bytes - 0x100000,
-        .type = E820_RAM,
-    };
+    bp.e820_table[3] = .{ .addr = 0x100000, .size = mem_bytes - 0x100000, .type = E820_RAM };
 
     bp.e820_entries = 4;
 }
 
 pub fn setupGdt(mem: *const GuestMemory) void {
     const gdt_slice = mem.sliceAt(GDT_ADDR, 24);
-
     @memset(gdt_slice, 0);
 
     const gdt: [3][8]u8 = .{

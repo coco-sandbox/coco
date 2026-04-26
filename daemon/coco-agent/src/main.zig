@@ -228,21 +228,105 @@ fn sendExit(sock: Stream, code: u32) !void {
     try sock.writeAll(std.mem.asBytes(&exit_code_val));
 }
 
+fn forkExecCommand(
+    cmd: []const u8,
+    args_raw: []const u8,
+    env_raw: []const u8,
+    workdir: []const u8,
+    stdout_w: i32,
+    stderr_w: i32,
+) !posix.pid_t {
+    const pid_rc = linux.fork();
+    const pid_sr: isize = @bitCast(pid_rc);
+    if (pid_sr < 0) return error.ForkFailed;
+    const pid: posix.pid_t = @intCast(pid_sr);
+
+    if (pid == 0) {
+        _ = linux.dup2(stdout_w, 1);
+        _ = linux.dup2(stderr_w, 2);
+
+        if (workdir.len > 0) {
+            var wd_buf: [4096]u8 = undefined;
+            if (workdir.len < wd_buf.len) {
+                @memcpy(wd_buf[0..workdir.len], workdir);
+                wd_buf[workdir.len] = 0;
+                _ = linux.chdir(@ptrCast(&wd_buf));
+            }
+        }
+
+        var argv_storage: [128][*:0]const u8 = undefined;
+        var argv_buf: [4096]u8 = undefined;
+        var bp: usize = 0;
+        var ai: usize = 0;
+
+        if (cmd.len + 1 < argv_buf.len - bp) {
+            @memcpy(argv_buf[bp..][0..cmd.len], cmd);
+            argv_buf[bp + cmd.len] = 0;
+            argv_storage[ai] = @ptrCast(&argv_buf[bp]);
+            bp += cmd.len + 1;
+            ai += 1;
+        }
+
+        var i: usize = 0;
+        while (i < args_raw.len and ai < 127) {
+            var j = i;
+            while (j < args_raw.len and args_raw[j] != 0) : (j += 1) {}
+            if (j > i and bp + (j - i) + 1 < argv_buf.len) {
+                @memcpy(argv_buf[bp..][0..(j - i)], args_raw[i..j]);
+                argv_buf[bp + (j - i)] = 0;
+                argv_storage[ai] = @ptrCast(&argv_buf[bp]);
+                bp += (j - i) + 1;
+                ai += 1;
+            }
+            i = j + 1;
+        }
+
+        var envp_storage: [128][*:0]const u8 = undefined;
+        var envp_buf: [4096]u8 = undefined;
+        var ebp: usize = 0;
+        var ei: usize = 0;
+
+        i = 0;
+        while (i < env_raw.len and ei < 127) {
+            var j = i;
+            while (j < env_raw.len and env_raw[j] != 0) : (j += 1) {}
+            if (j > i and ebp + (j - i) + 1 < envp_buf.len) {
+                @memcpy(envp_buf[ebp..][0..(j - i)], env_raw[i..j]);
+                envp_buf[ebp + (j - i)] = 0;
+                envp_storage[ei] = @ptrCast(&envp_buf[ebp]);
+                ebp += (j - i) + 1;
+                ei += 1;
+            }
+            i = j + 1;
+        }
+
+        const argv_term: ?[*:0]const u8 = null;
+        const envp_term: ?[*:0]const u8 = null;
+        var argv_final: [128]?[*:0]const u8 = undefined;
+        var envp_final: [128]?[*:0]const u8 = undefined;
+        for (0..ai) |k| argv_final[k] = argv_storage[k];
+        argv_final[ai] = argv_term;
+        for (0..ei) |k| envp_final[k] = envp_storage[k];
+        envp_final[ei] = envp_term;
+
+        _ = linux.execve(argv_storage[0], @ptrCast(&argv_final), @ptrCast(&envp_final));
+        linux.exit(127);
+        unreachable;
+    }
+
+    return pid;
+}
+
 fn executeStructuredCommand(sock: Stream, cmd: []const u8, args_raw: []const u8, env_raw: []const u8, workdir: []const u8) !void {
-    _ = args_raw;
-    _ = env_raw;
-    _ = workdir;
+    var stdout_pipe: [2]i32 = undefined;
+    var stderr_pipe: [2]i32 = undefined;
+    if (@as(isize, @bitCast(linux.pipe(&stdout_pipe))) < 0) return error.PipeFailed;
+    if (@as(isize, @bitCast(linux.pipe(&stderr_pipe))) < 0) return error.PipeFailed;
 
-    var arg_buf: [512]u8 = undefined;
-    @memcpy(arg_buf[0..cmd.len], cmd);
-    const args: [1][*:0]const u8 = .{@ptrCast(&arg_buf)};
-
-    var child = std.process.Child.init(&args, allocator);
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
-
-    try child.spawn();
-    child_pid = child.id;
+    const pid = try forkExecCommand(cmd, args_raw, env_raw, workdir, stdout_pipe[1], stderr_pipe[1]);
+    child_pid = pid;
+    _ = linux.close(stdout_pipe[1]);
+    _ = linux.close(stderr_pipe[1]);
 
     var stdout_buf: [CHUNK_SIZE]u8 = undefined;
     var stderr_buf: [CHUNK_SIZE]u8 = undefined;
@@ -251,38 +335,37 @@ fn executeStructuredCommand(sock: Stream, cmd: []const u8, args_raw: []const u8,
 
     while (!stdout_done or !stderr_done) {
         if (!stdout_done) {
-            if (child.stdout) |out| {
-                const n = out.read(&stdout_buf) catch blk: {
-                    stdout_done = true;
-                    break :blk 0;
-                };
-                if (n == 0) stdout_done = true else try sendChunk(sock, STREAM_STDOUT, stdout_buf[0..n]);
-            } else stdout_done = true;
+            const n_rc = linux.read(stdout_pipe[0], &stdout_buf, stdout_buf.len);
+            const n_sr: isize = @bitCast(n_rc);
+            if (n_sr <= 0) {
+                stdout_done = true;
+            } else {
+                try sendChunk(sock, STREAM_STDOUT, stdout_buf[0..@intCast(n_sr)]);
+            }
         }
         if (!stderr_done) {
-            if (child.stderr) |err_pipe| {
-                const n = err_pipe.read(&stderr_buf) catch blk: {
-                    stderr_done = true;
-                    break :blk 0;
-                };
-                if (n == 0) stderr_done = true else try sendChunk(sock, STREAM_STDERR, stderr_buf[0..n]);
-            } else stderr_done = true;
+            const n_rc = linux.read(stderr_pipe[0], &stderr_buf, stderr_buf.len);
+            const n_sr: isize = @bitCast(n_rc);
+            if (n_sr <= 0) {
+                stderr_done = true;
+            } else {
+                try sendChunk(sock, STREAM_STDERR, stderr_buf[0..@intCast(n_sr)]);
+            }
         }
     }
+    _ = linux.close(stdout_pipe[0]);
+    _ = linux.close(stderr_pipe[0]);
 
-    const term = child.wait() catch {
-        child_pid = 0;
-        try sendExit(sock, 255);
-        return;
-    };
+    var status: i32 = 0;
+    _ = linux.waitpid(pid, &status, 0);
     child_pid = 0;
 
-    const code: u32 = switch (term) {
-        .Exited => |c| @intCast(c),
-        .Signal => |s| 128 + @as(u32, @intCast(s)),
-        .Stopped => |s| 128 + @as(u32, @intCast(s)),
-        .Unknown => |c| @as(u32, @intCast(c)),
-    };
+    var code: u32 = 0;
+    if ((status & 0x7f) == 0) {
+        code = @intCast((status >> 8) & 0xff);
+    } else {
+        code = 128 + @as(u32, @intCast(status & 0x7f));
+    }
     try sendExit(sock, code);
 }
 

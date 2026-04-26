@@ -1,4 +1,5 @@
 const std = @import("std");
+const sc = @import("syscall.zig");
 const posix = std.posix;
 const kvm = @import("kvm.zig");
 const memory = @import("memory.zig");
@@ -17,7 +18,7 @@ pub const VCpu = struct {
 
     pub fn create(vm_fd: i32, id: u32, mmap_size: usize) !VCpu {
         const vcpu_fd = try kvm.createVcpu(vm_fd, @intCast(id));
-        const mmap_ptr = try posix.mmap(null, mmap_size, posix.PROT.READ | posix.PROT.WRITE, posix.MAP{ .TYPE = .SHARED }, vcpu_fd, 0);
+        const mmap_ptr = try posix.mmap(null, mmap_size, posix.PROT{ .READ = true, .WRITE = true }, posix.MAP{ .TYPE = .SHARED }, vcpu_fd, 0);
         return VCpu{
             .fd = vcpu_fd,
             .kvm_run = @ptrCast(mmap_ptr),
@@ -124,7 +125,7 @@ pub const VCpu = struct {
             if (io_data.direction == 1) {
                 const data_ptr = @as([*]u8, @ptrCast(self.kvm_run)) + io_data.data_offset;
                 const data = data_ptr[0..io_data.size];
-                _ = std.io.getStdErr().writeAll(data) catch {};
+                _ = sc.write(2, data) catch {};
             }
         }
     }
@@ -133,6 +134,6 @@ pub const VCpu = struct {
         const aligned_ptr = @as([*]align(std.heap.page_size_min) u8, @ptrCast(@alignCast(self.kvm_run)));
         const slice = aligned_ptr[0..self.mmap_size];
         posix.munmap(slice);
-        posix.close(self.fd);
+        sc.close(self.fd);
     }
 };

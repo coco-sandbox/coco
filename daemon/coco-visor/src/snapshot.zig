@@ -32,7 +32,7 @@ pub fn createSnapshot(id: []const u8, _: [*]u8, _: u64) !void {
 pub fn loadSnapshot(id: []const u8) !SnapshotMetadata {
     return SnapshotMetadata{
         .id = id,
-        .timestamp = std.time.timestamp(),
+        .timestamp = sc.timestamp(),
         .memory_size = 0,
         .memory_mb = 512,
         .vcpus = 2,

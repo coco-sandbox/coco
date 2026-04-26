@@ -6,6 +6,7 @@
 //! Provides metrics on port 9090 and health checks on port 4748.
 
 const std = @import("std");
+const sc = @import("syscall.zig");
 const linux = std.os.linux;
 const vmm = @import("vmm.zig");
 const config = @import("config.zig");
@@ -22,14 +23,24 @@ pub const Stream = struct {
     handle: i32,
 
     pub fn read(self: Stream, buf: []u8) !usize {
-        const rc = std.os.read(self.handle, buf.ptr, buf.len);
-        if (rc < 0) return error.ReadFailed;
+        const rc = linux.read(self.handle, buf.ptr, buf.len);
+        if (@as(isize, @bitCast(rc)) < 0) return error.ReadFailed;
         return @intCast(rc);
     }
 
+    pub fn readAtLeast(self: Stream, buf: []u8, min: usize) !usize {
+        var total: usize = 0;
+        while (total < min) {
+            const n = try self.read(buf[total..]);
+            if (n == 0) return error.UnexpectedEOF;
+            total += n;
+        }
+        return total;
+    }
+
     pub fn write(self: Stream, buf: []const u8) !usize {
-        const rc = std.os.write(self.handle, buf.ptr, buf.len);
-        if (rc < 0) return error.WriteFailed;
+        const rc = linux.write(self.handle, buf.ptr, buf.len);
+        if (@as(isize, @bitCast(rc)) < 0) return error.WriteFailed;
         return @intCast(rc);
     }
 
@@ -41,7 +52,7 @@ pub const Stream = struct {
     }
 
     pub fn close(self: Stream) void {
-        _ = std.os.close(self.handle);
+        _ = linux.close(self.handle);
     }
 };
 
@@ -190,6 +201,8 @@ fn handleBoot(sock: Stream, payload: []u8) !void {
         return;
     }
 
+    const start = sc.nanoTimestamp();
+
     const req = @as(*align(1) const BootRequest, @ptrCast(payload.ptr));
     const base = @sizeOf(BootRequest);
 
@@ -251,7 +264,7 @@ fn handleBoot(sock: Stream, payload: []u8) !void {
         return;
     };
 
-    const duration = @as(u64, @intCast(0));
+    const duration = @as(u64, @intCast(sc.nanoTimestamp() - start));
     vmm.getMetrics().recordBoot(duration);
 
     std.debug.print("[cocovisor] Boot sandbox {s} (cid={d}, pid={d}) in {d}µs\n", .{
@@ -302,130 +315,64 @@ fn handleExec(sock: Stream, payload: []u8) !void {
     const req = @as(*align(1) const ExecRequest, @ptrCast(payload.ptr));
     const base = @sizeOf(ExecRequest);
 
-    const cmd = payload[base..][0..req.cmd_len];
-    const args_raw = payload[base + req.cmd_len ..][0..req.args_len];
-    const env_raw = payload[base + req.cmd_len + req.args_len ..][0..req.env_len];
-    const workdir = payload[base + req.cmd_len + req.args_len + req.env_len ..][0..req.working_dir_len];
+    const sandbox_id = payload[base..][0..req.sandbox_id_len];
+    const cmd = payload[base + req.sandbox_id_len ..][0..req.cmd_len];
+    const args_raw = payload[base + req.sandbox_id_len + req.cmd_len ..][0..req.args_len];
+    const env_raw = payload[base + req.sandbox_id_len + req.cmd_len + req.args_len ..][0..req.env_len];
+    const workdir = payload[base + req.sandbox_id_len + req.cmd_len + req.args_len + req.env_len ..][0..req.working_dir_len];
 
-    // Parse null-terminated args into a slice
-    var args_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
-    defer args_list.deinit();
-    var arg_start: usize = 0;
-    for (args_raw, 0..) |byte, i| {
-        if (byte == 0) {
-            try args_list.append(args_raw[arg_start..i]);
-            arg_start = i + 1;
-        }
+    const vm = vmm.getVMs().get(sandbox_id) orelse {
+        try sendError(sock, "sandbox not found");
+        return;
+    };
+    if (vm.agent_fd < 0) {
+        try sendError(sock, "agent not connected");
+        return;
     }
 
-    // Parse null-terminated env into key=value pairs
-    var env_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
-    defer env_list.deinit();
-    var env_start: usize = 0;
-    for (env_raw, 0..) |byte, i| {
-        if (byte == 0) {
-            if (env_start < i) {
-                try env_list.append(env_raw[env_start..i]);
-            }
-            env_start = i + 1;
+    const agent = Stream{ .handle = vm.agent_fd };
+
+    const body_len: u32 = @intCast(4 + 16 + req.cmd_len + req.args_len + req.env_len + req.working_dir_len);
+    var hdr: [4]u8 = undefined;
+    std.mem.writeInt(u32, &hdr, body_len, .little);
+    try agent.writeAll(&hdr);
+
+    var msg_type: [4]u8 = undefined;
+    std.mem.writeInt(u32, &msg_type, 1, .little);
+    try agent.writeAll(&msg_type);
+
+    var lengths: [16]u8 = undefined;
+    std.mem.writeInt(u32, lengths[0..4], req.cmd_len, .little);
+    std.mem.writeInt(u32, lengths[4..8], req.args_len, .little);
+    std.mem.writeInt(u32, lengths[8..12], req.env_len, .little);
+    std.mem.writeInt(u32, lengths[12..16], req.working_dir_len, .little);
+    try agent.writeAll(&lengths);
+    try agent.writeAll(cmd);
+    try agent.writeAll(args_raw);
+    try agent.writeAll(env_raw);
+    try agent.writeAll(workdir);
+
+    while (true) {
+        var hdr8: [8]u8 = undefined;
+        _ = try agent.readAtLeast(&hdr8, 8);
+        const stream_type = std.mem.readInt(u32, hdr8[0..4], .little);
+        const data_len = std.mem.readInt(u32, hdr8[4..8], .little);
+        if (stream_type == 3) {
+            var exit_buf: [4]u8 = undefined;
+            _ = try agent.readAtLeast(&exit_buf, 4);
+            const exit_code = std.mem.readInt(u32, &exit_buf, .little);
+            try sendExecChunk(sock, 3, &.{}, exit_code);
+            break;
+        }
+        if (data_len > 0) {
+            const data_buf = try std.heap.page_allocator.alloc(u8, data_len);
+            defer std.heap.page_allocator.free(data_buf);
+            _ = try agent.readAtLeast(data_buf, data_len);
+            try sendExecChunk(sock, stream_type, data_buf, 0);
+        } else {
+            try sendExecChunk(sock, stream_type, &.{}, 0);
         }
     }
-
-    std.debug.print("[cocovisor] Exec: {s} with {d} args\n", .{ cmd, args_list.items.len });
-
-    // Create pipes for stdout and stderr
-    const stdout_pipe = try std.posix.pipe2(.{});
-    const stderr_pipe = try std.posix.pipe2(.{});
-    defer {
-        std.posix.close(stdout_pipe[0]);
-        std.posix.close(stdout_pipe[1]);
-        std.posix.close(stderr_pipe[0]);
-        std.posix.close(stderr_pipe[1]);
-    }
-
-    // Fork child process
-    const pid = try std.posix.fork();
-    if (pid == 0) {
-        // Child: set up environment and exec
-        std.posix.close(stdout_pipe[0]);
-        std.posix.close(stderr_pipe[0]);
-
-        // Redirect stdout and stderr
-        try std.posix.dup2(stdout_pipe[1], std.posix.STDOUT_FILENO);
-        try std.posix.dup2(stderr_pipe[1], std.posix.STDERR_FILENO);
-        std.posix.close(stdout_pipe[1]);
-        std.posix.close(stderr_pipe[1]);
-
-        // Set working directory if provided
-        if (workdir.len > 0) {
-            std.posix.chdir(workdir) catch {};
-        }
-
-        // Skip env setting - env vars not supported in this context
-
-        // Convert args to null-terminated C strings
-        var argv = std.ArrayList(?[*:0]const u8).init(std.heap.page_allocator);
-        defer argv.deinit();
-        try argv.append(@ptrCast(cmd));
-        for (args_list.items) |arg| {
-            try argv.append(@ptrCast(arg));
-        }
-        try argv.append(null);
-
-        // Execute the command
-        const empty_env = [1]?[*:0]const u8{null};
-        const path: [*:0]const u8 = @ptrCast(cmd);
-        const child_argv: [*:null]const ?[*:0]const u8 = @ptrCast(argv.items.ptr);
-        const env: [*:null]const ?[*:0]const u8 = @ptrFromInt(@intFromPtr(&empty_env));
-        std.posix.execveZ(path, child_argv, env) catch {
-            std.debug.print("[cocovisor] Exec failed for {s}\n", .{cmd});
-            std.posix.exit(1);
-        };
-        unreachable;
-    }
-
-    // Parent: close child ends of pipes
-    std.posix.close(stdout_pipe[1]);
-    std.posix.close(stderr_pipe[1]);
-
-    // Read stdout and stream back
-    var stdout_buf: [4096]u8 = undefined;
-    var stderr_buf: [4096]u8 = undefined;
-    var exit_code: u32 = 0;
-    var stdout_done = false;
-    var stderr_done = false;
-
-    while (!stdout_done or !stderr_done) {
-        // Poll stdout
-        if (!stdout_done) {
-            const n = std.posix.read(stdout_pipe[0], &stdout_buf);
-            if (n) |len| {
-                try sendExecChunk(sock, 1, stdout_buf[0..len], 0);
-            } else |_| {
-                stdout_done = true;
-            }
-        }
-        // Poll stderr
-        if (!stderr_done) {
-            const n = std.posix.read(stderr_pipe[0], &stderr_buf);
-            if (n) |len| {
-                try sendExecChunk(sock, 2, stderr_buf[0..len], 0);
-            } else |_| {
-                stderr_done = true;
-            }
-        }
-    }
-
-    // Wait for child to finish and get exit code
-    const result = std.posix.waitpid(pid, 0);
-    const status = result.status;
-    if ((status & 0x7f) == 0) {
-        exit_code = @as(u32, @intCast((status >> 8) & 0xff));
-    }
-
-    // Send exit chunk
-    try sendExecChunk(sock, 3, "", exit_code);
-    std.debug.print("[cocovisor] Exec complete: exit_code={d}\n", .{exit_code});
 }
 
 fn handleDestroy(sock: Stream, payload: []u8) !void {
@@ -488,13 +435,15 @@ fn handleFork(sock: Stream, payload: []u8) !void {
     std.debug.print("[cocovisor] Fork: {s}\n", .{parent_id});
 
     if (vmm.getVMs().get(parent_id)) |parent_vm| {
+        const start = sc.nanoTimestamp();
         const result = parent_vm.fork() catch |e| {
             std.debug.print("[cocovisor] Fork failed: {}\n", .{e});
             try sendError(sock, "Fork failed");
             return;
         };
 
-        const duration = @as(u32, @intCast(@divTrunc(0, 1_000_000)));
+        const elapsed_ns = @as(u64, @intCast(sc.nanoTimestamp() - start));
+        const duration: u32 = @intCast(@divTrunc(elapsed_ns, 1_000_000));
 
         var resp: [16]u8 = undefined;
         w32(resp[0..4].ptr, RESP_FORK);
@@ -503,7 +452,7 @@ fn handleFork(sock: Stream, payload: []u8) !void {
         w32(resp[12..16].ptr, result.child_pid);
         try sock.writeAll(&resp);
 
-        vmm.getMetrics().recordFork(@as(u64, @intCast(duration * 1_000_000)));
+        vmm.getMetrics().recordFork(elapsed_ns);
         std.debug.print("[cocovisor] Fork complete: child_cid={d}, child_pid={d}, duration={d}ms\n", .{
             result.child_vsock_cid, result.child_pid, duration,
         });
@@ -518,14 +467,16 @@ fn handleHibernate(sock: Stream, payload: []u8) !void {
     std.debug.print("[cocovisor] Hibernate: {s}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
+        const start = sc.nanoTimestamp();
         _ = vm.hibernate() catch |e| {
             std.debug.print("[cocovisor] Hibernate failed: {}\n", .{e});
             try sendError(sock, "Hibernate failed");
             return;
         };
 
-        const duration = @as(u32, @intCast(@divTrunc(0, 1_000_000)));
-        vmm.getMetrics().recordHibernate(@as(u64, @intCast(duration * 1_000_000)));
+        const elapsed_ns = @as(u64, @intCast(sc.nanoTimestamp() - start));
+        const duration: u32 = @intCast(@divTrunc(elapsed_ns, 1_000_000));
+        vmm.getMetrics().recordHibernate(elapsed_ns);
 
         var resp: [12]u8 = undefined;
         w32(resp[0..4].ptr, RESP_HIBERNATE);
@@ -586,29 +537,70 @@ fn sendError(sock: Stream, msg: []const u8) !void {
     try sock.writeAll(msg);
 }
 
+const AF_INET = 2;
+const SO_REUSEADDR: u32 = 2;
+const SOL_SOCKET: u32 = 1;
+const INADDR_ANY: u32 = 0;
+
+const sockaddr_in = extern struct {
+    family: u16,
+    port: u16,
+    addr: u32,
+    zero: [8]u8 = [_]u8{0} ** 8,
+};
+
 fn startHttpServer(port: u16) void {
-    _ = port;
+    const sock_rc = linux.socket(AF_INET, linux.SOCK.STREAM, 0);
+    if (@as(isize, @bitCast(sock_rc)) < 0) return;
+    const fd: i32 = @intCast(sock_rc);
+    defer _ = linux.close(fd);
+
+    const reuse: u32 = 1;
+    _ = linux.setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, @ptrCast(&reuse), @sizeOf(u32));
+
+    const addr = sockaddr_in{
+        .family = AF_INET,
+        .port = std.mem.nativeToBig(u16, port),
+        .addr = INADDR_ANY,
+    };
+    if (@as(isize, @bitCast(linux.bind(fd, @ptrCast(&addr), @sizeOf(sockaddr_in)))) < 0) return;
+    if (@as(isize, @bitCast(linux.listen(fd, 64))) < 0) return;
+
+    while (true) {
+        var client_addr: sockaddr_in = undefined;
+        var addr_len: u32 = @sizeOf(sockaddr_in);
+        const client_rc = linux.accept(fd, @ptrCast(&client_addr), &addr_len);
+        if (@as(isize, @bitCast(client_rc)) <= 0) continue;
+        const client_fd: i32 = @intCast(client_rc);
+
+        const t = std.Thread.spawn(.{}, handleHttpRequest, .{client_fd}) catch {
+            _ = linux.close(client_fd);
+            continue;
+        };
+        t.detach();
+    }
 }
 
-fn handleHttpRequest(conn: std.net.Server.Connection) void {
-    defer conn.stream.close();
+fn handleHttpRequest(client_fd: i32) void {
+    const sock = Stream{ .handle = client_fd };
+    defer sock.close();
 
     var buf: [4096]u8 = undefined;
-    const n = conn.stream.read(&buf) catch return;
+    const n = sock.read(&buf) catch return;
     if (n == 0) return;
 
     const request = buf[0..n];
 
     if (std.mem.startsWith(u8, request, "GET /metrics")) {
-        handleMetrics(conn.stream) catch {};
+        handleMetrics(sock) catch {};
     } else if (std.mem.startsWith(u8, request, "GET /health/live")) {
-        handleHealthLive(conn.stream) catch {};
+        handleHealthLive(sock) catch {};
     } else if (std.mem.startsWith(u8, request, "GET /health/ready")) {
-        handleHealthReady(conn.stream) catch {};
+        handleHealthReady(sock) catch {};
     } else if (std.mem.startsWith(u8, request, "GET /health")) {
-        handleHealth(conn.stream) catch {};
+        handleHealth(sock) catch {};
     } else {
-        handleNotFound(conn.stream) catch {};
+        handleNotFound(sock) catch {};
     }
 }
 
@@ -618,7 +610,9 @@ fn handleMetrics(sock: Stream) !void {
     const header = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\n\r\n";
     try sock.writeAll(header);
 
-    try m.formatPrometheus(sock.writer().any());
+    var body_buf: [8192]u8 = undefined;
+    const body = m.formatPrometheusBuf(&body_buf) catch "";
+    try sock.writeAll(body);
 }
 
 fn handleHealthLive(sock: Stream) !void {
@@ -746,10 +740,10 @@ pub fn main() !void {
         var addr: sockaddr_un = undefined;
         var addr_len: u32 = @sizeOf(sockaddr_un);
         const accept_rc = linux.accept(socket_fd, @ptrCast(&addr), &addr_len);
-        if (accept_rc < 0 or accept_rc == 0) continue;
-        const client_fd = @as(i32, @intCast(accept_rc));
+        if (@as(isize, @bitCast(accept_rc)) <= 0) continue;
+        const client_fd: i32 = @intCast(accept_rc);
         const thread = std.Thread.spawn(.{}, handleConnection, .{client_fd}) catch {
-            _ = std.os.close(client_fd);
+            _ = linux.close(client_fd);
             continue;
         };
         thread.detach();

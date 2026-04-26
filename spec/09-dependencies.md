@@ -16,7 +16,7 @@ Installation is through the official Go distribution. The Go module system manag
 
 ### 1.2 Zig
 
-Zig version 0.12 or later is required to build Zig components. Earlier versions have different syntax and standard library organization.
+Zig version 0.16 or later is required to build Zig components. Earlier versions have different syntax and standard library organization.
 
 Zig is used for data plane components: Visor, Agent, and Fork.
 

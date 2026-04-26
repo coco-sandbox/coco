@@ -5,6 +5,7 @@
 //! Spec: Configurable via file, environment variables, and defaults.
 
 const std = @import("std");
+const sc = @import("syscall.zig");
 const linux = std.os.linux;
 
 pub const LogLevel = enum { debug, info, warn, err };
@@ -41,86 +42,133 @@ pub fn loadConfig() Config {
     };
 
     for (config_paths) |path| {
-        if (loadConfigFile(path, &config)) {
-            break;
-        }
+        if (loadConfigFile(path, &config)) break;
     }
 
     applyEnvOverrides(&config);
-
     return config;
 }
 
 fn loadConfigFile(path: []const u8, config: *Config) bool {
-    const path_null: [*:0]const u8 = @ptrCast(path);
-    const fd_isize = linux.open(path_null, linux.O{ .ACCMODE = .RDONLY }, 0);
-    if (fd_isize < 0) return false;
-    const fd: i32 = @intCast(fd_isize);
-    defer {
-        _ = linux.close(fd);
-    }
+    const fd = sc.open(path, .{ .ACCMODE = .RDONLY }, 0) catch return false;
+    defer sc.close(fd);
 
     var buf: [8192]u8 = undefined;
-    const bytes_read = linux.read(fd, &buf, buf.len);
-    if (bytes_read <= 0) return false;
-
-    const content = buf[0..@intCast(bytes_read)];
-    parseYaml(content, config) catch return false;
+    const n = sc.read(fd, &buf) catch return false;
+    if (n == 0) return false;
+    parseYaml(buf[0..n], config) catch return false;
     return true;
+}
+
+fn matchKey(line: []const u8, key: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, line, key)) return null;
+    if (line.len <= key.len) return "";
+    if (line[key.len] != ':') return null;
+    return std.mem.trim(u8, line[key.len + 1 ..], " \t\"'");
 }
 
 fn parseYaml(content: []const u8, config: *Config) !void {
     var lines = std.mem.splitScalar(u8, content, '\n');
+    const allocator = std.heap.page_allocator;
 
     while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t");
+        const trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0 or trimmed[0] == '#') continue;
 
-        if (std.mem.startsWith(u8, trimmed, "socket_path:")) {
-            const value = std.mem.trim(u8, trimmed[12..], " \"");
-            config.socket_path = try std.heap.page_allocator.dupe(u8, value);
-        } else if (std.mem.startsWith(u8, trimmed, "memory_mb:")) {
-            const value = std.mem.trim(u8, trimmed[10..], " \"");
-            config.memory_mb = std.fmt.parseInt(u32, value, 10) catch config.memory_mb;
-        } else if (std.mem.startsWith(u8, trimmed, "vcpus:")) {
-            const value = std.mem.trim(u8, trimmed[6..], " \"");
-            config.vcpus = std.fmt.parseInt(u32, value, 10) catch config.vcpus;
-        } else if (std.mem.startsWith(u8, trimmed, "kernel_path:")) {
-            const value = std.mem.trim(u8, trimmed[12..], " \"");
-            config.kernel_path = try std.heap.page_allocator.dupe(u8, value);
-        } else if (std.mem.startsWith(u8, trimmed, "template_dir:")) {
-            const value = std.mem.trim(u8, trimmed[12..], " \"");
-            config.template_dir = try std.heap.page_allocator.dupe(u8, value);
-        } else if (std.mem.startsWith(u8, trimmed, "checkpoint_dir:")) {
-            const value = std.mem.trim(u8, trimmed[14..], " \"");
-            config.checkpoint_dir = try std.heap.page_allocator.dupe(u8, value);
-        } else if (std.mem.startsWith(u8, trimmed, "hibernation_dir:")) {
-            const value = std.mem.trim(u8, trimmed[16..], " \"");
-            config.hibernation_dir = try std.heap.page_allocator.dupe(u8, value);
-        } else if (std.mem.startsWith(u8, trimmed, "vsock_port:")) {
-            const value = std.mem.trim(u8, trimmed[10..], " \"");
-            config.vsock_port = std.fmt.parseInt(u32, value, 10) catch config.vsock_port;
-        } else if (std.mem.startsWith(u8, trimmed, "metrics_port:")) {
-            const value = std.mem.trim(u8, trimmed[12..], " \"");
-            config.metrics_port = std.fmt.parseInt(u16, value, 10) catch config.metrics_port;
-        } else if (std.mem.startsWith(u8, trimmed, "health_port:")) {
-            const value = std.mem.trim(u8, trimmed[11..], " \"");
-            config.health_port = std.fmt.parseInt(u16, value, 10) catch config.health_port;
-        } else if (std.mem.startsWith(u8, trimmed, "log_level:")) {
-            const value = std.mem.trim(u8, trimmed[9..], " \"");
-            config.log_level = try std.heap.page_allocator.dupe(u8, value);
-        } else if (std.mem.startsWith(u8, trimmed, "pool_size:")) {
-            const value = std.mem.trim(u8, trimmed[9..], " \"");
-            config.pool_size = std.fmt.parseInt(u32, value, 10) catch config.pool_size;
-        } else if (std.mem.startsWith(u8, trimmed, "pool_precreate:")) {
-            const value = std.mem.trim(u8, trimmed[14..], " \"");
-            config.pool_precreate = std.mem.eql(u8, value, "true");
+        if (matchKey(trimmed, "socket_path")) |v| {
+            config.socket_path = try allocator.dupe(u8, v);
+        } else if (matchKey(trimmed, "memory_mb")) |v| {
+            config.memory_mb = std.fmt.parseInt(u32, v, 10) catch config.memory_mb;
+        } else if (matchKey(trimmed, "vcpus")) |v| {
+            config.vcpus = std.fmt.parseInt(u32, v, 10) catch config.vcpus;
+        } else if (matchKey(trimmed, "kernel_path")) |v| {
+            config.kernel_path = try allocator.dupe(u8, v);
+        } else if (matchKey(trimmed, "initrd_path")) |v| {
+            config.initrd_path = try allocator.dupe(u8, v);
+        } else if (matchKey(trimmed, "template_dir")) |v| {
+            config.template_dir = try allocator.dupe(u8, v);
+        } else if (matchKey(trimmed, "checkpoint_dir")) |v| {
+            config.checkpoint_dir = try allocator.dupe(u8, v);
+        } else if (matchKey(trimmed, "hibernation_dir")) |v| {
+            config.hibernation_dir = try allocator.dupe(u8, v);
+        } else if (matchKey(trimmed, "vsock_port")) |v| {
+            config.vsock_port = std.fmt.parseInt(u32, v, 10) catch config.vsock_port;
+        } else if (matchKey(trimmed, "metrics_enabled")) |v| {
+            config.metrics_enabled = std.mem.eql(u8, v, "true");
+        } else if (matchKey(trimmed, "metrics_port")) |v| {
+            config.metrics_port = std.fmt.parseInt(u16, v, 10) catch config.metrics_port;
+        } else if (matchKey(trimmed, "health_enabled")) |v| {
+            config.health_enabled = std.mem.eql(u8, v, "true");
+        } else if (matchKey(trimmed, "health_port")) |v| {
+            config.health_port = std.fmt.parseInt(u16, v, 10) catch config.health_port;
+        } else if (matchKey(trimmed, "log_level")) |v| {
+            config.log_level = try allocator.dupe(u8, v);
+        } else if (matchKey(trimmed, "pool_size")) |v| {
+            config.pool_size = std.fmt.parseInt(u32, v, 10) catch config.pool_size;
+        } else if (matchKey(trimmed, "pool_precreate")) |v| {
+            config.pool_precreate = std.mem.eql(u8, v, "true");
+        } else if (matchKey(trimmed, "compression_level")) |v| {
+            config.compression_level = std.fmt.parseInt(i32, v, 10) catch config.compression_level;
+        } else if (matchKey(trimmed, "max_concurrent_forks")) |v| {
+            config.max_concurrent_forks = std.fmt.parseInt(u32, v, 10) catch config.max_concurrent_forks;
         }
     }
 }
 
+fn getEnv(key: [*:0]const u8) ?[]const u8 {
+    const c_str = std.c.getenv(key);
+    if (c_str == null) return null;
+    return std.mem.span(c_str.?);
+}
+
 fn applyEnvOverrides(config: *Config) void {
-    _ = config;
+    const allocator = std.heap.page_allocator;
+
+    if (getEnv("COCO_VISOR_SOCKET_PATH")) |v| {
+        config.socket_path = allocator.dupe(u8, v) catch config.socket_path;
+    }
+    if (getEnv("COCO_VISOR_MEMORY_MB")) |v| {
+        config.memory_mb = std.fmt.parseInt(u32, v, 10) catch config.memory_mb;
+    }
+    if (getEnv("COCO_VISOR_VCPUS")) |v| {
+        config.vcpus = std.fmt.parseInt(u32, v, 10) catch config.vcpus;
+    }
+    if (getEnv("COCO_VISOR_KERNEL_PATH")) |v| {
+        config.kernel_path = allocator.dupe(u8, v) catch config.kernel_path;
+    }
+    if (getEnv("COCO_VISOR_INITRD_PATH")) |v| {
+        config.initrd_path = allocator.dupe(u8, v) catch config.initrd_path;
+    }
+    if (getEnv("COCO_VISOR_VSOCK_PORT")) |v| {
+        config.vsock_port = std.fmt.parseInt(u32, v, 10) catch config.vsock_port;
+    }
+    if (getEnv("COCO_VISOR_METRICS_PORT")) |v| {
+        config.metrics_port = std.fmt.parseInt(u16, v, 10) catch config.metrics_port;
+    }
+    if (getEnv("COCO_VISOR_HEALTH_PORT")) |v| {
+        config.health_port = std.fmt.parseInt(u16, v, 10) catch config.health_port;
+    }
+    if (getEnv("COCO_VISOR_LOG_LEVEL")) |v| {
+        config.log_level = allocator.dupe(u8, v) catch config.log_level;
+    }
+    if (getEnv("COCO_VISOR_POOL_SIZE")) |v| {
+        config.pool_size = std.fmt.parseInt(u32, v, 10) catch config.pool_size;
+    }
+    if (getEnv("COCO_VISOR_POOL_PRECREATE")) |v| {
+        config.pool_precreate = std.mem.eql(u8, v, "true");
+    }
+    if (getEnv("COCO_VISOR_METRICS_ENABLED")) |v| {
+        config.metrics_enabled = std.mem.eql(u8, v, "true");
+    }
+    if (getEnv("COCO_VISOR_HEALTH_ENABLED")) |v| {
+        config.health_enabled = std.mem.eql(u8, v, "true");
+    }
+    if (getEnv("COCO_VISOR_COMPRESSION_LEVEL")) |v| {
+        config.compression_level = std.fmt.parseInt(i32, v, 10) catch config.compression_level;
+    }
+    if (getEnv("COCO_VISOR_MAX_CONCURRENT_FORKS")) |v| {
+        config.max_concurrent_forks = std.fmt.parseInt(u32, v, 10) catch config.max_concurrent_forks;
+    }
 }
 
 pub fn getLogLevel(config: *const Config) LogLevel {

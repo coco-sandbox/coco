@@ -1,4 +1,5 @@
 const std = @import("std");
+const sc = @import("syscall.zig");
 const linux = std.os.linux;
 const posix = std.posix;
 
@@ -17,22 +18,22 @@ pub const SockaddrVm = extern struct {
 };
 
 pub fn openAndAssignCid(cid: u32) !i32 {
-    const fd = try posix.open("/dev/vhost-vsock", .{ .ACCMODE = .RDWR }, 0);
-    errdefer posix.close(fd);
+    const fd = try sc.open("/dev/vhost-vsock", .{ .ACCMODE = .RDWR }, 0);
+    errdefer sc.close(fd);
 
     var cid64: u64 = cid;
-    const rc = std.os.linux.ioctl(fd, VHOST_VSOCK_SET_GUEST_CID, @intFromPtr(&cid64));
-    if (rc < 0)
+    const rc = linux.ioctl(fd, VHOST_VSOCK_SET_GUEST_CID, @intFromPtr(&cid64));
+    if (@as(isize, @bitCast(rc)) < 0)
         return error.VhostVsockSetCidFailed;
 
     return fd;
 }
 
 pub fn createServer(port: u32) !i32 {
-    const rc = std.os.socket(AF_VSOCK, linux.SOCK.STREAM, 0);
-    if (rc < 0) return error.SocketCreateFailed;
-    const fd = @as(i32, @intCast(rc));
-    errdefer _ = std.os.close(fd);
+    const sock_rc = linux.socket(AF_VSOCK, linux.SOCK.STREAM, 0);
+    if (@as(isize, @bitCast(sock_rc)) < 0) return error.SocketCreateFailed;
+    const fd: i32 = @intCast(sock_rc);
+    errdefer _ = linux.close(fd);
 
     const addr = SockaddrVm{
         .svm_family = AF_VSOCK,
@@ -43,11 +44,11 @@ pub fn createServer(port: u32) !i32 {
         .svm_zero = .{ 0, 0, 0 },
     };
 
-    const bind_rc = std.os.bind(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
-    if (bind_rc < 0) return error.BindFailed;
+    const bind_rc = linux.bind(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
+    if (@as(isize, @bitCast(bind_rc)) < 0) return error.BindFailed;
 
-    const listen_rc = std.os.listen(fd, 16);
-    if (listen_rc < 0) return error.ListenFailed;
+    const listen_rc = linux.listen(fd, 16);
+    if (@as(isize, @bitCast(listen_rc)) < 0) return error.ListenFailed;
 
     return fd;
 }
@@ -56,9 +57,9 @@ pub fn acceptAgent(server_fd: i32) !struct { fd: i32, guest_cid: u32 } {
     var addr: SockaddrVm = undefined;
     var addr_len: u32 = @sizeOf(SockaddrVm);
 
-    const rc = std.os.accept(server_fd, @ptrCast(&addr), &addr_len);
-    if (rc < 0 or rc == 0) return error.AcceptFailed;
-    const accepted_fd = @as(i32, @intCast(rc));
+    const rc = linux.accept(server_fd, @ptrCast(&addr), &addr_len);
+    if (@as(isize, @bitCast(rc)) <= 0) return error.AcceptFailed;
+    const accepted_fd: i32 = @intCast(rc);
     return .{
         .fd = accepted_fd,
         .guest_cid = addr.svm_cid,
@@ -66,10 +67,10 @@ pub fn acceptAgent(server_fd: i32) !struct { fd: i32, guest_cid: u32 } {
 }
 
 pub fn connectToAgent(guest_cid: u32, port: u32) !i32 {
-    const rc = std.os.socket(AF_VSOCK, linux.SOCK.STREAM, 0);
-    if (rc < 0) return error.SocketCreateFailed;
-    const fd = @as(i32, @intCast(rc));
-    errdefer _ = std.os.close(fd);
+    const sock_rc = linux.socket(AF_VSOCK, linux.SOCK.STREAM, 0);
+    if (@as(isize, @bitCast(sock_rc)) < 0) return error.SocketCreateFailed;
+    const fd: i32 = @intCast(sock_rc);
+    errdefer _ = linux.close(fd);
 
     const addr = SockaddrVm{
         .svm_family = AF_VSOCK,
@@ -80,7 +81,7 @@ pub fn connectToAgent(guest_cid: u32, port: u32) !i32 {
         .svm_zero = .{ 0, 0, 0 },
     };
 
-    const connect_rc = std.os.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
-    if (connect_rc < 0) return error.ConnectFailed;
+    const connect_rc = linux.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
+    if (@as(isize, @bitCast(connect_rc)) < 0) return error.ConnectFailed;
     return fd;
 }

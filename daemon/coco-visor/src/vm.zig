@@ -4,6 +4,7 @@
 //! VM implementation with direct KVM.
 
 const std = @import("std");
+const sc = @import("syscall.zig");
 const posix = std.posix;
 const linux = std.os.linux;
 const kvm_mod = @import("kvm.zig");
@@ -34,10 +35,10 @@ pub const Vm = struct {
 
     pub fn create(config: *const VmConfig, mem_ptr: [*]u8, mem_size: u64, allocator: std.mem.Allocator) !Vm {
         const kvm_fd = try kvm_mod.open();
-        errdefer posix.close(kvm_fd);
+        errdefer sc.close(kvm_fd);
 
         const vm_fd = try kvm_mod.createVm(kvm_fd);
-        errdefer posix.close(vm_fd);
+        errdefer sc.close(vm_fd);
 
         var mem = memory.GuestMemory{
             .ptr = mem_ptr,
@@ -57,7 +58,7 @@ pub const Vm = struct {
         const initrd_info = try memory.loadInitrd(&mem, config.initrd);
 
         const cmdline = if (config.tap_name.len > 0)
-            try std.fmt.allocPrint(allocator, "console=ttyS0 reboot=k panic=1 pci=off netdev=eth0,${}", .{config.tap_name})
+            try std.fmt.allocPrint(allocator, "console=ttyS0 reboot=k panic=1 pci=off netdev=eth0,${s}", .{config.tap_name})
         else
             "console=ttyS0 reboot=k panic=1 pci=off";
         defer if (config.tap_name.len > 0) allocator.free(cmdline);
@@ -81,7 +82,7 @@ pub const Vm = struct {
         }
 
         const vsock_fd = try vsock.openAndAssignCid(config.vsock_cid);
-        errdefer posix.close(vsock_fd);
+        errdefer sc.close(vsock_fd);
 
         var tap_fd: i32 = -1;
         if (config.tap_name.len > 0) {
@@ -105,7 +106,7 @@ pub const Vm = struct {
         const IFF_TAP: u32 = 0x0002;
         const IFF_NO_PI: u32 = 0x1000;
 
-        const fd = try posix.open("/dev/net/tun", .{ .ACCMODE = .RDWR }, 0);
+        const fd = try sc.open("/dev/net/tun", .{ .ACCMODE = .RDWR }, 0);
 
         var ifr: [256]u8 = undefined;
         @memset(&ifr, 0);
@@ -118,7 +119,7 @@ pub const Vm = struct {
 
         const result = linux.ioctl(fd, TUNSETIFF, @intFromPtr(&ifr));
         if (result < 0) {
-            posix.close(fd);
+            sc.close(fd);
             return error.TapCreationFailed;
         }
 
@@ -175,15 +176,15 @@ pub const Vm = struct {
         }
 
         self.mem.deinit();
-        posix.close(self.vm_fd);
-        posix.close(self.kvm_fd);
+        sc.close(self.vm_fd);
+        sc.close(self.kvm_fd);
 
         if (self.vsock_fd >= 0) {
-            posix.close(self.vsock_fd);
+            sc.close(self.vsock_fd);
         }
 
         if (self.tap_fd >= 0) {
-            posix.close(self.tap_fd);
+            sc.close(self.tap_fd);
         }
     }
 };

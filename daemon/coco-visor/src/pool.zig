@@ -63,7 +63,7 @@ pub const VmPool = struct {
             try self.pool.append(.{
                 .vm = vm,
                 .ready = true,
-                .last_used = std.time.timestamp(),
+                .last_used = sc.timestamp(),
             });
 
             _ = result;
@@ -77,7 +77,7 @@ pub const VmPool = struct {
         for (self.pool.items, 0..) |item, idx| {
             if (item.ready) {
                 self.pool.items[idx].ready = false;
-                self.pool.items[idx].last_used = std.time.timestamp();
+                self.pool.items[idx].last_used = sc.timestamp();
                 return item.vm;
             }
         }
@@ -97,7 +97,7 @@ pub const VmPool = struct {
             self.pool.append(.{
                 .vm = vm,
                 .ready = false,
-                .last_used = std.time.timestamp(),
+                .last_used = sc.timestamp(),
             }) catch return vm;
 
             return vm;
@@ -113,7 +113,7 @@ pub const VmPool = struct {
         for (self.pool.items, 0..) |item, idx| {
             if (item.vm == vm) {
                 self.pool.items[idx].ready = true;
-                self.pool.items[idx].last_used = std.time.timestamp();
+                self.pool.items[idx].last_used = sc.timestamp();
                 return;
             }
         }
@@ -140,7 +140,7 @@ pub const VmPool = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const now = std.time.timestamp();
+        const now = sc.timestamp();
         var to_remove: usize = 0;
 
         for (self.pool.items) |item| {
@@ -189,7 +189,7 @@ pub const VmPool = struct {
                 self.pool.append(.{
                     .vm = vm,
                     .ready = true,
-                    .last_used = std.time.timestamp(),
+                    .last_used = sc.timestamp(),
                 }) catch {};
             }
         }

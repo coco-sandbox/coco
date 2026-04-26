@@ -108,15 +108,63 @@ pub const Metrics = struct {
         return self.total_fork_time_ns / self.fork_count;
     }
 
+    fn percentile(samples: []const u64, count: usize, pct: u32) u64 {
+        if (count == 0) return 0;
+        const n = @min(count, samples.len);
+        var sorted: [64]u64 = undefined;
+        @memcpy(sorted[0..n], samples[0..n]);
+        std.sort.heap(u64, sorted[0..n], {}, std.sort.asc(u64));
+        const idx_calc = (pct * (n - 1)) / 100;
+        return sorted[idx_calc];
+    }
+
     pub fn p50BootTimeNs(self: *Metrics) u64 {
-        if (self.boot_times_idx == 0) return 0;
-        return self.boot_times[self.boot_times_idx / 2];
+        return percentile(&self.boot_times, self.boot_times_idx, 50);
     }
 
     pub fn p99BootTimeNs(self: *Metrics) u64 {
-        if (self.boot_times_idx == 0) return 0;
-        const idx = (self.boot_times_idx * 99) / 100;
-        return self.boot_times[idx];
+        return percentile(&self.boot_times, self.boot_times_idx, 99);
+    }
+
+    pub fn formatPrometheusBuf(self: *Metrics, buf: []u8) ![]u8 {
+        var pos: usize = 0;
+        const append = struct {
+            fn s(b: []u8, p: *usize, str: []const u8) !void {
+                if (p.* + str.len > b.len) return error.NoSpaceLeft;
+                @memcpy(b[p.*..][0..str.len], str);
+                p.* += str.len;
+            }
+            fn line(b: []u8, p: *usize, comptime fmt: []const u8, args: anytype) !void {
+                const out = try std.fmt.bufPrint(b[p.*..], fmt, args);
+                p.* += out.len;
+            }
+        };
+
+        try append.s(buf, &pos, "# HELP coco_sandbox_count Current number of sandboxes by state.\n");
+        try append.s(buf, &pos, "# TYPE coco_sandbox_count gauge\n");
+        try append.line(buf, &pos, "coco_sandbox_count{{state=\"active\"}} {d}\n", .{self.active_sandboxes});
+        try append.line(buf, &pos, "coco_sandbox_count{{state=\"paused\"}} {d}\n", .{self.paused_sandboxes});
+        try append.line(buf, &pos, "coco_sandbox_count{{state=\"hibernated\"}} {d}\n", .{self.hibernated_sandboxes});
+
+        try append.s(buf, &pos, "\n# HELP coco_sandbox_operations_total Total number of sandbox operations.\n");
+        try append.s(buf, &pos, "# TYPE coco_sandbox_operations_total counter\n");
+        try append.line(buf, &pos, "coco_sandbox_operations_total{{operation=\"boot\"}} {d}\n", .{self.boot_count});
+        try append.line(buf, &pos, "coco_sandbox_operations_total{{operation=\"fork\"}} {d}\n", .{self.fork_count});
+        try append.line(buf, &pos, "coco_sandbox_operations_total{{operation=\"checkpoint\"}} {d}\n", .{self.checkpoint_count});
+        try append.line(buf, &pos, "coco_sandbox_operations_total{{operation=\"hibernate\"}} {d}\n", .{self.hibernate_count});
+        try append.line(buf, &pos, "coco_sandbox_operations_total{{operation=\"resume\"}} {d}\n", .{self.resume_count});
+        try append.line(buf, &pos, "coco_sandbox_operations_total{{operation=\"pause\"}} {d}\n", .{self.pause_count});
+        try append.line(buf, &pos, "coco_sandbox_operations_total{{operation=\"destroy\"}} {d}\n", .{self.destroy_count});
+        try append.line(buf, &pos, "coco_sandbox_operations_total{{operation=\"exec\"}} {d}\n", .{self.exec_count});
+
+        try append.s(buf, &pos, "\n# HELP coco_sandbox_boot_duration_ns Boot duration percentiles in nanoseconds.\n");
+        try append.s(buf, &pos, "# TYPE coco_sandbox_boot_duration_ns summary\n");
+        try append.line(buf, &pos, "coco_sandbox_boot_duration_ns{{quantile=\"0.5\"}} {d}\n", .{self.p50BootTimeNs()});
+        try append.line(buf, &pos, "coco_sandbox_boot_duration_ns{{quantile=\"0.99\"}} {d}\n", .{self.p99BootTimeNs()});
+        try append.line(buf, &pos, "coco_sandbox_boot_duration_ns_sum {d}\n", .{self.total_boot_time_ns});
+        try append.line(buf, &pos, "coco_sandbox_boot_duration_ns_count {d}\n", .{self.boot_count});
+
+        return buf[0..pos];
     }
 
     pub fn formatPrometheus(self: *Metrics, writer: anytype) !void {
