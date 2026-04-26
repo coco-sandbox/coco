@@ -97,10 +97,10 @@ func run(ctx context.Context, cfg *config.Config) error {
 					// Node exists, update load via heartbeat report
 					sched.UpdateLoadFromReport(&scheduler.LoadReport{
 						NodeID:    record.ID,
-							Sandboxes: 0, // Heartbeats don't include sandbox count; preserve existing
-							MemUsedMB: record.MemoryMB,
-						CPUs:        record.CPUCount,
-							Timestamp: time.Now(),
+						Sandboxes: 0, // Heartbeats don't include sandbox count; preserve existing
+						MemUsedMB: record.MemoryMB,
+						CPUs:      record.CPUCount,
+						Timestamp: time.Now(),
 					})
 				} else {
 					// New node, register it

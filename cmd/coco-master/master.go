@@ -38,6 +38,7 @@ func unimplemented() error {
 type MasterServer struct {
 	sched           *scheduler.Scheduler
 	sandboxToNode   map[string]string
+	sandboxStates   map[string]v1.SandboxState
 	mu              sync.RWMutex
 	nodeConnections map[string]*grpc.ClientConn
 	election        *Election
@@ -47,6 +48,7 @@ func NewMasterServer(sched *scheduler.Scheduler) *MasterServer {
 	return &MasterServer{
 		sched:           sched,
 		sandboxToNode:   make(map[string]string),
+		sandboxStates:   make(map[string]v1.SandboxState),
 		nodeConnections: make(map[string]*grpc.ClientConn),
 	}
 }
@@ -381,15 +383,47 @@ func (s *MasterServer) RequestVote(ctx context.Context, req *connect.Request[v1.
 }
 
 func (s *MasterServer) TrackSandbox(ctx context.Context, req *connect.Request[v1.TrackSandboxRequest]) (*connect.Response[v1.TrackSandboxResponse], error) {
-	return nil, unimplemented()
+	sb := req.Msg.GetSandbox()
+	if sb == nil || sb.GetId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("sandbox.id is required"))
+	}
+	s.mu.Lock()
+	if hn := sb.GetHostNode(); hn != "" {
+		s.sandboxToNode[sb.GetId()] = hn
+	}
+	s.sandboxStates[sb.GetId()] = sb.GetState()
+	s.mu.Unlock()
+	return connect.NewResponse(&v1.TrackSandboxResponse{}), nil
 }
 
 func (s *MasterServer) UntrackSandbox(ctx context.Context, req *connect.Request[v1.UntrackSandboxRequest]) (*connect.Response[v1.UntrackSandboxResponse], error) {
-	return nil, unimplemented()
+	id := req.Msg.GetSandboxId()
+	if id == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("sandbox_id is required"))
+	}
+	s.mu.Lock()
+	delete(s.sandboxToNode, id)
+	delete(s.sandboxStates, id)
+	s.mu.Unlock()
+	return connect.NewResponse(&v1.UntrackSandboxResponse{}), nil
 }
 
 func (s *MasterServer) UpdateSandboxState(ctx context.Context, req *connect.Request[v1.UpdateSandboxStateRequest]) (*connect.Response[v1.UpdateSandboxStateResponse], error) {
-	return nil, unimplemented()
+	id := req.Msg.GetSandboxId()
+	if id == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("sandbox_id is required"))
+	}
+	s.mu.Lock()
+	if _, tracked := s.sandboxStates[id]; !tracked {
+		s.mu.Unlock()
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("sandbox not tracked"))
+	}
+	s.sandboxStates[id] = req.Msg.GetState()
+	if hn := req.Msg.GetHostNode(); hn != "" {
+		s.sandboxToNode[id] = hn
+	}
+	s.mu.Unlock()
+	return connect.NewResponse(&v1.UpdateSandboxStateResponse{}), nil
 }
 
 func (s *MasterServer) InitiateFailover(ctx context.Context, req *connect.Request[v1.InitiateFailoverRequest]) (*connect.Response[v1.InitiateFailoverResponse], error) {
