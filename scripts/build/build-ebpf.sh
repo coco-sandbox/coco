@@ -29,7 +29,7 @@ compile_bpf() {
     fi
 }
 
-for dir in from_sandbox from_host from_world xdp; do
+for dir in from_sandbox from_host from_world xdp shaper; do
     if [ -d "$dir" ]; then
         echo "Processing $dir..."
         for f in "$dir"/*.bpf.c; do
