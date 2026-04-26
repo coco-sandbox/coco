@@ -44,7 +44,7 @@ func (s *NodeServer) BootSandbox(ctx context.Context, req *types.BootSandboxRequ
 		MemoryMB:  req.MemoryMB,
 		VCPUs:     req.VCPUs,
 		State:     types.SandboxStateRunning,
-		VsockCID:  int(vm.VsockCID),
+		VsockCID:  vm.VsockCID,
 		PID:       int(vm.PID),
 		HostNode:  s.nodeID,
 		CreatedAt: time.Now(),

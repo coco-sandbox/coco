@@ -5,6 +5,7 @@
 //! Spec: Structured JSON logs with timestamp, level, component, message, context.
 
 const std = @import("std");
+const os = std.os;
 
 pub const LogLevel = enum(u8) {
     debug = 0,
@@ -14,11 +15,10 @@ pub const LogLevel = enum(u8) {
 };
 
 var current_level: LogLevel = .info;
-var log_writer: ?*const fn ([]const u8) void = null;
 
-pub fn init(level: LogLevel, writer: *const fn ([]const u8) void) void {
+pub fn init(level: LogLevel, writer: anytype) void {
+    _ = writer;
     current_level = level;
-    log_writer = writer;
 }
 
 pub fn setLevel(level: LogLevel) void {
@@ -37,35 +37,25 @@ fn getLevelStr(level: LogLevel) []const u8 {
 pub fn log(level: LogLevel, comptime fmt: []const u8, args: anytype) void {
     if (@intFromEnum(level) < @intFromEnum(current_level)) return;
 
-    const ts_nanos = std.time.nanoTimestamp();
-    const ts_secs = @divTrunc(ts_nanos, std.time.ns_per_s);
-    const ts_nanos_rem = @mod(ts_nanos, std.time.ns_per_s);
+    var ts: os.linux.timespec = undefined;
+    _ = os.linux.clock_gettime(os.linux.clockid_t.REALTIME, &ts);
+    const ts_secs: i64 = ts.sec;
+    const ts_nanos_rem: i64 = ts.nsec;
 
-    var ts_buf: [64]u8 = undefined;
+    var ts_buf: [32]u8 = undefined;
     const ts_str = std.fmt.bufPrint(&ts_buf, "{d}.{d:0>9}Z", .{ ts_secs, ts_nanos_rem }) catch "unknown";
 
     const level_str = getLevelStr(level);
 
-    var buf: [256]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&buf);
-    const allocator = fba.allocator();
+    var msg_buf: [128]u8 = undefined;
+    const message = std.fmt.bufPrint(&msg_buf, fmt, args) catch "message too long";
 
-    const message = std.fmt.allocPrint(allocator, fmt, args) catch return;
+    var json_buf: [512]u8 = undefined;
+    const json_str = std.fmt.bufPrint(&json_buf, "{{\"timestamp\":\"{s}\",\"level\":\"{s}\",\"component\":\"coco-visor\",\"message\":\"{s}\"}}\n", .{
+        ts_str, level_str, message
+    }) catch "log line too long";
 
-    var json_buf = std.ArrayList(u8).init(allocator);
-    json_buf.appendSlice("{\"timestamp\":\"") catch return;
-    json_buf.appendSlice(ts_str) catch return;
-    json_buf.appendSlice("\",\"level\":\"") catch return;
-    json_buf.appendSlice(level_str) catch return;
-    json_buf.appendSlice("\",\"component\":\"coco-visor\",\"message\":\"") catch return;
-    json_buf.appendSlice(message) catch return;
-    json_buf.appendSlice("\"}\n") catch return;
-
-    if (log_writer) |w| {
-        w.*(json_buf.items);
-    } else {
-        std.debug.print("{s}\n", .{json_buf.items});
-    }
+    std.debug.print("{s}", .{json_str});
 }
 
 pub fn debug(comptime fmt: []const u8, args: anytype) void {

@@ -8,8 +8,6 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
-	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 type Strategy int

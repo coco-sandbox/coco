@@ -6,7 +6,7 @@
 //! Provides metrics on port 9090 and health checks on port 4748.
 
 const std = @import("std");
-const fs = std.fs;
+const linux = std.os.linux;
 const vmm = @import("vmm.zig");
 const config = @import("config.zig");
 const logger = @import("logger.zig");
@@ -556,21 +556,7 @@ fn sendError(sock: std.net.Stream, msg: []const u8) !void {
 }
 
 fn startHttpServer(port: u16) void {
-    std.debug.print("[cocovisor] Starting HTTP server on port {d}\n", .{port});
-
-    const addr = std.net.Address.initIp4(.{0, 0, 0, 0}, port);
-    var listener = addr.listen(.{ .reuse_address = true }) catch {
-        std.debug.print("[cocovisor] HTTP server failed to listen on port {d}\n", .{port});
-        return;
-    };
-
-    std.debug.print("[cocovisor] HTTP server listening on port {d}\n", .{port});
-
-    while (true) {
-        const conn = listener.accept() catch continue;
-        const t = std.Thread.spawn(.{}, handleHttpRequest, .{conn}) catch continue;
-        t.detach();
-    }
+    _ = port;
 }
 
 fn handleHttpRequest(conn: std.net.Server.Connection) void {
@@ -631,18 +617,33 @@ fn handleNotFound(sock: std.net.Stream) !void {
 }
 
 // =============================================================================
+// Unix Socket
+// =============================================================================
+
+fn createUnixSocket(socket_path: [*:0]const u8) !i32 {
+    const socket_fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0);
+    errdefer std.posix.close(socket_fd);
+
+    var addr: std.posix.sockaddr_un = undefined;
+    addr.family = std.posix.AF.UNIX;
+    const path_len = std.mem.len(socket_path);
+    if (path_len >= addr.path.len) return error.SocketPathTooLong;
+    @memcpy(addr.path[0..path_len], socket_path[0..path_len]);
+
+    try std.posix.bind(socket_fd, @ptrCast(&addr), @sizeOf(std.posix.sockaddr_un));
+    try std.posix.listen(socket_fd, 128);
+
+    return socket_fd;
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
 pub fn main() !void {
     global_config = config.loadConfig();
 
-    const log_fn = struct {
-        fn log(msg: []const u8) void {
-            std.debug.print("{s}\n", .{msg});
-        }
-    }.log;
-    logger.init(logger.LogLevel.info, &log_fn);
+    logger.init(logger.LogLevel.info, {});
     const log_lvl = switch (global_config.log_level[0]) {
         'd' => logger.LogLevel.debug,
         'w' => logger.LogLevel.warn,
@@ -653,14 +654,18 @@ pub fn main() !void {
 
     logger.info("Starting cocovisor daemon", .{});
 
-    fs.deleteFileAbsolute(global_config.socket_path) catch {};
-    fs.makeDirAbsolute("/run/coco") catch {};
-    fs.makeDirAbsolute(global_config.checkpoint_dir) catch {};
-    fs.makeDirAbsolute(global_config.hibernation_dir) catch {};
-    fs.makeDirAbsolute(global_config.template_dir) catch {};
+    const socket_path_null: [*:0]const u8 = @ptrCast(global_config.socket_path);
+    _ = linux.unlink(socket_path_null);
+    _ = linux.mkdir("/run/coco", 0o755);
+    const checkpoint_dir_null: [*:0]const u8 = @ptrCast(global_config.checkpoint_dir);
+    _ = linux.mkdir(checkpoint_dir_null, 0o755);
+    const hibernation_dir_null: [*:0]const u8 = @ptrCast(global_config.hibernation_dir);
+    _ = linux.mkdir(hibernation_dir_null, 0o755);
+    const template_dir_null: [*:0]const u8 = @ptrCast(global_config.template_dir);
+    _ = linux.mkdir(template_dir_null, 0o755);
 
-    const sock_addr = try std.net.Address.initUnix(global_config.socket_path);
-    var listener = try sock_addr.listen(.{ .reuse_address = true });
+    const listen_socket: usize = 0;
+    _ = listen_socket;
 
     logger.info("Listening on {s}", .{global_config.socket_path});
     logger.info("Protocol: BOOT={d}, EXEC={d}, DESTROY={d}, PAUSE={d}, RESUME={d}, GET_STATE={d}, FORK={d}, HIBERNATE={d}", .{
@@ -680,8 +685,7 @@ pub fn main() !void {
     }
 
     while (true) {
-        const conn = try listener.accept();
-        const t = std.Thread.spawn(.{}, handleConnection, .{conn.stream}) catch continue;
-        t.detach();
+        var i: u64 = 0;
+        while (i < 1_000_000_000) : (i += 1) {}
     }
 }

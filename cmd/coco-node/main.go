@@ -71,6 +71,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	grpcServer := grpc.NewServer()
 	nodeServer := NewNodeServer(cfg.NodeID, cfg.GRPCAddr, st, vmPool, visorPool)
 
+	_ = nodeServer
 	// Register gRPC service once generated code is available
 	// pb.RegisterNodeServiceServer(grpcServer, nodeServer)
 

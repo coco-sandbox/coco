@@ -5,6 +5,7 @@
 //! Spec: Configurable via file, environment variables, and defaults.
 
 const std = @import("std");
+const linux = std.os.linux;
 
 pub const LogLevel = enum { debug, info, warn, err };
 
@@ -51,12 +52,17 @@ pub fn loadConfig() Config {
 }
 
 fn loadConfigFile(path: []const u8, config: *Config) bool {
-    const file = std.fs.openFileAbsolute(path, .{}) catch return false;
-    defer file.close();
+    const path_null: [*:0]const u8 = @ptrCast(path);
+    const fd_isize = linux.open(path_null, linux.O{.ACCMODE = .RDONLY}, 0);
+    if (fd_isize < 0) return false;
+    const fd: i32 = @intCast(fd_isize);
+    defer { _ = linux.close(fd); }
 
-    const content = file.readToEndAlloc(std.heap.page_allocator, 8192) catch return false;
-    defer std.heap.page_allocator.free(content);
+    var buf: [8192]u8 = undefined;
+    const bytes_read = linux.read(fd, &buf, buf.len);
+    if (bytes_read <= 0) return false;
 
+    const content = buf[0..@intCast(bytes_read)];
     parseYaml(content, config) catch return false;
     return true;
 }
