@@ -42,6 +42,8 @@ Use this mode for untrusted workloads that should have no network access.
 
 Three eBPF programs work together to provide network functionality. These programs run at different points in the packet processing pipeline.
 
+**Implementation:** eBPF programs are written in C and compiled with Clang to BPF bytecode. The bytecode is loaded into the kernel using [Cilium ebpf](https://github.com/cilium/ebpf) Go library, which provides type-safe bindings for BPF programs and maps.
+
 ### 3.1 XDP Filter Program
 
 This program runs at the earliest possible point in the network stack, directly at the network driver level. It processes both incoming and outgoing packets.

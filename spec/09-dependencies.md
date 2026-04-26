@@ -22,9 +22,11 @@ Zig is used for data plane components: Visor, Agent, and Fork. Install the offic
 
 ### 1.3 Clang
 
-Clang is required to compile eBPF programs. The eBPF programs are written in C and compiled with clang.
+Clang is required to compile eBPF programs. The eBPF programs are written in C and compiled with clang to BPF bytecode.
 
 The version should be recent enough to support the target kernel's BPF features. clang-14 or later is recommended.
+
+eBPF programs are loaded using [Cilium ebpf Go library](https://ebpf-go.dev/), which provides type-safe Go bindings for BPF programs and maps.
 
 ### 1.4 Protocol Buffer Compiler
 
@@ -124,9 +126,11 @@ Build dependencies include linux headers for system calls. Zig components use di
 
 ### 4.3 eBPF Dependencies
 
-libbpf provides the userspace API for loading eBPF programs. It is typically included with the kernel headers.
+[Cilium ebpf](https://github.com/cilium/ebpf) provides type-safe Go bindings for loading and interacting with eBPF programs. It is the primary dependency for coco-net.
 
-clang compiles eBPF programs. The Makefile invokes clang with the correct flags.
+clang compiles eBPF programs from C to BPF bytecode. The Makefile invokes clang with the correct flags.
+
+libbpf is included transitively through Cilium ebpf.
 
 ## 5. Version compatibility
 

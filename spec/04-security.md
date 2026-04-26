@@ -16,7 +16,7 @@ Four distinct isolation layers protect the system from compromised or malicious 
 
 ### 2.1 Network Isolation
 
-Network isolation is provided by the eBPF-based filter running at XDP level. All packets pass through this filter before entering or leaving a sandbox. The filter implements default-deny policies, dropping any packet not explicitly allowed.
+Network isolation is provided by the eBPF-based filter running at XDP level. All packets pass through this filter before entering or leaving a sandbox. The filter implements default-deny policies, dropping any packet not explicitly allowed. eBPF programs are compiled from C using Clang and loaded at runtime using the Cilium ebpf Go library.
 
 This layer prevents compromised sandboxes from attacking other sandboxes or external systems. Even if an attacker gains code execution inside a sandbox, they cannot send network packets without explicit permission.
 
@@ -182,7 +182,7 @@ This is the most important security measure. Even if an attacker compromises a s
 
 ### 8.2 Packet Filtering
 
-The eBPF packet filter runs at the XDP level, before the main network stack. This provides protection even against high-volume attacks.
+The eBPF packet filter runs at the XDP level, before the main network stack. This provides protection even against high-volume attacks. eBPF bytecode is loaded using the Cilium ebpf Go library, which provides type-safe access to maps and programs.
 
 Each packet is checked against the policy allowlist. Packets not matching any rule are dropped immediately. This happens before any kernel processing, minimizing overhead.
 

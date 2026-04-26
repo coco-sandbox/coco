@@ -48,7 +48,7 @@ The system consists of six primary components that work together to provide sand
 
 **Coco Agent** runs inside each sandbox as the init process. Also written in Zig, it handles command execution, signal propagation, and communication with the host through VSock. Agent is designed to be extremely small, under one megabyte, to minimize attack surface and memory usage.
 
-**Coco Net** provides network isolation and routing. It combines Go for control logic with eBPF programs for packet processing at the kernel level. Net implements default-deny policies, rate limiting, and flow tracking.
+**Coco Net** provides network isolation and routing. It combines Go for control logic with eBPF programs for packet processing at the kernel level. Net implements default-deny policies, rate limiting, and flow tracking. eBPF programs are compiled from C with Clang and loaded using the [Cilium ebpf](https://github.com/cilium/ebpf) Go library.
 
 ### 2.2 Communication Patterns
 
@@ -406,7 +406,7 @@ Zig handles data plane components that benefit from direct memory control and mi
 
 ### 11.3 eBPF Components
 
-C handles eBPF programs that run in the kernel. These include XDP filters, flow tracking, and traffic shaping.
+eBPF programs are written in C and compiled to BPF bytecode using Clang. At runtime, the bytecode is loaded into the kernel using the [Cilium ebpf](https://github.com/cilium/ebpf) Go library. This includes XDP filters, flow tracking, and traffic shaping.
 
 ---
 

@@ -80,7 +80,7 @@ New packages should follow a single clear responsibility; avoid new top-level `p
 | from_sandbox / from_host / from_world / xdp (or project-specific) | Program boundaries by traffic direction and attach point |
 | headers/ or common headers | Shared structs and map definitions |
 
-Build uses the repository script or documented `clang` invocation; paths are not duplicated here as shell.
+**Build:** eBPF programs are written in C and compiled with Clang to BPF bytecode (`.o` files). The bytecode is loaded into the kernel at runtime using [Cilium ebpf](https://github.com/cilium/ebpf) Go library, which provides type-safe bindings. See `09-dependencies.md` for toolchain requirements.
 
 ## 7. Tests (test/)
 
@@ -106,7 +106,7 @@ Kubernetes (operator, CRD, raw manifests, Helm), Dockerfiles, and optional other
 | daemon | coco-net | Go + eBPF (C) |
 | daemon | coco-checkpoint | Go, optional Zig for close-to-hypervisor pieces |
 | pkg | shared libraries | Go |
-| ebpf | XDP, tc, or helper programs | C (restricted) |
+| ebpf | XDP, tc, or helper programs | C (compiled), loaded via Go + Cilium ebpf |
 
 ## 11. Build outputs
 

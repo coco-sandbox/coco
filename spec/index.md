@@ -32,9 +32,9 @@ This directory is the **source of truth** for developers working on Coco: archit
 
 | Component | Language |
 |-----------|----------|
-| Gateway, Master, Node, cococtl, much of Net | Go |
+| Gateway, Master, Node, cococtl, Net | Go |
 | Visor, Agent, Fork | Zig |
-| eBPF | C |
+| eBPF | C (compiled), loaded via Go + Cilium ebpf |
 
 ### Communication paths
 

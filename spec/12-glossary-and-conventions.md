@@ -29,12 +29,14 @@ Coco’s technical documents **do not** use uppercase keywords in every sentence
 | **Checkpoint** | A persisted snapshot of a sandbox’s state for restore or migration. |
 | **Cgroup** | Linux control group; used to bound CPU, memory, and I/O. |
 | **CIDR** | Classless inter-domain routing prefix for IP allocation (e.g. private ranges). |
+| **Cilium ebpf** | Go library for loading and interacting with eBPF programs; used by coco-net. |
+| **Clang** | LLVM C compiler; compiles eBPF programs from C to BPF bytecode. |
 | **Connect** | RPC stack used alongside gRPC-style definitions in the Go control plane, where used. |
 | **Control plane** | Gateway, Master, Node, and related coordination (typically Go). |
 | **COW (copy-on-write)** | Sharing of pages until write, used for fast fork and templates on supporting filesystems. |
 | **Data plane** | Visor, Agent, and kernel/eBPF data paths that execute and isolate work. |
 | **Default-deny (network)** | Packets are dropped unless an explicit allow rule exists. |
-| **eBPF** | In-kernel programs (often XDP or tc) for early packet handling and policy. |
+| **eBPF** | Extended Berkeley Packet Filter: in-kernel programs (often XDP or tc) for early packet handling and policy. Compiled from C with Clang, loaded with Cilium ebpf Go library. |
 | **E2B-style** | Informal name for an HTTP/JSON style popularized by certain cloud sandboxes; **Coco’s** requirements are in `02-api.md`. |
 | **etcd** | Distributed key-value store used for cluster state and master election, when in cluster mode. |
 | **Fork (sandbox)** | A child sandbox derived from a parent with COW or equivalent semantics. |

@@ -52,3 +52,5 @@ require (
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 )
+
+tool github.com/cilium/ebpf/cmd/bpf2go
