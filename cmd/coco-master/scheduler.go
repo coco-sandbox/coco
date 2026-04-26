@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/scheduler"
+	"coco/pkg/scheduler"
 )
 
 type MasterScheduler struct {

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/coco-sandbox/coco/pkg/api"
+	"coco/pkg/api"
 )
 
 var (

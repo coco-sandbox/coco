@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	v1connect "github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
+	v1connect "coco/pkg/api/v1/v1connect"
 )
 
 // Client is a Coco API client

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package coco.v1;
 
-option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
+option go_package = "coco/proto/generated/coco/v1";
 
 // =============================================================================
 // Checkpoint Service (Detailed checkpoint operations for coco-checkpoint daemon)

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/api"
+	"coco/pkg/api"
 )
 
 // RateLimiter implements a token bucket rate limiter.

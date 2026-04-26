@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/coco-sandbox/coco/pkg/client"
+	"coco/pkg/client"
 	"github.com/spf13/cobra"
 )
 

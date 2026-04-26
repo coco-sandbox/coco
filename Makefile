@@ -51,7 +51,47 @@ test-zig:
 test: test-go test-zig
 
 proto:
-	PATH="$(HOME)/go/bin:$$PATH" protoc --go_out=pkg=. --go-grpc_out=pkg=. proto/coco/v1/*.proto
+	rm -rf /tmp/coco-proto
+	mkdir -p /tmp/coco-proto/v1 /tmp/coco-proto/v1connect /tmp/coco-proto/internal
+	PATH="$(HOME)/go/bin:$$PATH" protoc \
+		--go_out=/tmp/coco-proto \
+		--go_opt=Mproto/coco/v1/coco.proto=coco/pkg/api/v1 \
+		--go_opt=Mproto/coco/v1/checkpoint.proto=coco/pkg/api/v1 \
+		--go_opt=Mproto/coco/v1/node.proto=coco/pkg/api/v1 \
+		--go_opt=Mproto/coco/v1/master.proto=coco/pkg/api/v1 \
+		--go_opt=Mproto/coco/v1/cluster.proto=coco/pkg/api/v1 \
+		--go_opt=Mproto/coco/v1/network.proto=coco/pkg/api/v1 \
+		--go_opt=Mproto/internal/visor.proto=coco/pkg/api/internal \
+		--go_opt=Mproto/internal/agent.proto=coco/pkg/api/internal \
+		-I. -Iproto \
+		proto/coco/v1/coco.proto \
+		proto/coco/v1/checkpoint.proto \
+		proto/coco/v1/node.proto \
+		proto/coco/v1/master.proto \
+		proto/coco/v1/cluster.proto \
+		proto/coco/v1/network.proto \
+		proto/internal/visor.proto \
+		proto/internal/agent.proto
+	PATH="$(HOME)/go/bin:$$PATH" protoc \
+		--connect-go_out=/tmp/coco-proto \
+		--connect-go_opt=Mproto/coco/v1/coco.proto=coco/pkg/api/v1 \
+		--connect-go_opt=Mproto/coco/v1/checkpoint.proto=coco/pkg/api/v1 \
+		--connect-go_opt=Mproto/coco/v1/node.proto=coco/pkg/api/v1 \
+		--connect-go_opt=Mproto/coco/v1/master.proto=coco/pkg/api/v1 \
+		--connect-go_opt=Mproto/coco/v1/cluster.proto=coco/pkg/api/v1 \
+		--connect-go_opt=Mproto/coco/v1/network.proto=coco/pkg/api/v1 \
+		-I. -Iproto \
+		proto/coco/v1/coco.proto \
+		proto/coco/v1/checkpoint.proto \
+		proto/coco/v1/node.proto \
+		proto/coco/v1/master.proto \
+		proto/coco/v1/cluster.proto \
+		proto/coco/v1/network.proto
+	rm -rf pkg/api/v1 pkg/api/v1connect pkg/api/internal
+	cp -r /tmp/coco-proto/v1 pkg/api/
+	cp -r /tmp/coco-proto/v1connect pkg/api/
+	cp -r /tmp/coco-proto/internal pkg/api/
+	rm -rf /tmp/coco-proto
 
 clean:
 	rm -rf bin/

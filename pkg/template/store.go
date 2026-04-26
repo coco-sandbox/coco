@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/coco-sandbox/coco/pkg/types"
+	"coco/pkg/types"
 )
 
 type Store struct {

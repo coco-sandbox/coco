@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/coco-sandbox/coco/pkg/types"
+	"coco/pkg/types"
 )
 
 type Manager struct {

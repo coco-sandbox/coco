@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/coco-sandbox/coco/pkg/api"
+	"coco/pkg/api"
 )
 
 type Recovery struct {

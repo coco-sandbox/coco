@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/scheduler"
+	"coco/pkg/scheduler"
 	"go.etcd.io/etcd/client/v3"
 )
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/coco-sandbox/coco/pkg/scheduler"
+	"coco/pkg/scheduler"
 )
 
 type AffinityFilter struct {

@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package coco.internal;
 
+option go_package = "coco/proto/generated/internal";
+
 message AgentRequest {
   string id = 1;
   AgentRequestType type = 2;

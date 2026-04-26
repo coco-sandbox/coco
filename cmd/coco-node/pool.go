@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/pool"
-	"github.com/coco-sandbox/coco/pkg/visor"
+	"coco/pkg/pool"
+	"coco/pkg/visor"
 )
 
 type NodePool struct {

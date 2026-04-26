@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
-	"github.com/coco-sandbox/coco/pkg/scheduler"
+	v1 "coco/pkg/api/v1"
+	"coco/pkg/scheduler"
 )
 
 type FailoverManager struct {

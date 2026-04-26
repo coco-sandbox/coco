@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/coco-sandbox/coco/pkg/types"
+	"coco/pkg/types"
 )
 
 func TestCreateSandboxHandler(t *testing.T) {

@@ -6,8 +6,8 @@ package rbac
 import (
 	"net/http"
 
-	"github.com/coco-sandbox/coco/pkg/api"
-	"github.com/coco-sandbox/coco/pkg/middleware/auth"
+	"coco/pkg/api"
+	"coco/pkg/middleware/auth"
 )
 
 type Policy struct {

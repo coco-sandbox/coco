@@ -342,7 +342,7 @@ const file_proto_coco_v1_network_proto_rawDesc = "" +
 	"\n" +
 	"rx_packets\x18\x04 \x01(\x03R\trxPackets\x12\x1d\n" +
 	"\n" +
-	"tx_packets\x18\x05 \x01(\x03R\ttxPacketsB)Z'github.com/coco-sandbox/coco/pkg/api/v1b\x06proto3"
+	"tx_packets\x18\x05 \x01(\x03R\ttxPacketsB\x1eZ\x1ccoco/proto/generated/coco/v1b\x06proto3"
 
 var (
 	file_proto_coco_v1_network_proto_rawDescOnce sync.Once

@@ -6,13 +6,13 @@ import (
 	"time"
 
 	connect "connectrpc.com/connect"
-	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
-	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
-	"github.com/coco-sandbox/coco/pkg/cluster"
-	"github.com/coco-sandbox/coco/pkg/pool"
-	"github.com/coco-sandbox/coco/pkg/store"
-	"github.com/coco-sandbox/coco/pkg/types"
-	"github.com/coco-sandbox/coco/pkg/visor"
+	v1 "coco/pkg/api/v1"
+	"coco/pkg/api/v1/v1connect"
+	"coco/pkg/cluster"
+	"coco/pkg/pool"
+	"coco/pkg/store"
+	"coco/pkg/types"
+	"coco/pkg/visor"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

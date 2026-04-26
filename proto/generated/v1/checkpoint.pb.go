@@ -920,7 +920,7 @@ const file_proto_coco_v1_checkpoint_proto_rawDesc = "" +
 	"\x04List\x12\x14.coco.v1.ListRequest\x1a\x15.coco.v1.ListResponse\x129\n" +
 	"\x06Delete\x12\x16.coco.v1.DeleteRequest\x1a\x17.coco.v1.DeleteResponse\x12<\n" +
 	"\aRestore\x12\x17.coco.v1.RestoreRequest\x1a\x18.coco.v1.RestoreResponse\x12B\n" +
-	"\tGetStatus\x12\x19.coco.v1.GetStatusRequest\x1a\x1a.coco.v1.GetStatusResponseB)Z'github.com/coco-sandbox/coco/pkg/api/v1b\x06proto3"
+	"\tGetStatus\x12\x19.coco.v1.GetStatusRequest\x1a\x1a.coco.v1.GetStatusResponseB\x1eZ\x1ccoco/proto/generated/coco/v1b\x06proto3"
 
 var (
 	file_proto_coco_v1_checkpoint_proto_rawDescOnce sync.Once

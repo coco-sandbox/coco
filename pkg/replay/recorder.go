@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/types"
+	"coco/pkg/types"
 )
 
 // Recorder captures exec events during sandbox lifecycle

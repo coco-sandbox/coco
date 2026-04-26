@@ -9,12 +9,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/coco-sandbox/coco/daemon/coco-net/conntrack"
-	"github.com/coco-sandbox/coco/daemon/coco-net/ebpf"
-	"github.com/coco-sandbox/coco/daemon/coco-net/ipam"
-	"github.com/coco-sandbox/coco/daemon/coco-net/netns"
-	"github.com/coco-sandbox/coco/daemon/coco-net/policy"
-	"github.com/coco-sandbox/coco/daemon/coco-net/rate"
+	"coco/daemon/coco-net/conntrack"
+	"coco/daemon/coco-net/ebpf"
+	"coco/daemon/coco-net/ipam"
+	"coco/daemon/coco-net/netns"
+	"coco/daemon/coco-net/policy"
+	"coco/daemon/coco-net/rate"
 )
 
 type Config struct {

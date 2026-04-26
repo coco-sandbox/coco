@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
-	"github.com/coco-sandbox/coco/pkg/checkpoint"
-	"github.com/coco-sandbox/coco/pkg/cluster"
-	"github.com/coco-sandbox/coco/pkg/config"
-	"github.com/coco-sandbox/coco/pkg/metrics"
-	"github.com/coco-sandbox/coco/pkg/scheduler"
+	"coco/pkg/api/v1/v1connect"
+	"coco/pkg/checkpoint"
+	"coco/pkg/cluster"
+	"coco/pkg/config"
+	"coco/pkg/metrics"
+	"coco/pkg/scheduler"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )

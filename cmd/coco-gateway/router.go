@@ -10,12 +10,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
-	"github.com/coco-sandbox/coco/pkg/api"
-	"github.com/coco-sandbox/coco/pkg/api/handlers"
-	"github.com/coco-sandbox/coco/pkg/middleware/auth"
-	"github.com/coco-sandbox/coco/pkg/types"
-	"github.com/coco-sandbox/coco/pkg/visor"
+	"coco/cmd/coco-gateway/middleware"
+	"coco/pkg/api"
+	"coco/pkg/api/handlers"
+	"coco/pkg/middleware/auth"
+	"coco/pkg/types"
+	"coco/pkg/visor"
 )
 
 func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authenticator, vp *visor.Pool, keyStore auth.KeyStore) {

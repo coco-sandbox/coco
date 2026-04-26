@@ -1,7 +1,7 @@
 package strategies
 
 import (
-	"github.com/coco-sandbox/coco/pkg/scheduler"
+	"coco/pkg/scheduler"
 )
 
 type LeastLoadedStrategy struct{}

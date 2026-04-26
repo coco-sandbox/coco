@@ -1,4 +1,4 @@
-module github.com/coco-sandbox/coco
+module coco
 
 go 1.25.0
 
@@ -6,6 +6,7 @@ require (
 	connectrpc.com/connect v1.16.2
 	github.com/cilium/ebpf v0.21.0
 	github.com/dgraph-io/badger/v4 v4.4.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/klauspost/compress v1.18.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/spf13/cobra v1.9.1
@@ -15,7 +16,6 @@ require (
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/net v0.51.0
-	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.10
 )
 
@@ -32,7 +32,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -51,6 +50,7 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
+	google.golang.org/grpc v1.79.3 // indirect
 )
 
 tool github.com/cilium/ebpf/cmd/bpf2go

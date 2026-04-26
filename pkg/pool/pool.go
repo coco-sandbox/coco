@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/visor"
+	"coco/pkg/visor"
 )
 
 type PooledVM struct {

@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/coco-sandbox/coco/pkg/api"
-	"github.com/coco-sandbox/coco/pkg/types"
+	"coco/pkg/api"
+	"coco/pkg/types"
 )
 
 // SandboxService defines the interface for sandbox operations

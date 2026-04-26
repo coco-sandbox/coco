@@ -4,7 +4,7 @@
 package coco_checkpoint
 
 import (
-	"github.com/coco-sandbox/coco/pkg/checkpoint"
+	"coco/pkg/checkpoint"
 )
 
 // CheckpointManager is an alias for the shared checkpoint manager implementation.

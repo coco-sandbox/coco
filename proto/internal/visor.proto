@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package coco.internal;
 
-option go_package = "github.com/coco-sandbox/coco/pkg/api/internal";
+option go_package = "coco/proto/generated/internal";
 
 message VisorRequest {
   string id = 1;
@@ -18,11 +18,11 @@ message VisorResponse {
 }
 
 enum RequestType {
-  START = 0;
-  STOP = 1;
-  EXEC = 2;
-  SIGNAL = 3;
-  STATS = 4;
+  REQUEST_TYPE_START = 0;
+  REQUEST_TYPE_STOP = 1;
+  REQUEST_TYPE_EXEC = 2;
+  REQUEST_TYPE_SIGNAL = 3;
+  REQUEST_TYPE_STATS = 4;
 }
 
 enum ResponseStatus {

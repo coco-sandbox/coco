@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/types"
+	"coco/pkg/types"
 )
 
 // CheckpointManager creates and manages VM checkpoints per spec §5.

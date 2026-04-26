@@ -15,10 +15,10 @@ import (
 	"time"
 
 	connect "connectrpc.com/connect"
-	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
-	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
-	"github.com/coco-sandbox/coco/pkg/checkpoint"
-	"github.com/coco-sandbox/coco/pkg/types"
+	v1 "coco/pkg/api/v1"
+	"coco/pkg/api/v1/v1connect"
+	"coco/pkg/checkpoint"
+	"coco/pkg/types"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )

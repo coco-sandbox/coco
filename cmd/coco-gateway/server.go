@@ -10,9 +10,9 @@ import (
 	"time"
 
 	connect "connectrpc.com/connect"
-	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
-	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
-	"github.com/coco-sandbox/coco/pkg/types"
+	v1 "coco/pkg/api/v1"
+	"coco/pkg/api/v1/v1connect"
+	"coco/pkg/types"
 )
 
 type GatewayServer struct {

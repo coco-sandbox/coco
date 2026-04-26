@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/coco-sandbox/coco/pkg/api"
-	cocoauth "github.com/coco-sandbox/coco/pkg/middleware/auth"
+	"coco/pkg/api"
+	cocoauth "coco/pkg/middleware/auth"
 )
 
 var ErrUnauthorized = errors.New("unauthorized")

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/types"
+	"coco/pkg/types"
 )
 
 // Manager manages cluster membership and health

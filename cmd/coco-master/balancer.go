@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/scheduler"
+	"coco/pkg/scheduler"
 )
 
 type Balancer struct {

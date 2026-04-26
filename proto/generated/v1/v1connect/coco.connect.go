@@ -5,10 +5,10 @@
 package v1connect
 
 import (
+	v1 "coco/proto/generated/coco/v1"
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
 	http "net/http"
 	strings "strings"
 )

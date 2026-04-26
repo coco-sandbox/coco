@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/api"
+	"coco/pkg/api"
 )
 
 // Template represents a VM template

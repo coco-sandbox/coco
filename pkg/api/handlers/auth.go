@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/api"
-	"github.com/coco-sandbox/coco/pkg/middleware/auth"
+	"coco/pkg/api"
+	"coco/pkg/middleware/auth"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

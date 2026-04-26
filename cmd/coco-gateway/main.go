@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
-	"github.com/coco-sandbox/coco/pkg/config"
-	"github.com/coco-sandbox/coco/pkg/metrics"
-	cocoauth "github.com/coco-sandbox/coco/pkg/middleware/auth"
-	"github.com/coco-sandbox/coco/pkg/visor"
+	"coco/cmd/coco-gateway/middleware"
+	"coco/pkg/config"
+	"coco/pkg/metrics"
+	cocoauth "coco/pkg/middleware/auth"
+	"coco/pkg/visor"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

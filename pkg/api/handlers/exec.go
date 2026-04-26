@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/coco-sandbox/coco/pkg/api"
-	"github.com/coco-sandbox/coco/pkg/types"
-	"github.com/coco-sandbox/coco/pkg/visor"
+	"coco/pkg/api"
+	"coco/pkg/types"
+	"coco/pkg/visor"
 	"github.com/gorilla/websocket"
 )
 

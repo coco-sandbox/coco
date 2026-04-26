@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/coco-sandbox/coco/pkg/types"
+	"coco/pkg/types"
 )
 
 type DockerClient struct {
