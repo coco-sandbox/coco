@@ -24,7 +24,7 @@ pub const RestoreResult = struct {
 pub fn restoreFromSnapshot(
     id: []const u8,
     mem_ptr: [*]u8,
-    mem_size: u64,
+
     allocator: std.mem.Allocator,
 ) !RestoreResult {
     const start = sc.nanoTimestamp();
@@ -64,7 +64,6 @@ pub fn restoreWithNewId(
     new_id: []const u8,
     new_cid: u32,
     mem_ptr: [*]u8,
-    mem_size: u64,
     allocator: std.mem.Allocator,
 ) !RestoreResult {
     var checkpoint_mgr = checkpoint.CheckpointManager.init(allocator);
