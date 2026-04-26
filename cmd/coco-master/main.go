@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -38,6 +39,23 @@ func main() {
 func run(ctx context.Context, cfg *config.Config) error {
 	sched := scheduler.NewScheduler()
 	masterServer := NewMasterServer(sched)
+
+	if len(cfg.EtcdEndpoints) > 0 {
+		election, err := NewElection(cfg.EtcdEndpoints, nil, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create election: %w", err)
+		}
+		defer election.Close()
+		masterServer.SetElection(election)
+		go func() {
+			if err := election.Start(ctx); err != nil {
+				log.Printf("election error: %v", err)
+			}
+		}()
+		log.Printf("etcd election started (endpoints=%v)", cfg.EtcdEndpoints)
+	} else {
+		log.Printf("warning: COCO_ETCD_ENDPOINTS empty; running without leader election")
+	}
 
 	mux := http.NewServeMux()
 	path, handler := v1connect.NewMasterServiceHandler(masterServer)

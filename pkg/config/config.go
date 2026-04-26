@@ -51,6 +51,8 @@ type Config struct {
 	MasterAddr string
 
 	SchedulerStrategy string
+
+	EtcdEndpoints []string
 }
 
 func Default() *Config {
@@ -120,6 +122,23 @@ func Load() *Config {
 	if strategy := os.Getenv("COCO_SCHEDULER_STRATEGY"); strategy != "" {
 		cfg.SchedulerStrategy = strategy
 	}
+	if endpoints := os.Getenv("COCO_ETCD_ENDPOINTS"); endpoints != "" {
+		cfg.EtcdEndpoints = splitCSV(endpoints)
+	}
 
 	return cfg
+}
+
+func splitCSV(s string) []string {
+	out := make([]string, 0)
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == ',' {
+			if i > start {
+				out = append(out, s[start:i])
+			}
+			start = i + 1
+		}
+	}
+	return out
 }

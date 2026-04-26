@@ -28,6 +28,7 @@ type MasterServer struct {
 	sandboxToNode   map[string]string
 	mu              sync.RWMutex
 	nodeConnections map[string]*grpc.ClientConn
+	election        *Election
 }
 
 func NewMasterServer(sched *scheduler.Scheduler) *MasterServer {
@@ -36,6 +37,22 @@ func NewMasterServer(sched *scheduler.Scheduler) *MasterServer {
 		sandboxToNode:   make(map[string]string),
 		nodeConnections: make(map[string]*grpc.ClientConn),
 	}
+}
+
+func (s *MasterServer) SetElection(e *Election) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.election = e
+}
+
+func (s *MasterServer) IsLeader() bool {
+	s.mu.RLock()
+	e := s.election
+	s.mu.RUnlock()
+	if e == nil {
+		return true
+	}
+	return e.IsLeader()
 }
 
 func (s *MasterServer) CreateSandbox(ctx context.Context, req *types.CreateSandboxRequest) (*types.CreateSandboxResponse, error) {
