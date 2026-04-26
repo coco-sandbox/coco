@@ -52,18 +52,14 @@ pub fn log(level: LogLevel, comptime fmt: []const u8, args: anytype) void {
 
     const message = std.fmt.allocPrint(allocator, fmt, args) catch return;
 
-    const timestamp_len = ts_str.len;
-    const level_len = level_str.len;
-    const msg_len = message.len;
-
     var json_buf = std.ArrayList(u8).init(allocator);
-    try json_buf.appendSlice("{\"timestamp\":\"");
-    try json_buf.appendSlice(ts_str);
-    try json_buf.appendSlice("\",\"level\":\"");
-    try json_buf.appendSlice(level_str);
-    try json_buf.appendSlice("\",\"component\":\"coco-visor\",\"message\":\"");
-    try json_buf.appendSlice(message);
-    try json_buf.appendSlice("\"}\n");
+    json_buf.appendSlice("{\"timestamp\":\"") catch return;
+    json_buf.appendSlice(ts_str) catch return;
+    json_buf.appendSlice("\",\"level\":\"") catch return;
+    json_buf.appendSlice(level_str) catch return;
+    json_buf.appendSlice("\",\"component\":\"coco-visor\",\"message\":\"") catch return;
+    json_buf.appendSlice(message) catch return;
+    json_buf.appendSlice("\"}\n") catch return;
 
     if (log_writer) |w| {
         w.writeAll(json_buf.items) catch {};
