@@ -64,6 +64,18 @@ func (s *Scheduler) DeregisterNode(id string) {
 	delete(s.nodes, id)
 }
 
+func (s *Scheduler) DrainNode(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	node, ok := s.nodes[id]
+	if !ok {
+		return fmt.Errorf("node not found")
+	}
+	node.Available = false
+	node.UpdatedAt = time.Now()
+	return nil
+}
+
 func (s *Scheduler) UpdateLoad(id string, sandboxes int, memUsedMB uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

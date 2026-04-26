@@ -366,7 +366,10 @@ func (s *MasterServer) GetNode(ctx context.Context, req *connect.Request[v1.GetN
 }
 
 func (s *MasterServer) DrainNode(ctx context.Context, req *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error) {
-	return nil, unimplemented()
+	if err := s.sched.DrainNode(req.Msg.GetId()); err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	return connect.NewResponse(&v1.DrainNodeResponse{}), nil
 }
 
 func (s *MasterServer) RegisterLeader(ctx context.Context, req *connect.Request[v1.RegisterLeaderRequest]) (*connect.Response[v1.RegisterLeaderResponse], error) {
