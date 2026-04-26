@@ -8,6 +8,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -57,19 +59,113 @@ func (c *Client) Close() error {
 
 // SendBoot sends a boot request
 func (c *Client) SendBoot(id, rootfs string, memoryMB, vcpus uint32) (*BootResponse, error) {
-	// Simplified: just send the request and return mock response
-	// Full implementation would encode the proper frame format
+	// Encode frame: [4 bytes type][4 bytes size][payload]
+	req := fmt.Sprintf(`{"id":"%s","boot_source":{"kernel":"/var/lib/coco/vmlinux","initramfs":""},"root_volume":{"path":"%s","readonly":true},"cpus":{"count":%d},"memory":{"size":"%dM"}}`,
+		id, rootfs, vcpus, memoryMB)
+
+	// Frame header: type (ReqBoot=1) + size
+	header := make([]byte, 8)
+	binary.LittleEndian.PutUint32(header[0:4], ReqBoot)
+	binary.LittleEndian.PutUint32(header[4:8], uint32(len(req)))
+
+	_, err := c.conn.Write(header)
+	if err != nil {
+		return nil, err
+	}
+	_, err = c.conn.Write([]byte(req))
+	if err != nil {
+		return nil, err
+	}
+
+	// Read response frame
+	kind, payload, err := c.readFrame()
+	if err != nil {
+		return nil, err
+	}
+	if kind != RespBoot && kind != RespOK {
+		return nil, fmt.Errorf("unexpected response kind: %d", kind)
+	}
+
+	// Parse response JSON: {"id": "...", "pid": 1234, "vsock_cid": 3}
+	// Simple parsing - look for pid and vsock_cid values
+	resp := string(payload)
+	pid := uint32(0)
+	vsockCID := uint32(0)
+
+	for _, line := range strings.Split(resp, ",") {
+		if strings.Contains(line, "\"pid\"") {
+			parts := strings.Split(line, ":")
+			if len(parts) == 2 {
+				pidStr := strings.TrimSpace(parts[1])
+				pidStr = strings.Trim(pidStr, "}")
+				if p, err := strconv.ParseUint(pidStr, 10, 32); err == nil {
+					pid = uint32(p)
+				}
+			}
+		}
+		if strings.Contains(line, "\"vsock_cid\"") {
+			parts := strings.Split(line, ":")
+			if len(parts) == 2 {
+				cidStr := strings.TrimSpace(parts[1])
+				cidStr = strings.Trim(cidStr, "}")
+				if c, err := strconv.ParseUint(cidStr, 10, 32); err == nil {
+					vsockCID = uint32(c)
+				}
+			}
+		}
+	}
+
 	return &BootResponse{
-		VsockCID: 3,
-		PID:     1000,
-		State:   2,
+		VsockCID: vsockCID,
+		PID:      pid,
+		State:    2,
 	}, nil
 }
 
 // SendExec sends an exec request
 func (c *Client) SendExec(cmd string, args []string) (string, error) {
-	// Simplified: return mock output
-	return "mock output\n", nil
+	// Encode exec request
+	req := fmt.Sprintf(`{"command":"%s","args":[%s]}`, cmd, strings.Join(args, ","))
+
+	// Frame header: type (ReqExec=2) + size
+	header := make([]byte, 8)
+	binary.LittleEndian.PutUint32(header[0:4], ReqExec)
+	binary.LittleEndian.PutUint32(header[4:8], uint32(len(req)))
+
+	_, err := c.conn.Write(header)
+	if err != nil {
+		return "", err
+	}
+	_, err = c.conn.Write([]byte(req))
+	if err != nil {
+		return "", err
+	}
+
+	// Read response
+	kind, payload, err := c.readFrame()
+	if err != nil {
+		return "", err
+	}
+	if kind == RespError {
+		return "", fmt.Errorf("exec failed: %s", string(payload))
+	}
+	if kind != RespExec && kind != RespOK {
+		return "", fmt.Errorf("unexpected response kind: %d", kind)
+	}
+
+	// Parse output from response JSON: {"output": "...", "exit_code": 0}
+	resp := string(payload)
+	for _, line := range strings.Split(resp, ",") {
+		if strings.Contains(line, "\"output\"") {
+			parts := strings.Split(line, ":")
+			if len(parts) == 2 {
+				output := strings.TrimSpace(parts[1])
+				output = strings.Trim(output, "\"")
+				return output, nil
+			}
+		}
+	}
+	return string(payload), nil
 }
 
 // SendDestroy sends a destroy request

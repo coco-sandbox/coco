@@ -46,11 +46,50 @@ pub const CLHClient = struct {
         const resp = try self.recvRaw();
         defer std.heap.page_allocator.free(resp);
 
-        // Parse response for PID and vsock CID
-        // Expected: {"id": "...", "pid": 1234, "vsock_cid": 3}
+        // Parse response JSON: {"id": "...", "pid": 1234, "vsock_cid": 3}
+        // Simple parser: find "pid": and "vsock_cid": values
+        var pid: u32 = 0;
+        var vsock_cid: u32 = config.vsock_cid;
+
+        // Find pid value
+        const pid_start = std.mem.indexOf(u8, resp, "\"pid\":") orelse return BootResult{
+            .pid = 0,
+            .vsock_cid = vsock_cid,
+        };
+        const pid_val_start = pid_start + 6;
+        var pid_val_end = pid_val_start;
+        while (pid_val_end < resp.len and resp[pid_val_end] >= '0' and resp[pid_val_end] <= '9') {
+            pid_val_end += 1;
+        }
+        if (pid_val_end > pid_val_start) {
+            var pid_val: u32 = 0;
+            for (resp[pid_val_start..pid_val_end]) |c| {
+                pid_val = pid_val * 10 + (c - '0');
+            }
+            pid = pid_val;
+        }
+
+        // Find vsock_cid value
+        const vsock_start = std.mem.indexOf(u8, resp, "\"vsock_cid\":") orelse return BootResult{
+            .pid = pid,
+            .vsock_cid = vsock_cid,
+        };
+        const vsock_val_start = vsock_start + 12;
+        var vsock_val_end = vsock_val_start;
+        while (vsock_val_end < resp.len and resp[vsock_val_end] >= '0' and resp[vsock_val_end] <= '9') {
+            vsock_val_end += 1;
+        }
+        if (vsock_val_end > vsock_val_start) {
+            var vsock_val: u32 = 0;
+            for (resp[vsock_val_start..vsock_val_end]) |c| {
+                vsock_val = vsock_val * 10 + (c - '0');
+            }
+            vsock_cid = vsock_val;
+        }
+
         return BootResult{
-            .pid = 1234, // TODO: parse from resp JSON
-            .vsock_cid = config.vsock_cid,
+            .pid = pid,
+            .vsock_cid = vsock_cid,
         };
     }
 

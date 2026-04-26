@@ -84,10 +84,18 @@ const PolicyEngine = struct {
 };
 
 fn bloomInsert(engine: *PolicyEngine, cidr: [2]u64) void {
-    _ = engine;
-    _ = cidr;
-    // Hash 3 times and set bits
-    std.debug.print("[coconet] Bloom insert: TODO\n", .{});
+    // Compute 3 hash values and set bits in bloom filter
+    const h1 = fnvHash(cidr[0] ^ cidr[1] ^ 0x12345678);
+    const h2 = fnvHash(cidr[0] ^ cidr[1] ^ 0x9abcdef0);
+    const h3 = fnvHash(cidr[0] ^ cidr[1] ^ 0xdeadbeef);
+
+    const idx1 = @as(usize, h1) % 1024;
+    const idx2 = @as(usize, h2) % 1024;
+    const idx3 = @as(usize, h3) % 1024;
+
+    engine.bloom_filter[idx1 / 64] |= @as(u64, 1) << @as(u6, @truncate(idx1 % 64));
+    engine.bloom_filter[idx2 / 64] |= @as(u64, 1) << @as(u6, @truncate(idx2 % 64));
+    engine.bloom_filter[idx3 / 64] |= @as(u64, 1) << @as(u6, @truncate(idx3 % 64));
 }
 
 fn bloomCheck(engine: *PolicyEngine, cidr: [2]u64) bool {
@@ -116,6 +124,28 @@ fn cidrMatches(input: [2]u64, prefix: [2]u64, prefix_len: u32) bool {
         const mask2: u64 = (~@as(u64, 0)) << (64 - bits2);
         return (input[1] & mask2) == (prefix[1] & mask2);
     }
+}
+
+/// fnvHash computes a FNV-1a hash for bloom filter
+fn fnvHash(x: u64) u64 {
+    var h: u64 = 0xcbf29ce484222325;
+    h ^= x & 0xff;
+    h *%= 0x100000001b3;
+    h ^= (x >> 8) & 0xff;
+    h *%= 0x100000001b3;
+    h ^= (x >> 16) & 0xff;
+    h *%= 0x100000001b3;
+    h ^= (x >> 24) & 0xff;
+    h *%= 0x100000001b3;
+    h ^= (x >> 32) & 0xff;
+    h *%= 0x100000001b3;
+    h ^= (x >> 40) & 0xff;
+    h *%= 0x100000001b3;
+    h ^= (x >> 48) & 0xff;
+    h *%= 0x100000001b3;
+    h ^= (x >> 56) & 0xff;
+    h *%= 0x100000001b3;
+    return h;
 }
 
 // =============================================================================
