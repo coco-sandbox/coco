@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -120,8 +121,8 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer) {
 		}
 	})
 
-	// Templates - use pkg/api/handlers/template.go
-	templateHandler := handlers.NewTemplateHandler(nil)
+	// Templates - gateway implements TemplateService via adapter
+	templateHandler := handlers.NewTemplateHandler(&templateServiceAdapter{gw: gw})
 	mux.HandleFunc("/v1/templates", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -342,4 +343,76 @@ func handleRestoreSandbox(w http.ResponseWriter, r *http.Request, sandboxID stri
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "restored"})
+}
+
+type templateServiceAdapter struct {
+	gw *GatewayServer
+}
+
+func (a *templateServiceAdapter) List() ([]*handlers.Template, error) {
+	ctx := context.Background()
+	resp, err := a.gw.ListTemplates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	templates := make([]*handlers.Template, len(resp.Items))
+	for i, t := range resp.Items {
+		templates[i] = &handlers.Template{
+			ID:        t.ID,
+			Name:      t.Name,
+			Rootfs:    t.RootfsPath,
+			Kernel:    t.KernelPath,
+			Initrd:    t.InitrdPath,
+			MemoryMB:  uint32(t.MemoryMB),
+			VCPUs:     uint32(t.VCPUs),
+			CreatedAt: t.CreatedAt.Unix(),
+		}
+	}
+	return templates, nil
+}
+
+func (a *templateServiceAdapter) Get(id string) (*handlers.Template, error) {
+	ctx := context.Background()
+	t, err := a.gw.GetTemplate(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &handlers.Template{
+		ID:        t.ID,
+		Name:      t.Name,
+		Rootfs:    t.RootfsPath,
+		Kernel:    t.KernelPath,
+		Initrd:    t.InitrdPath,
+		MemoryMB:  uint32(t.MemoryMB),
+		VCPUs:     uint32(t.VCPUs),
+		CreatedAt: t.CreatedAt.Unix(),
+	}, nil
+}
+
+func (a *templateServiceAdapter) Create(tpl *handlers.Template) (*handlers.Template, error) {
+	ctx := context.Background()
+	created, err := a.gw.CreateTemplate(ctx, &types.CreateTemplateRequest{
+		Name:       tpl.Name,
+		RootfsPath: tpl.Rootfs,
+		KernelPath: tpl.Kernel,
+		InitrdPath: tpl.Initrd,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &handlers.Template{
+		ID:        created.ID,
+		Name:      created.Name,
+		Rootfs:    created.RootfsPath,
+		Kernel:    created.KernelPath,
+		Initrd:    created.InitrdPath,
+		MemoryMB:  uint32(created.MemoryMB),
+		VCPUs:     uint32(created.VCPUs),
+		CreatedAt: created.CreatedAt.Unix(),
+	}, nil
+}
+
+func (a *templateServiceAdapter) Delete(id string) error {
+	ctx := context.Background()
+	return a.gw.DeleteTemplate(ctx, id)
 }

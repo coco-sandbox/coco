@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -16,6 +17,14 @@ type Discovery struct {
 	nodePrefix    string
 	ttl           time.Duration
 	stopCh        chan struct{}
+	records       map[string]NodeRecord
+}
+
+type NodeRecord struct {
+	ID           string            `json:"id"`
+	Addr         string            `json:"addr"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
+	RegisteredAt time.Time         `json:"registered_at"`
 }
 
 type DiscoveryConfig struct {
@@ -44,22 +53,33 @@ func NewDiscovery(cfg DiscoveryConfig) (*Discovery, error) {
 		nodePrefix:    cfg.NodePrefix,
 		ttl:           ttl,
 		stopCh:        make(chan struct{}),
+		records:       make(map[string]NodeRecord),
 	}, nil
 }
 
 func (d *Discovery) RegisterNode(ctx context.Context, nodeID, addr string, metadata map[string]string) error {
+	record := NodeRecord{
+		ID:           nodeID,
+		Addr:         addr,
+		Metadata:     metadata,
+		RegisteredAt: time.Now(),
+	}
+	value, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("failed to marshal record: %w", err)
+	}
+
+	d.mu.Lock()
+	d.records[nodeID] = record
+	d.mu.Unlock()
+
 	key := fmt.Sprintf("%s/%s", d.nodePrefix, nodeID)
-
-	value := fmt.Sprintf(`{"id":"%s","addr":"%s","metadata":%v,"registered_at":"%s"}`,
-		nodeID, addr, metadata, time.Now().Format(time.RFC3339))
-
 	lease, err := d.client.Grant(ctx, int64(d.ttl.Seconds()))
 	if err != nil {
 		return fmt.Errorf("failed to grant lease: %w", err)
 	}
 
-	_, err = d.client.Put(ctx, key, value, clientv3.WithLease(lease.ID))
-	if err != nil {
+	if _, err := d.client.Put(ctx, key, string(value), clientv3.WithLease(lease.ID)); err != nil {
 		return fmt.Errorf("failed to register node: %w", err)
 	}
 
@@ -120,15 +140,19 @@ func (d *Discovery) WatchNodes(ctx context.Context, callback func(Event)) {
 }
 
 func (d *Discovery) RefreshLease(ctx context.Context, nodeID string) error {
-	key := fmt.Sprintf("%s/%s", d.nodePrefix, nodeID)
-
-	lease, err := d.client.Grant(ctx, int64(d.ttl.Seconds()))
-	if err != nil {
-		return err
+	d.mu.RLock()
+	record, ok := d.records[nodeID]
+	d.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("no cached record for node %s; call RegisterNode first", nodeID)
 	}
+	return d.RegisterNode(ctx, record.ID, record.Addr, record.Metadata)
+}
 
-	_, err = d.client.Put(ctx, key, "", clientv3.WithLease(lease.ID))
-	return err
+func ParseNodeRecord(value []byte) (NodeRecord, error) {
+	var r NodeRecord
+	err := json.Unmarshal(value, &r)
+	return r, err
 }
 
 func (d *Discovery) Close() error {

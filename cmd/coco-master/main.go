@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
+	"github.com/coco-sandbox/coco/pkg/cluster"
 	"github.com/coco-sandbox/coco/pkg/config"
 	"github.com/coco-sandbox/coco/pkg/scheduler"
 	"golang.org/x/net/http2"
@@ -53,6 +55,51 @@ func run(ctx context.Context, cfg *config.Config) error {
 			}
 		}()
 		log.Printf("etcd election started (endpoints=%v)", cfg.EtcdEndpoints)
+
+		discovery, err := cluster.NewDiscovery(cluster.DiscoveryConfig{
+			Endpoints:  cfg.EtcdEndpoints,
+			NodePrefix: "/coco/nodes",
+			TTL:        30 * time.Second,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create discovery: %w", err)
+		}
+		defer discovery.Close()
+
+		if existing, err := discovery.ListNodes(ctx); err == nil {
+			for _, ni := range existing {
+				record, perr := cluster.ParseNodeRecord([]byte(ni.Value))
+				if perr != nil {
+					log.Printf("seed: parse error for %s: %v", ni.Key, perr)
+					continue
+				}
+				_ = sched.RegisterNode(&scheduler.NodeEntry{
+					ID:        record.ID,
+					Addr:      record.Addr,
+					Available: true,
+				})
+			}
+			log.Printf("seeded scheduler with %d existing nodes", len(existing))
+		}
+
+		go discovery.WatchNodes(ctx, func(ev cluster.Event) {
+			nodeID := strings.TrimPrefix(ev.Key, "/coco/nodes/")
+			switch ev.Type {
+			case "put":
+				record, perr := cluster.ParseNodeRecord([]byte(ev.Value))
+				if perr != nil {
+					log.Printf("watch: parse error: %v", perr)
+					return
+				}
+				_ = sched.RegisterNode(&scheduler.NodeEntry{
+					ID:        record.ID,
+					Addr:      record.Addr,
+					Available: true,
+				})
+			case "delete":
+				sched.DeregisterNode(nodeID)
+			}
+		})
 	} else {
 		log.Printf("warning: COCO_ETCD_ENDPOINTS empty; running without leader election")
 	}

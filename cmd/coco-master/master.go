@@ -15,7 +15,19 @@ import (
 	"github.com/coco-sandbox/coco/pkg/scheduler"
 	"github.com/coco-sandbox/coco/pkg/types"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func nodeEntryToProto(n *scheduler.NodeEntry) *v1.Node {
+	return &v1.Node{
+		Id:              n.ID,
+		Addr:            n.Addr,
+		Healthy:         n.Available,
+		ActiveSandboxes: int32(n.Sandboxes),
+		MemoryUsedMb:    n.MemMB,
+		LastSeen:        timestamppb.New(n.UpdatedAt),
+	}
+}
 
 var _ v1connect.MasterServiceHandler = (*MasterServer)(nil)
 
@@ -291,23 +303,66 @@ func randomString(length int) string {
 }
 
 func (s *MasterServer) ScheduleSandbox(ctx context.Context, req *connect.Request[v1.ScheduleSandboxRequest]) (*connect.Response[v1.ScheduleSandboxResponse], error) {
-	return nil, unimplemented()
+	if !s.IsLeader() {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("not leader"))
+	}
+	node, err := s.sched.Schedule(scheduler.StrategyLeastLoaded)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeResourceExhausted, err)
+	}
+	sandboxID := generateID()
+	s.mu.Lock()
+	s.sandboxToNode[sandboxID] = node.ID
+	s.mu.Unlock()
+	return connect.NewResponse(&v1.ScheduleSandboxResponse{
+		SandboxId:      sandboxID,
+		AssignedNodeId: node.ID,
+		AssignedAddr:   node.Addr,
+	}), nil
 }
 
 func (s *MasterServer) GetSchedule(ctx context.Context, req *connect.Request[v1.GetScheduleRequest]) (*connect.Response[v1.GetScheduleResponse], error) {
-	return nil, unimplemented()
+	s.mu.RLock()
+	nodeID, ok := s.sandboxToNode[req.Msg.SandboxId]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("sandbox %s not scheduled", req.Msg.SandboxId))
+	}
+	return connect.NewResponse(&v1.GetScheduleResponse{
+		SandboxId:      req.Msg.SandboxId,
+		AssignedNodeId: nodeID,
+	}), nil
 }
 
 func (s *MasterServer) GetClusterInfo(ctx context.Context, req *connect.Request[v1.GetClusterInfoRequest]) (*connect.Response[v1.GetClusterInfoResponse], error) {
-	return nil, unimplemented()
+	nodes := s.sched.GetNodes()
+	s.mu.RLock()
+	sandboxCount := int32(len(s.sandboxToNode))
+	s.mu.RUnlock()
+	return connect.NewResponse(&v1.GetClusterInfoResponse{
+		Cluster: &v1.ClusterInfo{
+			NodeCount:    int32(len(nodes)),
+			SandboxCount: sandboxCount,
+			UpdatedAt:    timestamppb.Now(),
+		},
+	}), nil
 }
 
 func (s *MasterServer) ListNodes(ctx context.Context, req *connect.Request[v1.ListNodesRequest]) (*connect.Response[v1.ListNodesResponse], error) {
-	return nil, unimplemented()
+	nodes := s.sched.GetNodes()
+	out := make([]*v1.Node, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, nodeEntryToProto(n))
+	}
+	return connect.NewResponse(&v1.ListNodesResponse{Nodes: out}), nil
 }
 
 func (s *MasterServer) GetNode(ctx context.Context, req *connect.Request[v1.GetNodeRequest]) (*connect.Response[v1.GetNodeResponse], error) {
-	return nil, unimplemented()
+	n, err := s.sched.GetNode(req.Msg.Id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	return connect.NewResponse(&v1.GetNodeResponse{Node: nodeEntryToProto(n)}), nil
 }
 
 func (s *MasterServer) DrainNode(ctx context.Context, req *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error) {
