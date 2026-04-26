@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
+	"github.com/coco-sandbox/coco/pkg/api"
 	"github.com/coco-sandbox/coco/pkg/api/handlers"
 	"github.com/coco-sandbox/coco/pkg/types"
 	"github.com/coco-sandbox/coco/pkg/visor"
@@ -30,7 +31,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 		case http.MethodGet:
 			sbHandler.HandleList(w, r)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			api.WriteMethodNotAllowed(w)
 		}
 	})
 
@@ -50,7 +51,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 			case http.MethodDelete:
 				sbHandler.HandleDelete(w, r, id)
 			default:
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				api.WriteMethodNotAllowed(w)
 			}
 			return
 		}
@@ -77,13 +78,13 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 			if r.Method == http.MethodPost {
 				handleCreateCheckpoint(w, r, id, gw)
 			} else {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				api.WriteMethodNotAllowed(w)
 			}
 		case "restore":
 			if r.Method == http.MethodPost {
 				handleRestoreSandbox(w, r, id, gw)
 			} else {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				api.WriteMethodNotAllowed(w)
 			}
 		case "checkpoints":
 			handleListCheckpoints(w, r, id, gw)
@@ -97,12 +98,12 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 		if r.Method == http.MethodGet {
 			sandboxID := r.URL.Query().Get("sandbox_id")
 			if sandboxID == "" {
-				http.Error(w, "sandbox_id query parameter required", http.StatusBadRequest)
+				api.WriteBadRequest(w, "sandbox_id query parameter required")
 				return
 			}
 			handleListCheckpoints(w, r, sandboxID, gw)
 		} else {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			api.WriteMethodNotAllowed(w)
 		}
 	})
 
@@ -121,7 +122,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 		case http.MethodDelete:
 			handleDeleteCheckpoint(w, r, id, gw)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			api.WriteMethodNotAllowed(w)
 		}
 	})
 
@@ -134,7 +135,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 		case http.MethodGet:
 			templateHandler.HandleList(w, r)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			api.WriteMethodNotAllowed(w)
 		}
 	})
 
@@ -154,7 +155,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 			case http.MethodDelete:
 				templateHandler.HandleDelete(w, r, id)
 			default:
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				api.WriteMethodNotAllowed(w)
 			}
 			return
 		}
@@ -165,7 +166,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 			if r.Method == http.MethodPost {
 				handleBuildTemplate(w, r, id, gw)
 			} else {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				api.WriteMethodNotAllowed(w)
 			}
 		default:
 			http.NotFound(w, r)
@@ -177,7 +178,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 		if r.Method == http.MethodGet {
 			handleGetClusterInfo(w, r, gw)
 		} else {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			api.WriteMethodNotAllowed(w)
 		}
 	})
 
@@ -186,7 +187,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 		if r.Method == http.MethodGet {
 			handleListNodes(w, r, gw)
 		} else {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			api.WriteMethodNotAllowed(w)
 		}
 	})
 
@@ -206,7 +207,7 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 			case http.MethodPost:
 				handleDrainNode(w, r, id, gw)
 			default:
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				api.WriteMethodNotAllowed(w)
 			}
 			return
 		}
@@ -225,14 +226,14 @@ func handleExec(w http.ResponseWriter, r *http.Request, sandboxID string, gw *Ga
 
 	var req types.ExecSandboxRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		api.WriteBadRequest(w, fmt.Sprintf("invalid request: %v", err))
 		return
 	}
 	req.SandboxID = sandboxID
 
 	output, exitCode, err := gw.ExecSandbox(r.Context(), &req)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("exec failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("exec failed: %v", err))
 		return
 	}
 
@@ -247,7 +248,7 @@ func handleExec(w http.ResponseWriter, r *http.Request, sandboxID string, gw *Ga
 func handleGetClusterInfo(w http.ResponseWriter, r *http.Request, gw *GatewayServer) {
 	info, err := gw.GetClusterInfo(r.Context())
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to get cluster info: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("failed to get cluster info: %v", err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -257,7 +258,7 @@ func handleGetClusterInfo(w http.ResponseWriter, r *http.Request, gw *GatewaySer
 func handleListNodes(w http.ResponseWriter, r *http.Request, gw *GatewayServer) {
 	resp, err := gw.ListNodes(r.Context())
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to list nodes: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("failed to list nodes: %v", err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -270,7 +271,7 @@ func handleListNodes(w http.ResponseWriter, r *http.Request, gw *GatewayServer) 
 func handleGetNode(w http.ResponseWriter, r *http.Request, id string, gw *GatewayServer) {
 	node, err := gw.GetNode(r.Context(), id)
 	if err != nil {
-		http.Error(w, "node not found", http.StatusNotFound)
+		api.WriteNotFound(w, "node not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -279,7 +280,7 @@ func handleGetNode(w http.ResponseWriter, r *http.Request, id string, gw *Gatewa
 
 func handleDrainNode(w http.ResponseWriter, r *http.Request, id string, gw *GatewayServer) {
 	if err := gw.DrainNode(r.Context(), id); err != nil {
-		http.Error(w, fmt.Sprintf("failed to drain node: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("failed to drain node: %v", err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -292,13 +293,13 @@ func handleCreateCheckpoint(w http.ResponseWriter, r *http.Request, sandboxID st
 
 	var req types.CreateCheckpointRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		api.WriteBadRequest(w, fmt.Sprintf("invalid request: %v", err))
 		return
 	}
 
 	cp, err := gw.CreateCheckpoint(r.Context(), sandboxID, &req)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("create checkpoint failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("create checkpoint failed: %v", err))
 		return
 	}
 
@@ -310,7 +311,7 @@ func handleCreateCheckpoint(w http.ResponseWriter, r *http.Request, sandboxID st
 func handleListCheckpoints(w http.ResponseWriter, r *http.Request, sandboxID string, gw *GatewayServer) {
 	resp, err := gw.ListCheckpoints(r.Context(), sandboxID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("list checkpoints failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("list checkpoints failed: %v", err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -323,7 +324,7 @@ func handleListCheckpoints(w http.ResponseWriter, r *http.Request, sandboxID str
 func handleGetCheckpoint(w http.ResponseWriter, r *http.Request, id string, gw *GatewayServer) {
 	cp, err := gw.GetCheckpoint(r.Context(), id)
 	if err != nil {
-		http.Error(w, "checkpoint not found", http.StatusNotFound)
+		api.WriteNotFound(w, "checkpoint not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -332,7 +333,7 @@ func handleGetCheckpoint(w http.ResponseWriter, r *http.Request, id string, gw *
 
 func handleDeleteCheckpoint(w http.ResponseWriter, r *http.Request, id string, gw *GatewayServer) {
 	if err := gw.DeleteCheckpoint(r.Context(), id); err != nil {
-		http.Error(w, fmt.Sprintf("delete checkpoint failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("delete checkpoint failed: %v", err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -346,12 +347,12 @@ func handleRestoreSandbox(w http.ResponseWriter, r *http.Request, sandboxID stri
 		CheckpointID string `json:"checkpoint_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		api.WriteBadRequest(w, fmt.Sprintf("invalid request: %v", err))
 		return
 	}
 
 	if err := gw.RestoreSandbox(r.Context(), sandboxID, req.CheckpointID); err != nil {
-		http.Error(w, fmt.Sprintf("restore failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("restore failed: %v", err))
 		return
 	}
 
@@ -436,12 +437,12 @@ func handleBuildTemplate(w http.ResponseWriter, r *http.Request, templateID stri
 
 	var req types.BuildTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		api.WriteBadRequest(w, fmt.Sprintf("invalid request: %v", err))
 		return
 	}
 
 	if err := gw.BuildTemplate(r.Context(), templateID, &req); err != nil {
-		http.Error(w, fmt.Sprintf("build template failed: %v", err), http.StatusInternalServerError)
+		api.WriteInternalError(w, fmt.Sprintf("build template failed: %v", err))
 		return
 	}
 

@@ -132,7 +132,7 @@ func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 			}
 
 			if !allowed {
-				http.Error(rw, "rate limit exceeded", http.StatusTooManyRequests)
+				api.WriteResourceExhausted(rw, "rate limit exceeded")
 				return
 			}
 

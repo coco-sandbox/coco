@@ -72,3 +72,11 @@ func WriteAlreadyExists(w http.ResponseWriter, message string) {
 func WriteTimeout(w http.ResponseWriter, message string) {
 	WriteError(w, ErrTimeout, message, "", http.StatusGatewayTimeout)
 }
+
+// WriteMethodNotAllowed responds with HTTP 405 wrapped in the spec error
+// envelope. Spec/02 §5.1 has no dedicated logical code for method/path
+// mismatches; we use INVALID_ARGUMENT, which fits the "wrong way to call
+// this resource" semantic.
+func WriteMethodNotAllowed(w http.ResponseWriter) {
+	WriteError(w, ErrInvalidArgument, "method not allowed", "", http.StatusMethodNotAllowed)
+}
