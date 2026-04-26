@@ -5,13 +5,23 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
+	connect "connectrpc.com/connect"
+	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
+	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
 	"github.com/coco-sandbox/coco/pkg/scheduler"
 	"github.com/coco-sandbox/coco/pkg/types"
 	"google.golang.org/grpc"
 )
+
+var _ v1connect.MasterServiceHandler = (*MasterServer)(nil)
+
+func unimplemented() error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("not yet implemented"))
+}
 
 type MasterServer struct {
 	sched           *scheduler.Scheduler
@@ -261,4 +271,56 @@ func randomString(length int) string {
 		b[i] = charset[i%len(charset)]
 	}
 	return string(b)
+}
+
+func (s *MasterServer) ScheduleSandbox(ctx context.Context, req *connect.Request[v1.ScheduleSandboxRequest]) (*connect.Response[v1.ScheduleSandboxResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) GetSchedule(ctx context.Context, req *connect.Request[v1.GetScheduleRequest]) (*connect.Response[v1.GetScheduleResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) GetClusterInfo(ctx context.Context, req *connect.Request[v1.GetClusterInfoRequest]) (*connect.Response[v1.GetClusterInfoResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) ListNodes(ctx context.Context, req *connect.Request[v1.ListNodesRequest]) (*connect.Response[v1.ListNodesResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) GetNode(ctx context.Context, req *connect.Request[v1.GetNodeRequest]) (*connect.Response[v1.GetNodeResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) DrainNode(ctx context.Context, req *connect.Request[v1.DrainNodeRequest]) (*connect.Response[v1.DrainNodeResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) RegisterLeader(ctx context.Context, req *connect.Request[v1.RegisterLeaderRequest]) (*connect.Response[v1.RegisterLeaderResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) RequestVote(ctx context.Context, req *connect.Request[v1.RequestVoteRequest]) (*connect.Response[v1.RequestVoteResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) TrackSandbox(ctx context.Context, req *connect.Request[v1.TrackSandboxRequest]) (*connect.Response[v1.TrackSandboxResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) UntrackSandbox(ctx context.Context, req *connect.Request[v1.UntrackSandboxRequest]) (*connect.Response[v1.UntrackSandboxResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) UpdateSandboxState(ctx context.Context, req *connect.Request[v1.UpdateSandboxStateRequest]) (*connect.Response[v1.UpdateSandboxStateResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) InitiateFailover(ctx context.Context, req *connect.Request[v1.InitiateFailoverRequest]) (*connect.Response[v1.InitiateFailoverResponse], error) {
+	return nil, unimplemented()
+}
+
+func (s *MasterServer) GetFailoverStatus(ctx context.Context, req *connect.Request[v1.GetFailoverStatusRequest]) (*connect.Response[v1.GetFailoverStatusResponse], error) {
+	return nil, unimplemented()
 }
