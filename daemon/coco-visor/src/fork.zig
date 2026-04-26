@@ -26,7 +26,7 @@ pub const ForkManager = struct {
 
     fn detectBtrfs(path: []const u8) bool {
         var buf: [256]u8 = undefined;
-        const full_path = std.fmt.bufPrint(&buf, "{s}/.", .{ path }) catch return false;
+        const full_path = std.fmt.bufPrint(&buf, "{any}/.", .{ path }) catch return false;
 
         var stat_buf: linux.Stat = undefined;
         const full_path_null: [*:0]u8 = @ptrCast(full_path);
@@ -40,10 +40,10 @@ pub const ForkManager = struct {
     }
 
     pub fn createFork(self: *ForkManager, parent_id: []const u8, child_id: []const u8) void {
-        const parent_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, parent_id }) catch return;
+        const parent_dir = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ self.base_dir, parent_id }) catch return;
         defer self.allocator.free(parent_dir);
 
-        const child_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, child_id }) catch return;
+        const child_dir = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ self.base_dir, child_id }) catch return;
         defer self.allocator.free(child_dir);
 
         if (self.use_reflink) {
@@ -67,10 +67,10 @@ pub const ForkManager = struct {
 
         var iter = parent_file.iterate();
         while (iter.next() catch null) |entry| {
-            const src_path = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ parent_dir, entry.name }) catch continue;
+            const src_path = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ parent_dir, entry.name }) catch continue;
             defer self.allocator.free(src_path);
 
-            const dest_path = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ child_dir, entry.name }) catch continue;
+            const dest_path = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ child_dir, entry.name }) catch continue;
             defer self.allocator.free(dest_path);
 
             switch (entry.kind) {
@@ -111,10 +111,10 @@ pub const ForkManager = struct {
 
         var iter = parent_file.iterate();
         while (iter.next() catch null) |entry| {
-            const src_path = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ parent_dir, entry.name }) catch continue;
+            const src_path = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ parent_dir, entry.name }) catch continue;
             defer self.allocator.free(src_path);
 
-            const dest_path = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ child_dir, entry.name }) catch continue;
+            const dest_path = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ child_dir, entry.name }) catch continue;
             defer self.allocator.free(dest_path);
 
             switch (entry.kind) {
@@ -133,17 +133,17 @@ pub const ForkManager = struct {
     }
 
     pub fn cleanupFork(self: *ForkManager, fork_id: []const u8) void {
-        const fork_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, fork_id }) catch return;
+        const fork_dir = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ self.base_dir, fork_id }) catch return;
         defer self.allocator.free(fork_dir);
 
         std.fs.deleteTreeAbsolute(fork_dir) catch {};
     }
 
     pub fn createForkSnapshot(self: *ForkManager, parent_id: []const u8, snapshot_id: []const u8) !void {
-        const parent_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, parent_id }) catch return;
+        const parent_dir = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ self.base_dir, parent_id }) catch return;
         defer self.allocator.free(parent_dir);
 
-        const snapshot_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, snapshot_id }) catch return;
+        const snapshot_dir = std.fmt.allocPrint(self.allocator, "{any}/{any}", .{ self.base_dir, snapshot_id }) catch return;
         defer self.allocator.free(snapshot_dir);
 
         var child = std.ChildProcess.init(&[_][]const u8{

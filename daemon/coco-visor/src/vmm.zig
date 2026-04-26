@@ -78,7 +78,7 @@ pub const VM = struct {
 
         self.state = .booting;
 
-        std.debug.print("[vmm] Booting VM {s} (mem={d}MB, vcpus={d})\n", .{
+        std.debug.print("[vmm] Booting VM {any} (mem={d}MB, vcpus={d})\n", .{
             self.config.id, self.config.memory_mb, self.config.vcpus,
         });
 
@@ -144,7 +144,7 @@ pub const VM = struct {
         self.agent_fd = agent_fd;
         self.state = .running;
 
-        std.debug.print("[vmm] VM {s} booted: pid={d}, cid={d}\n", .{
+        std.debug.print("[vmm] VM {any} booted: pid={d}, cid={d}\n", .{
             self.config.id, self.pid, self.config.vsock_cid,
         });
 
@@ -162,7 +162,7 @@ pub const VM = struct {
             vm.pause();
         }
         self.state = .paused;
-        std.debug.print("[vmm] VM {s} paused\n", .{self.config.id});
+        std.debug.print("[vmm] VM {any} paused\n", .{self.config.id});
     }
 
     pub fn resume_(self: *VM) VMMError!void {
@@ -174,7 +174,7 @@ pub const VM = struct {
             vm.resume_();
         }
         self.state = .running;
-        std.debug.print("[vmm] VM {s} resumed\n", .{self.config.id});
+        std.debug.print("[vmm] VM {any} resumed\n", .{self.config.id});
     }
 
     pub fn destroy(self: *VM) VMMError!void {
@@ -183,7 +183,7 @@ pub const VM = struct {
         }
 
         self.state = .stopping;
-        std.debug.print("[vmm] Destroying VM {s}\n", .{self.config.id});
+        std.debug.print("[vmm] Destroying VM {any}\n", .{self.config.id});
 
         if (self.agent_fd >= 0) {
             posix.close(self.agent_fd);
@@ -207,7 +207,7 @@ pub const VM = struct {
 
         unregisterVM(self.config.id);
 
-        std.debug.print("[vmm] VM {s} destroyed\n", .{self.config.id});
+        std.debug.print("[vmm] VM {any} destroyed\n", .{self.config.id});
     }
 
     pub fn fork(self: *VM) VMMError!ForkResult {
@@ -215,7 +215,7 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        std.debug.print("[vmm] Forking VM {s} (using btrfs reflinks)\n", .{self.config.id});
+        std.debug.print("[vmm] Forking VM {any} (using btrfs reflinks)\n", .{self.config.id});
 
         if (self.state == .running) {
             self.pause() catch {};
@@ -223,7 +223,7 @@ pub const VM = struct {
 
         const child_id = std.fmt.allocPrint(
             std.heap.page_allocator,
-            "{s}-fork-{d}",
+            "{any}-fork-{d}",
             .{ self.config.id, std.time.timestamp() },
         ) catch return VMMError.OutOfMemory;
         defer std.heap.page_allocator.free(child_id);
@@ -301,7 +301,7 @@ pub const VM = struct {
 
         self.resume_() catch {};
 
-        std.debug.print("[vmm] Fork complete: child_id={s}, child_pid={d}, child_cid={d}\n", .{
+        std.debug.print("[vmm] Fork complete: child_id={any}, child_pid={d}, child_cid={d}\n", .{
             child_id, child_pid, child_cid,
         });
 
@@ -315,13 +315,13 @@ pub const VM = struct {
 
         const start = std.time.nanoTimestamp();
 
-        std.debug.print("[vmm] Hibernate VM {s}\n", .{self.config.id});
+        std.debug.print("[vmm] Hibernate VM {any}\n", .{self.config.id});
 
         std.fs.makeDirAbsolute(SNAPSHOT_DIR) catch {};
 
         const snap_dir = std.fmt.allocPrint(
             std.heap.page_allocator,
-            "{s}/{s}",
+            "{any}/{any}",
             .{ SNAPSHOT_DIR, self.config.id },
         ) catch return VMMError.OutOfMemory;
         defer std.heap.page_allocator.free(snap_dir);
@@ -362,7 +362,7 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        std.debug.print("[vmm] Resuming VM {s} from hibernate\n", .{self.config.id});
+        std.debug.print("[vmm] Resuming VM {any} from hibernate\n", .{self.config.id});
 
         if (self.vm_instance) |vm| {
             vm.resume_();

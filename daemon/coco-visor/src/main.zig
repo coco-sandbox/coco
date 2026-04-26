@@ -162,23 +162,23 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     // Extract variable-length string fields in protocol order
     const sandbox_id = try std.fmt.allocPrint(
         std.heap.page_allocator,
-        "{s}",
+        "{any}",
         .{payload[base..][0..req.sandbox_id_len]},
     );
     const rootfs = try std.fmt.allocPrint(
         std.heap.page_allocator,
-        "{s}",
+        "{any}",
         .{payload[base + req.sandbox_id_len ..][0..req.rootfs_path_len]},
     );
     const kernel = try std.fmt.allocPrint(
         std.heap.page_allocator,
-        "{s}",
+        "{any}",
         .{payload[base + req.sandbox_id_len + req.rootfs_path_len ..][0..req.kernel_path_len]},
     );
     const initrd = if (req.initrd_path_len > 0)
         try std.fmt.allocPrint(
             std.heap.page_allocator,
-            "{s}",
+            "{any}",
             .{payload[base + req.sandbox_id_len + req.rootfs_path_len + req.kernel_path_len ..][0..req.initrd_path_len]},
         )
     else
@@ -209,7 +209,7 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     const duration = @as(u64, @intCast(std.time.nanoTimestamp() - start));
     vmm.getMetrics().recordBoot(duration);
 
-    std.debug.print("[cocovisor] Boot sandbox {s} (cid={d}, pid={d}) in {d}µs\n", .{
+    std.debug.print("[cocovisor] Boot sandbox {any} (cid={d}, pid={d}) in {d}µs\n", .{
         sandbox_id, result.vsock_cid, result.pid, duration / 1000,
     });
 
@@ -285,7 +285,7 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
         }
     }
 
-    std.debug.print("[cocovisor] Exec: {s} with {d} args\n", .{ cmd, args_list.items.len });
+    std.debug.print("[cocovisor] Exec: {any} with {d} args\n", .{ cmd, args_list.items.len });
 
     // Create pipes for stdout and stderr
     const stdout_pipe = try std.posix.pipe2(.{});
@@ -332,7 +332,7 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
         const child_argv: [*:null]const ?[*:0]const u8 = @ptrCast(argv.items.ptr);
         const env: [*:null]const ?[*:0]const u8 = @ptrFromInt(@intFromPtr(&empty_env));
         std.posix.execveZ(path, child_argv, env) catch {
-            std.debug.print("[cocovisor] Exec failed for {s}\n", .{cmd});
+            std.debug.print("[cocovisor] Exec failed for {any}\n", .{cmd});
             std.posix.exit(1);
         };
         unreachable;
@@ -384,7 +384,7 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
 
 fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
-    std.debug.print("[cocovisor] Destroy: {s}\n", .{id});
+    std.debug.print("[cocovisor] Destroy: {any}\n", .{id});
 
     vmm.removeVM(id);
 
@@ -397,7 +397,7 @@ fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
 
 fn handlePause(sock: std.net.Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
-    std.debug.print("[cocovisor] Pause: {s}\n", .{id});
+    std.debug.print("[cocovisor] Pause: {any}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
         vm.pause() catch {};
@@ -411,7 +411,7 @@ fn handlePause(sock: std.net.Stream, payload: []u8) !void {
 
 fn handleResume(sock: std.net.Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
-    std.debug.print("[cocovisor] Resume: {s}\n", .{id});
+    std.debug.print("[cocovisor] Resume: {any}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
         vm.resume_() catch {};
@@ -441,7 +441,7 @@ fn handleFork(sock: std.net.Stream, payload: []u8) !void {
     const child_name_len = r32(payload[4 + parent_id_len .. 8 + parent_id_len]);
     _ = child_name_len;
 
-    std.debug.print("[cocovisor] Fork: {s}\n", .{parent_id});
+    std.debug.print("[cocovisor] Fork: {any}\n", .{parent_id});
 
     if (vmm.getVMs().get(parent_id)) |parent_vm| {
         const result = parent_vm.fork() catch |e| {
@@ -472,7 +472,7 @@ fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
     const start = std.time.nanoTimestamp();
     const id = payload[0..payload.len];
 
-    std.debug.print("[cocovisor] Hibernate: {s}\n", .{id});
+    std.debug.print("[cocovisor] Hibernate: {any}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
         _ = vm.hibernate() catch |e| {
@@ -498,7 +498,7 @@ fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
 
 fn handleResumeHibernated(sock: std.net.Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
-    std.debug.print("[cocovisor] Resume from hibernate: {s}\n", .{id});
+    std.debug.print("[cocovisor] Resume from hibernate: {any}\n", .{id});
 
     if (vmm.getVMs().get(id)) |vm| {
         _ = vm.resumeFromHibernate() catch |e| {

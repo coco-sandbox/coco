@@ -37,14 +37,14 @@ pub fn restoreFromSnapshot(
         return RestoreError.CheckpointNotFound;
     }
 
-    const checkpoint_dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ checkpoint.SNAPSHOT_DIR, id }) catch return RestoreError.OutOfMemory;
+    const checkpoint_dir = std.fmt.allocPrint(allocator, "{any}/{any}", .{ checkpoint.SNAPSHOT_DIR, id }) catch return RestoreError.OutOfMemory;
     defer allocator.free(checkpoint_dir);
 
-    const cpu_path = std.fmt.allocPrint(allocator, "{s}/cpu.bin", .{ checkpoint_dir }) catch return RestoreError.OutOfMemory;
+    const cpu_path = std.fmt.allocPrint(allocator, "{any}/cpu.bin", .{ checkpoint_dir }) catch return RestoreError.OutOfMemory;
     defer allocator.free(cpu_path);
     checkpoint_mgr.loadCpuState(cpu_path);
 
-    const devices_path = std.fmt.allocPrint(allocator, "{s}/devices.bin", .{ checkpoint_dir }) catch return RestoreError.OutOfMemory;
+    const devices_path = std.fmt.allocPrint(allocator, "{any}/devices.bin", .{ checkpoint_dir }) catch return RestoreError.OutOfMemory;
     defer allocator.free(devices_path);
     checkpoint_mgr.loadDeviceState(devices_path);
 
@@ -75,12 +75,12 @@ pub fn restoreWithNewId(
         return RestoreError.CheckpointNotFound;
     }
 
-    const new_checkpoint_dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ checkpoint.SNAPSHOT_DIR, new_id }) catch return RestoreError.OutOfMemory;
+    const new_checkpoint_dir = std.fmt.allocPrint(allocator, "{any}/{any}", .{ checkpoint.SNAPSHOT_DIR, new_id }) catch return RestoreError.OutOfMemory;
     defer allocator.free(new_checkpoint_dir);
 
     std.fs.cwd().makeDir(new_checkpoint_dir) catch return RestoreError.RestoreFailed;
 
-    const old_checkpoint_dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ checkpoint.SNAPSHOT_DIR, original_id }) catch return RestoreError.OutOfMemory;
+    const old_checkpoint_dir = std.fmt.allocPrint(allocator, "{any}/{any}", .{ checkpoint.SNAPSHOT_DIR, original_id }) catch return RestoreError.OutOfMemory;
     defer allocator.free(old_checkpoint_dir);
 
     var old_dir = std.fs.openDirAbsolute(old_checkpoint_dir, .{ .iterate = true }) catch return RestoreError.RestoreFailed;
@@ -88,10 +88,10 @@ pub fn restoreWithNewId(
 
     var iter = old_dir.iterate();
     while (iter.next() catch null) |entry| {
-        const src = std.fmt.allocPrint(allocator, "{s}/{s}", .{ old_checkpoint_dir, entry.name }) catch continue;
+        const src = std.fmt.allocPrint(allocator, "{any}/{any}", .{ old_checkpoint_dir, entry.name }) catch continue;
         defer allocator.free(src);
 
-        const dst = std.fmt.allocPrint(allocator, "{s}/{s}", .{ new_checkpoint_dir, entry.name }) catch continue;
+        const dst = std.fmt.allocPrint(allocator, "{any}/{any}", .{ new_checkpoint_dir, entry.name }) catch continue;
         defer allocator.free(dst);
 
         switch (entry.kind) {

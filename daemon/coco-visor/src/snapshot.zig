@@ -23,7 +23,7 @@ pub const SnapshotMetadata = struct {
 pub const SNAPSHOT_DIR = "/var/lib/coco/snapshots";
 
 pub fn createSnapshot(id: []const u8, _: [*]u8, _: u64) !void {
-    const snap_dir = try std.fmt.allocPrint(std.heap.page_allocator, "{s}/{s}", .{ SNAPSHOT_DIR, id });
+    const snap_dir = try std.fmt.allocPrint(std.heap.page_allocator, "{any}/{any}", .{ SNAPSHOT_DIR, id });
     defer std.heap.page_allocator.free(snap_dir);
 
     try std.fs.cwd().makeDir(snap_dir);
@@ -40,7 +40,7 @@ pub fn loadSnapshot(id: []const u8) !SnapshotMetadata {
 }
 
 pub fn deleteSnapshot(id: []const u8) void {
-    const snap_dir = std.fmt.allocPrint(std.heap.page_allocator, "{s}/{s}", .{ SNAPSHOT_DIR, id }) catch return;
+    const snap_dir = std.fmt.allocPrint(std.heap.page_allocator, "{any}/{any}", .{ SNAPSHOT_DIR, id }) catch return;
     defer std.heap.page_allocator.free(snap_dir);
 
     std.fs.deleteTreeAbsolute(snap_dir) catch {};
