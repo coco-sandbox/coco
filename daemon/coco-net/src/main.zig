@@ -219,10 +219,7 @@ fn loadEBpfPrograms() !void {
 }
 
 /// updateNATMapping updates NAT mapping in eBPF maps via bpftool
-fn updateNATMapping(sandboxIP: [4]u8, natIP: [4]u8, port: u16) !void {
-    _ = sandboxIP;
-    _ = natIP;
-    _ = port;
+fn updateNATMapping(_: [4]u8, _: [4]u8, _: u16) !void {
     std.debug.print("[coconet] Updating NAT mapping in eBPF maps\n", .{});
     // In production: bpftool map update id <map_id> key <sandbox_ip> value <nat_ip>
 }
@@ -232,9 +229,7 @@ fn updateNATMapping(sandboxIP: [4]u8, natIP: [4]u8, port: u16) !void {
 // =============================================================================
 
 /// setupSandboxInterface creates a veth pair for a sandbox
-fn setupSandboxInterface(sandboxID: []const u8, ip: [4]u8) !void {
-    _ = sandboxID;
-    _ = ip;
+fn setupSandboxInterface(_: []const u8, _: [4]u8) !void {
     std.debug.print("[coconet] Creating interface for sandbox\n", .{});
     // In real implementation:
     // ip link add veth_sb_xxx type veth peer name eth_sb_xxx
@@ -243,8 +238,7 @@ fn setupSandboxInterface(sandboxID: []const u8, ip: [4]u8) !void {
 }
 
 /// teardownSandboxInterface removes veth pair
-fn teardownSandboxInterface(sandboxID: []const u8) !void {
-    _ = sandboxID;
+fn teardownSandboxInterface(_: []const u8) !void {
     std.debug.print("[coconet] Tearing down interface for sandbox\n", .{});
 }
 
@@ -253,30 +247,19 @@ fn teardownSandboxInterface(sandboxID: []const u8) !void {
 // =============================================================================
 
 /// createEgressSession creates a SNAT session for outbound traffic
-fn createEgressSession(srcIP: [4]u8, srcPort: u16, dstIP: [4]u8, dstPort: u16, proto: u8) !void {
-    _ = srcIP;
-    _ = srcPort;
-    _ = dstIP;
-    _ = dstPort;
-    _ = proto;
+fn createEgressSession(_: [4]u8, _: u16, _: [4]u8, _: u16, _: u8) !void {
     std.debug.print("[coconet] Creating egress SNAT session\n", .{});
     // bpf(BPF_MAP_UPDATE_ELEM, &egress_sessions, &key, &entry, BPF_ANY)
 }
 
 /// createIngressSession creates a DNAT session for inbound traffic
-fn createIngressSession(dstIP: [4]u8, dstPort: u16, sandboxIP: [4]u8, sandboxPort: u16, proto: u8) !void {
-    _ = dstIP;
-    _ = dstPort;
-    _ = sandboxIP;
-    _ = sandboxPort;
-    _ = proto;
+fn createIngressSession(_: [4]u8, _: u16, _: [4]u8, _: u16, _: u8) !void {
     std.debug.print("[coconet] Creating ingress DNAT session\n", .{});
     // bpf(BPF_MAP_UPDATE_ELEM, &ingress_sessions, &key, &entry, BPF_ANY)
 }
 
 /// cleanupSession removes a NAT session
-fn cleanupSession(key: Tuple5) !void {
-    _ = key;
+fn cleanupSession(_: Tuple5) !void {
     std.debug.print("[coconet] Cleaning up NAT session\n", .{});
     // bpf(BPF_MAP_DELETE_ELEM, &sessions, &key, 0)
 }
