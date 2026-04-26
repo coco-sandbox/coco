@@ -92,11 +92,24 @@ func run(ctx context.Context, cfg *config.Config) error {
 					log.Printf("watch: parse error: %v", perr)
 					return
 				}
-				_ = sched.RegisterNode(&scheduler.NodeEntry{
-					ID:        record.ID,
-					Addr:      record.Addr,
-					Available: true,
-				})
+				// Check if node already exists, if so update its load
+				if _, err := sched.GetNode(record.ID); err == nil {
+					// Node exists, update load via heartbeat report
+					sched.UpdateLoadFromReport(&scheduler.LoadReport{
+						NodeID:    record.ID,
+							Sandboxes: 0, // Heartbeats don't include sandbox count; preserve existing
+							MemUsedMB: record.MemoryMB,
+						CPUs:        record.CPUCount,
+							Timestamp: time.Now(),
+					})
+				} else {
+					// New node, register it
+					_ = sched.RegisterNode(&scheduler.NodeEntry{
+						ID:        record.ID,
+						Addr:      record.Addr,
+						Available: true,
+					})
+				}
 			case "delete":
 				sched.DeregisterNode(nodeID)
 			}

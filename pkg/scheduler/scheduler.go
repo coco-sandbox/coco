@@ -20,11 +20,11 @@ const (
 
 // LoadReport contains a node's current load information.
 type LoadReport struct {
-	NodeID      string
-	Sandboxes   int
-	MemUsedMB   uint64
-	CPUs        int
-	Timestamp   time.Time
+	NodeID    string
+	Sandboxes int
+	MemUsedMB uint64
+	CPUs      int
+	Timestamp time.Time
 }
 
 type NodeEntry struct {

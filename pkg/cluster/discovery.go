@@ -21,10 +21,14 @@ type Discovery struct {
 }
 
 type NodeRecord struct {
-	ID           string            `json:"id"`
-	Addr         string            `json:"addr"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
-	RegisteredAt time.Time         `json:"registered_at"`
+	ID            string            `json:"id"`
+	Addr          string            `json:"addr"`
+	MemoryMB      uint64            `json:"memory_mb"`
+	CPUCount      int               `json:"cpu_count"`
+	MaxSandboxes  int               `json:"max_sandboxes"`
+	LastHeartbeat string            `json:"last_heartbeat"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	RegisteredAt  time.Time         `json:"registered_at"`
 }
 
 type DiscoveryConfig struct {
