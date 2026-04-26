@@ -10,13 +10,15 @@ Coco is a sandbox runtime that provides hardware-level isolation with a focus on
 
 The primary goal of Coco is to provide a secure, high-performance sandbox environment for AI agents and code execution workloads. Optimization targets are stated in the performance specification; **numeric limits for rate control and quotas are deployment-defined** (see `10-self-hosting-and-operations.md`).
 
-### 1.1 Core Philosophy
+**How to read this set:** defined terms and normative rules for the whole `spec/` directory are in `12-glossary-and-conventions.md` (BCP 14 keywords, glossary, and **when the specification is complete** as a document set). For **who uses Coco** (developers, researchers, operators, and agent-style orchestrators) and how that maps to the API, see the informative `13-use-cases-and-consumers.md`. For **neutrality**, **always-current** spec stance (no compatibility history in `spec/`), and where **community worker nodes** fit as a *pattern*, see `14-deployment-topology-and-neutrality.md`.
+
+### 1.1 Core philosophy
 
 **Performance first:** Components are optimized for low latency and high density; **numeric SLOs** are listed only in `06-performance.md`.
 
 **Security by Default**: Multiple layers of isolation ensure maximum security. Network filtering at the kernel level, hardware virtualization through KVM, and optional hardware enclaves through TDX and SGX.
 
-**Developer experience**: A documented REST surface, optional E2B-oriented client compatibility where implemented, and internal use of gRPC and streaming where appropriate. Integration details and compatibility scope belong in the API spec and project documentation, not in fixed numbers in the overview.
+**Developer experience:** A documented REST surface, internal gRPC where appropriate, and optional client patterns as described in `02-api.md`. The overview does not restate product-specific integration detail.
 
 ### 1.2 Design goals and language split
 
@@ -26,15 +28,17 @@ Go is used for the control plane to leverage its networking, concurrency, and se
 
 ---
 
-## 2. High-Level Architecture
+## 2. High-level architecture
 
 Coco follows a layered architecture that separates concerns cleanly. The control plane handles API serving, scheduling, and cluster management in Go. The data plane handles VM lifecycle, execution, and networking in Zig. This separation allows each component to be optimized for its specific purpose.
 
-### 2.1 System Components
+**Control and data path (reference):** the normative list of **edges** (client to Gateway, Gateway to Master, and so on) is in `12-glossary-and-conventions.md` section 3. This section names components; that section names **mechanisms**.
+
+### 2.1 System components
 
 The system consists of six primary components that work together to provide sandbox isolation. Each component has a clear responsibility and communicates with others through well-defined interfaces.
 
-**Coco Gateway** serves as the entry point for all external requests. It exposes a REST API (E2B-oriented compatibility is a project goal where documented in `02-api.md`), handles **configurable** authentication and rate limiting, and forwards requests to appropriate internal components. Gateway is written in Go to leverage its HTTP and middleware ecosystem.
+**Coco Gateway** serves as the entry point for all external requests. It exposes a **documented** HTTP API (`02-api.md`), **configurable** authentication and rate limiting, and routes work to internal components. Gateway is written in Go. Optional client-style goals are **informative** in `02-api.md` and do not change the core contract of Coco.
 
 **Coco Master** coordinates cluster-wide operations. It maintains cluster state in etcd, performs leader election for high availability, and schedules sandbox creation across nodes. Master ensures the cluster operates smoothly even during node failures.
 

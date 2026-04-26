@@ -18,7 +18,7 @@
 
 ### 1.2 Base URL
 
-The public API is rooted at a path such as **/v1** under a host. Scheme, host, and port are **deployment-defined** (not fixed by this spec). A reference development layout is *https or http, plus host, plus `/v1`*; operators choose bind addresses per `10-self-hosting-and-operations.md`.
+The public API is rooted at a path such as **/v1** under a host. Scheme, host, and port are **deployment-defined** in general. For the **coco-gateway** binary, the in-tree default bind is **:4747** (all interfaces) with `COCO_LISTEN_ADDR` override; the same HTTP server also serves health and metrics paths (see `08-observability.md` and `11-repository-conformance.md`). A typical local base URL is **http** plus host, plus **/v1**; operators choose TLS and external ports per `10-self-hosting-and-operations.md`.
 
 ### 1.3 Communication pattern
 
@@ -204,18 +204,18 @@ When rate limiting is enabled, responses may include rate-limit headers. Header 
 | ResumeSandbox | POST | `/v1/sandboxes/{id}/resume` |
 | StreamingExec | POST | `/v1/sandboxes/{id}/exec` |
 
-**Health and metrics** are not part of the versioned public API path above; their paths and ports are described in `08-observability.md` and are **deployment-defined** for bind addresses and ports (see `10-self-hosting-and-operations.md`).
+**Health and metrics** are not part of the `/v1` public resource map above; for **coco-gateway** they share the same HTTP listener as the API (see `08-observability.md` and `11-repository-conformance.md`). Other deployments remain **operator-defined** (`10-self-hosting-and-operations.md`).
 
-## 8. E2B-oriented client compatibility (non-normative target)
+## 8. E2B-style client patterns (non-normative)
 
-Coco may aim for migration from clients that use E2B-style resource naming and operations. **Exact API parity** is a release and test concern; this document remains the contract for **Coco** field names and HTTP mapping. Unsupported operations return documented error codes (§5).
+Some client libraries follow patterns similar to well-known hosted sandboxes. **Coco’s normative contract** is this document and `00`–`08`. Optional client-style coverage is a **product and testing** concern; unsupported calls return documented error codes (§5). This spec does not track **external** API histories.
 
-| Informal E2B-style area | Support goal |
+| Informal E2B-style area | Support goal (product) |
 |------------------------|-------------|
-| Sandbox lifecycle | Target |
-| Code / command execution | Target |
-| Filesystem and process helpers | As implemented; see release notes |
+| Sandbox lifecycle | Target where implemented |
+| Code / command execution | Target where implemented |
+| Filesystem and process helpers | As implemented in tree |
 
 ---
 
-Related: `00-overview.md` (context), `04-security.md` (auth model), `10-self-hosting-and-operations.md` (deployment boundaries).
+Related: `00-overview.md` (context), `04-security.md` (auth model), `10-self-hosting-and-operations.md` (deployment boundaries), `11-repository-conformance.md` (defaults and `COCO_*` for gateway), `14-deployment-topology-and-neutrality.md` (neutrality and how `spec/` is written).

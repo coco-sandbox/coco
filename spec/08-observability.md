@@ -100,9 +100,9 @@ coco_network_bytes_total reports total bytes processed.
 
 ### 3.3 Metrics endpoint
 
-**Path:** HTTP path **/metrics** on the component’s HTTP server. **Port and bind address** are **deployment-defined** (not fixed to 9090; see `10-self-hosting-and-operations.md`).
+**Path:** HTTP path **/metrics** on the component’s HTTP server (GET, Prometheus text format).
 
-**Method:** GET. **Response body:** Prometheus text exposition format, scrapeable by Prometheus or compatible systems.
+**Binding:** For **coco-gateway**, metrics are registered on the **same** HTTP listener as the public API and health checks in the current tree. The default listen address in `pkg/config` is **:4747**, overridable with `COCO_LISTEN_ADDR`. The `MetricsPort` field in configuration is reserved for a possible future dedicated listener; see `11-repository-conformance.md`. Other components may use different bind rules; all are **deployment-defined** in the general case (`10-self-hosting-and-operations.md`).
 
 ### 3.4 Dashboards
 

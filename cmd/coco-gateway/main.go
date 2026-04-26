@@ -46,8 +46,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	auditLogger := middleware.NewAuditLogger()
 
-	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, int64(cfg.RateLimitBurst), time.Second)
-
 	gw := NewGatewayServer(cfg.MasterAddr, nil)
 	vp := visor.NewPool(visor.SocketPath, 10)
 
@@ -99,7 +97,10 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	handler := middleware.RecoveryMiddleware()(mux)
 	handler = middleware.CORS(middleware.DefaultCORSConfig())(handler)
-	handler = middleware.RateLimit(rateLimiter)(handler)
+	if cfg.RateLimitEnabled {
+		rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, int64(cfg.RateLimitBurst), time.Second)
+		handler = middleware.RateLimit(rateLimiter)(handler)
+	}
 	handler = middleware.Auth(auth, auditLogger)(handler)
 	handler = middleware.Logging(middleware.NewLogger())(handler)
 

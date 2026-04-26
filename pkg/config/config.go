@@ -136,8 +136,34 @@ func Load() *Config {
 			}
 		}
 	}
+	if v := os.Getenv("COCO_RATE_LIMIT_ENABLED"); v != "" {
+		if b, ok := parseEnvBool(v); ok {
+			cfg.RateLimitEnabled = b
+		}
+	}
+	if v := os.Getenv("COCO_RATE_LIMIT_RPS"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.RateLimitRPS = f
+		}
+	}
+	if v := os.Getenv("COCO_RATE_LIMIT_BURST"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.RateLimitBurst = n
+		}
+	}
 
 	return cfg
+}
+
+func parseEnvBool(s string) (val, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "0", "false", "no", "off":
+		return false, true
+	case "1", "true", "yes", "on":
+		return true, true
+	default:
+		return false, false
+	}
 }
 
 func splitCSV(s string) []string {

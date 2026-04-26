@@ -11,11 +11,11 @@ import (
 
 // CocoBenchmarkResults holds benchmark results per spec §6.
 type CocoBenchmarkResults struct {
-	ColdStartMs  PercentileLatency
-	ForkMs       PercentileLatency
-	MemoryOverheadMiB float64
-	NetworkGbps  float64
-	NetworkRTTMs float64
+	ColdStartMs       PercentileLatency
+	ForkMs            PercentileLatency
+	MemoryOverheadMiB  float64
+	NetworkGbps        float64
+	NetworkRTTMs       float64
 }
 
 // PercentileLatency holds P50/P95/P99 latency targets per spec §6 Table.
@@ -71,4 +71,44 @@ func ValidateFork(results PercentileLatency) error {
 		return fmt.Errorf("fork P99 %v exceeds target %v", results.P99, target.P99)
 	}
 	return nil
+}
+
+func TestColdStartTargetValidation(t *testing.T) {
+	results := PercentileLatency{
+		P50: 25 * time.Millisecond,
+		P95: 38 * time.Millisecond,
+		P99: 48 * time.Millisecond,
+	}
+	if err := ValidateColdStart(results); err != nil {
+		t.Errorf("expected valid results, got %v", err)
+	}
+
+	bad := PercentileLatency{
+		P50: 35 * time.Millisecond,
+		P95: 45 * time.Millisecond,
+		P99: 55 * time.Millisecond,
+	}
+	if err := ValidateColdStart(bad); err == nil {
+		t.Errorf("expected validation error for out-of-spec results")
+	}
+}
+
+func TestForkTargetValidation(t *testing.T) {
+	results := PercentileLatency{
+		P50: 8 * time.Millisecond,
+		P95: 13 * time.Millisecond,
+		P99: 18 * time.Millisecond,
+	}
+	if err := ValidateFork(results); err != nil {
+		t.Errorf("expected valid results, got %v", err)
+	}
+
+	bad := PercentileLatency{
+		P50: 15 * time.Millisecond,
+		P95: 20 * time.Millisecond,
+		P99: 25 * time.Millisecond,
+	}
+	if err := ValidateFork(bad); err == nil {
+		t.Errorf("expected validation error for out-of-spec results")
+	}
 }

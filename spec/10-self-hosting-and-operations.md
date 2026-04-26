@@ -4,7 +4,7 @@
 **Status:** Authoritative.  
 **Index:** [Specification index](index.md)
 
-This document does not restate the API or network design; it scopes what other specification files require versus what each installation must choose.
+This document does not restate the API or network design; it scopes what other specification files require versus what each installation must choose. For **defined terms** and the **document-completeness** bar for the whole set, see `12-glossary-and-conventions.md`.
 
 ---
 
@@ -44,7 +44,7 @@ Operators and distributions choose limits based on capacity, policy, and threat 
 ## 4. License and third-party expectations
 
 - **Licensing**: The project license is defined in the repository root (for example, `LICENSE`). The specification does not restate full license text.
-- **Third-party SDKs and compatibility**: E2B-oriented client examples describe **compatibility goals** for migration; exact coverage depends on the implementation version. Client code should target documented endpoints and error codes, not a vendor name in isolation.
+- **Third-party client styles**: Some SDKs follow patterns similar to common hosted sandboxes; Coco’s **normative** contract is **endpoints, resources, and errors** in `02-api.md`. Product-specific client behavior is **out of scope** here.
 
 ---
 
@@ -61,9 +61,9 @@ Operators and distributions choose limits based on capacity, policy, and threat 
 
 ---
 
-## 7. API stability and evolution
+## 7. How the spec is updated (no “compatibility history” in `spec/`)
 
-- Breaking HTTP path or JSON field changes to documented resources should be treated as a **versioned** or **compatibly announced** change in project policy (outside this document). The spec describes the current intended surface; the repository defines release practice.
+The `spec/` tree describes the **current** design only. **Process** for announcing changes to integrators lives **outside** this directory (for example release notes or project policy). **Do not** use `spec/` as a backward-compatibility ledger. See `14-deployment-topology-and-neutrality.md` section 1.
 
 ---
 
@@ -76,3 +76,5 @@ Operators and distributions choose limits based on capacity, policy, and threat 
 | Isolation         | `04-security.md`      |
 | SLO-style targets  | `06-performance.md`   (targets, not universal defaults) |
 | Build requirements | `09-dependencies.md`  (toolchain and environment)     |
+| Code defaults, env, gateway health | `11-repository-conformance.md` |
+| Neutrality, always-current spec, community-node pattern | `14-deployment-topology-and-neutrality.md` |
