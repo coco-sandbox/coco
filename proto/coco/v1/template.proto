@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package coco.v1;
+
+message Template {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string image = 4;
+  string os = 5;
+  string version = 6;
+  int64 size_bytes = 7;
+  int64 created_at = 8;
+}
+
+message ListTemplatesRequest {}
+
+message ListTemplatesResponse {
+  repeated Template templates = 1;
+}
+
+message GetTemplateRequest {
+  string id = 1;
+}
+
+message GetTemplateResponse {
+  Template template = 1;
+}
+
+message CreateTemplateRequest {
+  string name = 1;
+  string description = 2;
+  string image = 3;
+  string dockerfile = 4;
+}
+
+message CreateTemplateResponse {
+  Template template = 1;
+}
+
+message DeleteTemplateRequest {
+  string id = 1;
+}

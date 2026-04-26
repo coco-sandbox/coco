@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package coco.internal;
+
+message AgentRequest {
+  string id = 1;
+  AgentRequestType type = 2;
+  bytes payload = 3;
+}
+
+message AgentResponse {
+  string id = 1;
+  AgentResponseStatus status = 2;
+  bytes payload = 3;
+}
+
+enum AgentRequestType {
+  EXEC = 0;
+  SIGNAL = 1;
+  RESIZE = 2;
+}
+
+enum AgentResponseStatus {
+  SUCCESS = 0;
+  FAILURE = 1;
+}
+
+message ExecRequest {
+  string command = 1;
+  repeated string args = 2;
+  map<string, string> env = 3;
+  string working_dir = 4;
+  bool tty = 5;
+}
+
+message ExecResponse {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+}
+
+message SignalRequest {
+  int32 pid = 1;
+  int32 signal = 2;
+}
+
+message ResizeRequest {
+  int32 width = 1;
+  int32 height = 2;
+}

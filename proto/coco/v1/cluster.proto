@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package coco.v1;
+
+message ClusterInfo {
+  string name = 1;
+  int32 node_count = 2;
+  int32 sandbox_count = 3;
+  string leader = 4;
+  string version = 5;
+}
+
+message Node {
+  string id = 1;
+  string address = 2;
+  string status = 3;
+  int32 sandbox_count = 4;
+  NodeResources resources = 5;
+  int64 last_seen = 6;
+}
+
+message NodeResources {
+  int32 cpus = 1;
+  int64 memory = 2;
+  int64 disk = 3;
+  int32 available_cpus = 4;
+  int64 available_memory = 5;
+  int64 available_disk = 6;
+}
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+  repeated Node nodes = 1;
+}
+
+message GetNodeRequest {
+  string id = 1;
+}
+
+message GetNodeResponse {
+  Node node = 1;
+}
+
+message NodeEvent {
+  string node_id = 1;
+  EventType type = 2;
+  Node node = 3;
+}
+
+enum EventType {
+  NODE_ADDED = 0;
+  NODE_UPDATED = 1;
+  NODE_REMOVED = 2;
+}

@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package coco.internal;
+
+message VisorRequest {
+  string id = 1;
+  RequestType type = 2;
+  bytes payload = 3;
+}
+
+message VisorResponse {
+  string id = 1;
+  ResponseStatus status = 2;
+  bytes payload = 3;
+  string error = 4;
+}
+
+enum RequestType {
+  START = 0;
+  STOP = 1;
+  EXEC = 2;
+  SIGNAL = 3;
+  STATS = 4;
+}
+
+enum ResponseStatus {
+  OK = 0;
+  ERROR = 1;
+}
+
+message StartVMRequest {
+  string id = 1;
+  string kernel = 2;
+  string rootfs = 3;
+  int32 cpus = 4;
+  int64 memory = 5;
+}
+
+message StopVMRequest {
+  string id = 1;
+}

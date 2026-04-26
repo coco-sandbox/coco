@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package coco.v1;
+
+message NetworkPolicy {
+  string id = 1;
+  string sandbox_id = 2;
+  repeated string ingress_rules = 3;
+  repeated string egress_rules = 4;
+  bool default_allow = 5;
+}
+
+message AllocateIPRequest {
+  string sandbox_id = 1;
+}
+
+message AllocateIPResponse {
+  string ip = 1;
+  string gateway = 2;
+}
+
+message ReleaseIPRequest {
+  string sandbox_id = 1;
+}
+
+message NetworkStats {
+  string sandbox_id = 1;
+  int64 rx_bytes = 2;
+  int64 tx_bytes = 3;
+  int64 rx_packets = 4;
+  int64 tx_packets = 5;
+}
