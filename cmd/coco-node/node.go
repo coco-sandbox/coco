@@ -8,6 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
 	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
+	"github.com/coco-sandbox/coco/pkg/cluster"
 	"github.com/coco-sandbox/coco/pkg/pool"
 	"github.com/coco-sandbox/coco/pkg/store"
 	"github.com/coco-sandbox/coco/pkg/types"
@@ -21,6 +22,7 @@ type NodeServer struct {
 	store     *store.BadgerStore
 	vmPool    *pool.Pool
 	visorPool *visor.Pool
+	discovery *cluster.Discovery
 	nodeID    string
 	hostAddr  string
 }
@@ -33,6 +35,10 @@ func NewNodeServer(nodeID, hostAddr string, st *store.BadgerStore, vmPool *pool.
 		nodeID:    nodeID,
 		hostAddr:  hostAddr,
 	}
+}
+
+func (s *NodeServer) SetDiscovery(d *cluster.Discovery) {
+	s.discovery = d
 }
 
 func (s *NodeServer) BootSandbox(ctx context.Context, req *connect.Request[v1.BootSandboxRequest]) (*connect.Response[v1.BootSandboxResponse], error) {
@@ -173,10 +179,20 @@ func (s *NodeServer) GetNodeStatus(ctx context.Context, req *connect.Request[v1.
 }
 
 func (s *NodeServer) RegisterNode(ctx context.Context, req *connect.Request[v1.RegisterNodeRequest]) (*connect.Response[v1.RegisterNodeResponse], error) {
+	if s.discovery != nil {
+		if err := s.discovery.RegisterNode(ctx, s.nodeID, s.hostAddr, nil); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	}
 	return connect.NewResponse(&v1.RegisterNodeResponse{Success: true}), nil
 }
 
 func (s *NodeServer) Heartbeat(ctx context.Context, req *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error) {
+	if s.discovery != nil {
+		if err := s.discovery.RefreshLease(ctx, s.nodeID); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	}
 	return connect.NewResponse(&v1.HeartbeatResponse{Acknowledged: true}), nil
 }
 

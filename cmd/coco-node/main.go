@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
+	"github.com/coco-sandbox/coco/pkg/cluster"
 	"github.com/coco-sandbox/coco/pkg/config"
 	"github.com/coco-sandbox/coco/pkg/pool"
 	"github.com/coco-sandbox/coco/pkg/store"
@@ -66,6 +67,42 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	mux := http.NewServeMux()
 	nodeServer := NewNodeServer(cfg.NodeID, cfg.GRPCAddr, st, vmPool, visorPool)
+
+	if len(cfg.EtcdEndpoints) > 0 {
+		discovery, err := cluster.NewDiscovery(cluster.DiscoveryConfig{
+			Endpoints:  cfg.EtcdEndpoints,
+			NodePrefix: "/coco/nodes",
+			TTL:        30 * time.Second,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create discovery: %w", err)
+		}
+		defer discovery.Close()
+		nodeServer.SetDiscovery(discovery)
+
+		if err := discovery.RegisterNode(ctx, cfg.NodeID, cfg.GRPCAddr, nil); err != nil {
+			return fmt.Errorf("failed to register node: %w", err)
+		}
+		log.Printf("registered node in etcd (node_id=%s, prefix=/coco/nodes)", cfg.NodeID)
+
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := discovery.RefreshLease(ctx, cfg.NodeID); err != nil {
+						log.Printf("heartbeat error: %v", err)
+					}
+				}
+			}
+		}()
+	} else {
+		log.Printf("warning: COCO_ETCD_ENDPOINTS empty; node not registering in cluster")
+	}
+
 	path, handler := v1connect.NewNodeServiceHandler(nodeServer)
 	mux.Handle(path, handler)
 	mux.HandleFunc("/health", healthHandler)
