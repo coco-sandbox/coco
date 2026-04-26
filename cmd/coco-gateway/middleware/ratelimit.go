@@ -124,9 +124,9 @@ func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 
 			rw := &RateLimitResponseWriter{
 				ResponseWriter: w,
-				limit:         100,
+				limit:          100,
 				remaining:      remaining,
-				reset:         reset,
+				reset:          reset,
 			}
 
 			if !allowed {

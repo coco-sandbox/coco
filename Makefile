@@ -7,7 +7,7 @@ GOFLAGS := -trimpath
 
 all: build-go build-zig
 
-build-go: bin/coco-gateway bin/coco-master bin/coco-node bin/coco-proxy bin/coco-checkpoint bin/coco-net bin/cococtl
+build-go: bin/coco-gateway bin/coco-master bin/coco-node bin/coco-checkpoint bin/coco-net bin/cococtl
 
 bin/coco-gateway: $(shell find cmd/coco-gateway pkg -name '*.go' 2>/dev/null)
 	mkdir -p bin
@@ -20,10 +20,6 @@ bin/coco-master: $(shell find cmd/coco-master pkg -name '*.go' 2>/dev/null)
 bin/coco-node: $(shell find cmd/coco-node pkg -name '*.go' 2>/dev/null)
 	mkdir -p bin
 	go build $(GOFLAGS) -o $@ ./cmd/coco-node
-
-bin/coco-proxy: $(shell find cmd/coco-proxy pkg -name '*.go' 2>/dev/null)
-	mkdir -p bin
-	go build $(GOFLAGS) -o $@ ./cmd/coco-proxy
 
 bin/coco-checkpoint: $(shell find daemon/coco-checkpoint -name '*.go' 2>/dev/null)
 	mkdir -p bin

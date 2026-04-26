@@ -207,7 +207,6 @@ func (h *ExecHandler) HandleInteractiveExec(w http.ResponseWriter, r *http.Reque
 	}
 	defer h.visorPool.Release(client)
 
-
 	// Handle bidirectional streaming
 	handleInteractiveSession(conn, client)
 }
@@ -236,7 +235,6 @@ func handleInteractiveSession(conn *websocket.Conn, client *visor.Client) {
 		Env:        envList,
 		WorkingDir: req.WorkingDir,
 	}
-
 
 	// Stream output back to client
 	err = client.Exec(visorReq, func(chunk visor.ExecChunk) error {

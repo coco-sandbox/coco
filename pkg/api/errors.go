@@ -8,20 +8,20 @@ import (
 type ErrorCode string
 
 const (
-	ErrNotFound         ErrorCode = "NOT_FOUND"
-	ErrAlreadyExists   ErrorCode = "ALREADY_EXISTS"
-	ErrInvalidArgument ErrorCode = "INVALID_ARGUMENT"
-	ErrPermissionDenied ErrorCode = "PERMISSION_DENIED"
+	ErrNotFound          ErrorCode = "NOT_FOUND"
+	ErrAlreadyExists     ErrorCode = "ALREADY_EXISTS"
+	ErrInvalidArgument   ErrorCode = "INVALID_ARGUMENT"
+	ErrPermissionDenied  ErrorCode = "PERMISSION_DENIED"
 	ErrResourceExhausted ErrorCode = "RESOURCE_EXHAUSTED"
-	ErrInternal        ErrorCode = "INTERNAL"
-	ErrUnavailable     ErrorCode = "UNAVAILABLE"
-	ErrTimeout         ErrorCode = "TIMEOUT"
+	ErrInternal          ErrorCode = "INTERNAL"
+	ErrUnavailable       ErrorCode = "UNAVAILABLE"
+	ErrTimeout           ErrorCode = "TIMEOUT"
 )
 
 type ErrorDetail struct {
 	Code    ErrorCode `json:"code"`
-	Message string   `json:"message"`
-	Details string   `json:"details,omitempty"`
+	Message string    `json:"message"`
+	Details string    `json:"details,omitempty"`
 }
 
 type ErrorResponse struct {

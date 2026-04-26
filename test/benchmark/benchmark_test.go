@@ -13,9 +13,9 @@ import (
 type CocoBenchmarkResults struct {
 	ColdStartMs       PercentileLatency
 	ForkMs            PercentileLatency
-	MemoryOverheadMiB  float64
-	NetworkGbps        float64
-	NetworkRTTMs       float64
+	MemoryOverheadMiB float64
+	NetworkGbps       float64
+	NetworkRTTMs      float64
 }
 
 // PercentileLatency holds P50/P95/P99 latency targets per spec §6 Table.

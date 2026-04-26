@@ -81,8 +81,8 @@ func (t *TokenAuth) Authenticate(r *http.Request) (string, error) {
 func Auth(auth Authenticator, audit *AuditLogger) func(http.Handler) http.Handler {
 	skipPaths := map[string]bool{
 		"/health":       true,
-		"/health/live":   true,
-		"/health/ready":  true,
+		"/health/live":  true,
+		"/health/ready": true,
 		"/metrics":      true,
 	}
 	return func(next http.Handler) http.Handler {

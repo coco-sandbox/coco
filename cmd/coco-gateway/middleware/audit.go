@@ -15,23 +15,23 @@ import (
 type AuditEventType string
 
 const (
-	AuditEventAuthSuccess         AuditEventType = "AUTH_SUCCESS"
-	AuditEventAuthFailure         AuditEventType = "AUTH_FAILURE"
+	AuditEventAuthSuccess          AuditEventType = "AUTH_SUCCESS"
+	AuditEventAuthFailure          AuditEventType = "AUTH_FAILURE"
 	AuditEventAuthorizationFailure AuditEventType = "AUTHZ_FAILURE"
-	AuditEventSandboxCreate       AuditEventType = "SANDBOX_CREATE"
-	AuditEventSandboxDelete       AuditEventType = "SANDBOX_DELETE"
-	AuditEventConfigChange        AuditEventType = "CONFIG_CHANGE"
+	AuditEventSandboxCreate        AuditEventType = "SANDBOX_CREATE"
+	AuditEventSandboxDelete        AuditEventType = "SANDBOX_DELETE"
+	AuditEventConfigChange         AuditEventType = "CONFIG_CHANGE"
 )
 
 // AuditLogEntry is a structured audit log entry per spec.
 type AuditLogEntry struct {
-	Timestamp string      `json:"timestamp"`
+	Timestamp string         `json:"timestamp"`
 	EventType AuditEventType `json:"event_type"`
-	User      string      `json:"user,omitempty"`
-	SourceIP  string      `json:"source_ip,omitempty"`
-	Outcome   string      `json:"outcome"`
-	Details   string      `json:"details,omitempty"`
-	SandboxID string      `json:"sandbox_id,omitempty"`
+	User      string         `json:"user,omitempty"`
+	SourceIP  string         `json:"source_ip,omitempty"`
+	Outcome   string         `json:"outcome"`
+	Details   string         `json:"details,omitempty"`
+	SandboxID string         `json:"sandbox_id,omitempty"`
 }
 
 // AuditLogger handles structured audit logging.
