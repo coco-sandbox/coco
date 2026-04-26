@@ -5,6 +5,7 @@
 //! Spec: Pre-created VMs maintained in pool for immediate assignment.
 
 const std = @import("std");
+const sc = @import("syscall.zig");
 const vmm = @import("vmm.zig");
 
 const PooledVm = struct {

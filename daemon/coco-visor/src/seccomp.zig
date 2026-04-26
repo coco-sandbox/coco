@@ -188,7 +188,6 @@ pub const Syscall = enum(usize) {
     getpgid = 120,
     setfsuid = 121,
     setfsgid = 122,
-    getsid = 111,
     capget = 125,
     capset = 126,
     rt_sigpending = 127,
@@ -349,7 +348,6 @@ pub const Syscall = enum(usize) {
     getcpu = 309,
     process_vm_readv = 310,
     process_vm_writev = 311,
-    lookup_dcookie = 211,
     finit_module = 273,
     bpf = 321,
 };

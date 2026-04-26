@@ -84,5 +84,9 @@ fn buildEnv(env: [][]const u8) [][*:0]u8 {
 }
 
 pub fn execPath(path: []const u8, args: [][]const u8) ExecResult {
-    return exec(ExecOptions{ .args = args });
+    var opts = ExecOptions{ .args = args };
+    if (path.len > 0) {
+        opts.cwd = path;
+    }
+    return exec(opts);
 }
