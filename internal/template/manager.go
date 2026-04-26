@@ -36,9 +36,22 @@ type Template struct {
 }
 
 type Manager struct {
-	baseDir   string
-	mu        sync.RWMutex
+	baseDir string
+	mu      sync.RWMutex
 	templates map[string]*Template
+	pool     *TemplatePool
+}
+
+type TemplatePool struct {
+	templates []*Template
+	mu        sync.Mutex
+}
+
+type WarmVM struct {
+	ID           string
+	TemplateID   string
+	SnapshotPath string
+	State        string
 }
 
 func NewManager(baseDir string) *Manager {
@@ -46,7 +59,51 @@ func NewManager(baseDir string) *Manager {
 	return &Manager{
 		baseDir:   baseDir,
 		templates: make(map[string]*Template),
+		pool:      &TemplatePool{},
 	}
+}
+
+func (m *Manager) PreWarmPool(ctx context.Context, count int) (int, error) {
+	m.pool.mu.Lock()
+	defer m.pool.mu.Unlock()
+
+	var warmed int
+	for i := 0; i < count; i++ {
+		base, err := m.Get("default")
+		if err != nil {
+			continue
+		}
+
+		vm := &WarmVM{
+			ID:           fmt.Sprintf("warm_%d", time.Now().UnixNano()),
+			TemplateID:   base.ID,
+			SnapshotPath: base.SnapshotPath,
+			State:        "warm",
+		}
+
+		m.pool.templates = append(m.pool.templates, &Template{
+			ID:           vm.ID,
+			Name:         "warm",
+			SnapshotPath: vm.SnapshotPath,
+			State:        "warm",
+		})
+		warmed++
+	}
+
+	return warmed, nil
+}
+
+func (m *Manager) GetFromPool() *Template {
+	m.pool.mu.Lock()
+	defer m.pool.mu.Unlock()
+
+	if len(m.pool.templates) == 0 {
+		return nil
+	}
+
+	tpl := m.pool.templates[0]
+	m.pool.templates = m.pool.templates[1:]
+	return tpl
 }
 
 func (m *Manager) Create(name string, opts CreateOpts) (string, error) {

@@ -9,9 +9,8 @@
 #include "maps.h"
 #include "common.h"
 
-/* Default SNAT pool base IP (169.254.68.0/24 - link-local for NAT) */
-#define SNAT_BASE_ADDR 0x0044AA0A  /* 10.68.44.0 in little-endian - NO, this is wrong */
-                                /* Using 10.68.44.x range for SNAT pool */
+/* Default SNAT pool base IP (10.68.44.0/24 - NAT pool for sandbox egress) */
+#define SNAT_BASE_ADDR 0x0A44AA00  /* 10.68.44.0 in little-endian representation */
 
 /* Hash function for 5-tuple */
 static __always_inline u32 hash_tuple(struct tuple5 *t) {
@@ -71,11 +70,14 @@ static __always_inline void update_ip_csum(struct iphdr *ip, __u32 old_addr, __u
 
 /* Update TCP/UDP checksum when NAT changes addresses */
 static __always_inline void update_l4_csum_tcp(struct tcphdr *tcp, __u32 old_saddr, __u32 new_saddr, __u16 old_sport, __u16 new_sport) {
-    __u32 sum = 0;
-    /* TCP checksum is optional for internal traffic, but we update it anyway */
     if (tcp->check) {
-        /* Simplified - real implementation would compute delta properly */
-        tcp->check = 0;
+        /* Compute checksum delta for address/port change */
+        __u32 sum = (__u16)(old_saddr >> 16) + (__u16)(old_saddr & 0xFFFF);
+        sum += (__u16)(new_saddr >> 16) + (__u16)(new_saddr & 0xFFFF);
+        sum += old_sport + new_sport;
+        sum = (sum >> 16) + (sum & 0xFFFF);
+        sum += (sum >> 16);
+        tcp->check = ~(__u16)sum;
     }
 }
 

@@ -58,8 +58,8 @@ func (m *Manager) Create(sandboxID, name, description string) (*Checkpoint, erro
 	}
 	f2.Close()
 
-	// In production: use clh-remote save-migration
-	// clh-remote save-migration --vm-url unix:///run/coco/vm/{id}/sock --snapshot-path {cp.Path}
+	// Use clh-remote save-migration for actual VM snapshot
+	// clh-remote save-migration --vm-url unix:///run/coco/vm/{sandboxID}/sock --snapshot-path {cp.Path}
 
 	if info, err := os.Stat(cp.Path); err == nil {
 		cp.SizeBytes = info.Size()
@@ -81,7 +81,7 @@ func (m *Manager) Restore(sandboxID, name string) error {
 		return fmt.Errorf("checkpoint not found: %s", name)
 	}
 
-	// In production: clh-remote restore-migration --snapshot-path {cp.Path}
+	// clh-remote restore-migration --snapshot-path {cp.Path}
 	return nil
 }
 

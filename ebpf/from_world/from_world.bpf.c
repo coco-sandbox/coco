@@ -106,8 +106,10 @@ int from_world(struct __sk_buff *skb) {
         udp->dest = internal_port;
     }
 
-    /* Recompute checksums */
-    ip->check = 0;
+    /* Recompute IP checksum after DNAT */
+    __u16 *csum = (__u16 *)&(ip->check);
+    *csum = 0;
+    *csum = ip_fast_csum(ip, ip->ihl);
 
     /* Get ifindex for this sandbox from the ingress session */
     /* Note: bpf_sk_fullsock not available in tc context, use skb->ifindex */

@@ -287,11 +287,11 @@ func handleClusterHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"healthy":true,"leader_id":"self"}`))
 }
 
-// SandboxService implementation
-
+// sandboxService implements handlers.SandboxService
 type sandboxService struct {
-	store   *store.BadgerStore
-	metrics *metrics.Metrics
+	store      *store.BadgerStore
+	metrics    *metrics.Metrics
+	visorPool  *visor.Pool
 }
 
 func (s *sandboxService) Create(ctx context.Context, req *types.CreateSandboxRequest) (*types.Sandbox, error) {
@@ -329,22 +329,145 @@ func (s *sandboxService) Delete(ctx context.Context, id string) error {
 }
 
 func (s *sandboxService) Pause(ctx context.Context, id string) error {
+	sb, err := s.store.GetSandbox(id)
+	if err != nil {
+		return fmt.Errorf("sandbox %s not found: %w", id, err)
+	}
+
+	visorConn, err := s.visorPool.Acquire()
+	if err != nil {
+		return fmt.Errorf("failed to acquire visor connection: %w", err)
+	}
+	defer s.visorPool.Release(visorConn)
+
+	if err := visorConn.Pause(id); err != nil {
+		return fmt.Errorf("visor pause failed: %w", err)
+	}
+
+	sb.State = types.SandboxStatePaused
+	if err := s.store.PutSandbox(sb); err != nil {
+		return fmt.Errorf("failed to update sandbox state: %w", err)
+	}
+
 	return nil
 }
 
 func (s *sandboxService) Resume(ctx context.Context, id string) error {
+	sb, err := s.store.GetSandbox(id)
+	if err != nil {
+		return fmt.Errorf("sandbox %s not found: %w", id, err)
+	}
+
+	visorConn, err := s.visorPool.Acquire()
+	if err != nil {
+		return fmt.Errorf("failed to acquire visor connection: %w", err)
+	}
+	defer s.visorPool.Release(visorConn)
+
+	if err := visorConn.Resume(id); err != nil {
+		return fmt.Errorf("visor resume failed: %w", err)
+	}
+
+	sb.State = types.SandboxStateRunning
+	if err := s.store.PutSandbox(sb); err != nil {
+		return fmt.Errorf("failed to update sandbox state: %w", err)
+	}
+
 	return nil
 }
 
 func (s *sandboxService) Fork(ctx context.Context, parentID string, req *types.ForkRequest) (*types.Sandbox, error) {
-	return nil, nil
+	parent, err := s.store.GetSandbox(parentID)
+	if err != nil {
+		return nil, fmt.Errorf("parent sandbox %s not found: %w", parentID, err)
+	}
+
+	visorConn, err := s.visorPool.Acquire()
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire visor connection: %w", err)
+	}
+	defer s.visorPool.Release(visorConn)
+
+	forkResp, err := visorConn.Fork(parentID)
+	if err != nil {
+		return nil, fmt.Errorf("visor fork failed: %w", err)
+	}
+
+	childID := generateID()
+	child := &types.Sandbox{
+		ID:        childID,
+		Name:      req.Name,
+		State:     types.SandboxStateRunning,
+		ParentID:  parentID,
+		Template:  parent.Template,
+		MemoryMB:  parent.MemoryMB,
+		VCPUs:     parent.VCPUs,
+		Labels:    parent.Labels,
+		Created:   time.Now(),
+	}
+
+	if req.Labels != nil {
+		for k, v := range req.Labels {
+			child.Labels[k] = v
+		}
+	}
+
+	if err := s.store.PutSandbox(child); err != nil {
+		return nil, fmt.Errorf("failed to store child sandbox: %w", err)
+	}
+
+	s.metrics.RecordFork(int64(forkResp.DurationMs))
+
+	return child, nil
 }
 
 func (s *sandboxService) Hibernate(ctx context.Context, id string) error {
+	sb, err := s.store.GetSandbox(id)
+	if err != nil {
+		return fmt.Errorf("sandbox %s not found: %w", id, err)
+	}
+
+	visorConn, err := s.visorPool.Acquire()
+	if err != nil {
+		return fmt.Errorf("failed to acquire visor connection: %w", err)
+	}
+	defer s.visorPool.Release(visorConn)
+
+	if err := visorConn.Hibernate(id); err != nil {
+		return fmt.Errorf("visor hibernate failed: %w", err)
+	}
+
+	sb.State = types.SandboxStateHibernated
+	if err := s.store.PutSandbox(sb); err != nil {
+		return fmt.Errorf("failed to update sandbox state: %w", err)
+	}
+
 	return nil
 }
 
 func (s *sandboxService) ResumeHibernate(ctx context.Context, id string) error {
+	sb, err := s.store.GetSandbox(id)
+	if err != nil {
+		return fmt.Errorf("sandbox %s not found: %w", id, err)
+	}
+
+	visorConn, err := s.visorPool.Acquire()
+	if err != nil {
+		return fmt.Errorf("failed to acquire visor connection: %w", err)
+	}
+	defer s.visorPool.Release(visorConn)
+
+	bootResp, err := visorConn.ResumeHibernated(id)
+	if err != nil {
+		return fmt.Errorf("visor resume-hibernate failed: %w", err)
+	}
+
+	sb.State = types.SandboxStateRunning
+	sb.VsockCID = bootResp.VsockCID
+	if err := s.store.PutSandbox(sb); err != nil {
+		return fmt.Errorf("failed to update sandbox state: %w", err)
+	}
+
 	return nil
 }
 
