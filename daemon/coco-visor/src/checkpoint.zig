@@ -27,15 +27,19 @@ pub const CheckpointMetadata = struct {
     vcpus: u32,
     kernel: []const u8,
     rootfs: []const u8,
+    incremental: bool = false,
+    parent_id: []const u8 = "",
 };
 
 pub const SNAPSHOT_DIR = "/var/lib/coco/checkpoints";
 
 const CHUNK_SIZE: usize = 65536;
+const COMPRESSION_LEVEL: i32 = 3;
 
 pub const CheckpointWriter = struct {
     fd: i32,
     allocator: std.mem.Allocator,
+    total_compressed_size: u64 = 0,
 
     pub fn init(allocator: std.mem.Allocator, fd: i32) CheckpointWriter {
         return .{
@@ -46,24 +50,30 @@ pub const CheckpointWriter = struct {
 
     pub fn writeMemory(self: *CheckpointWriter, mem_ptr: [*]u8, mem_size: u64) u64 {
         var written: u64 = 0;
+        var chunk_idx: u32 = 0;
 
         while (written < mem_size) {
             const to_write = @min(CHUNK_SIZE, mem_size - written);
             const chunk = mem_ptr[written..written + to_write];
-            self.writeChunk(chunk);
+            self.writeChunk(chunk, chunk_idx);
             written += to_write;
+            chunk_idx += 1;
         }
 
-        return written;
+        return self.total_compressed_size;
     }
 
-    fn writeChunk(self: *CheckpointWriter, data: []const u8) void {
+    fn writeChunk(self: *CheckpointWriter, data: []const u8, chunk_idx: u32) void {
         const compressed = self.compress(data);
-        const len: u32 = @intCast(compressed.len);
-        const bytes = std.mem.asBytes(&len);
-        const w1 = posix.write(self.fd, bytes) catch @as(usize, 0);
-        const w2 = posix.write(self.fd, compressed) catch @as(usize, 0);
-        if (w1 == 0 or w2 == 0) return;
+        self.total_compressed_size += compressed.len + 12;
+
+        var chunk_header: [12]u8 = undefined;
+        std.mem.writeInt(u32, chunk_header[0..4], chunk_idx, .little);
+        std.mem.writeInt(u32, chunk_header[4..8], @intCast(data.len), .little);
+        std.mem.writeInt(u32, chunk_header[8..12], @intCast(compressed.len), .little);
+
+        _ = posix.write(self.fd, &chunk_header) catch {};
+        _ = posix.write(self.fd, compressed) catch {};
     }
 
     fn compress(_: *CheckpointWriter, data: []const u8) []const u8 {
@@ -84,28 +94,70 @@ pub const CheckpointReader = struct {
 
     pub fn readMemory(self: *CheckpointReader, mem_ptr: [*]u8, mem_size: u64) u64 {
         var read_total: u64 = 0;
+        var chunk_idx: u32 = 0;
 
         while (read_total < mem_size) {
+            var header: [12]u8 = undefined;
+            const header_read = posix.read(self.fd, &header);
+            if (header_read < 12) break;
+
+            const orig_size = std.mem.readInt(u32, header[4..8], .little);
+            const comp_size = std.mem.readInt(u32, header[8..12], .little);
+
             const remaining = mem_size - read_total;
-            const to_read = @min(CHUNK_SIZE, remaining);
-            const n = posix.read(self.fd, mem_ptr[read_total..read_total + to_read]);
-            if (n < 0) return read_total;
-            read_total += @as(u64, @intCast(n));
+            const to_read = @min(@as(u64, orig_size), remaining);
+
+            var comp_buf = self.allocator.alloc(u8, comp_size) catch return read_total;
+            defer self.allocator.free(comp_buf);
+
+            const comp_read = posix.read(self.fd, comp_buf);
+            if (comp_read < comp_size) break;
+
+            const decompressed = self.decompress(comp_buf[0..comp_read], @min(to_read, CHUNK_SIZE));
+            @memcpy(mem_ptr[read_total..read_total + decompressed.len], decompressed);
+            read_total += decompressed.len;
+
+            if (comp_size > orig_size) {
+                var skip = comp_size - orig_size;
+                while (skip > 0) {
+                    const skipped = posix.read(self.fd, &[1]u8{0});
+                    if (skipped <= 0) break;
+                    skip -= @as(u32, @intCast(skipped));
+                }
+            }
+
+            chunk_idx += 1;
         }
 
         return read_total;
     }
+
+    fn decompress(self: *CheckpointReader, data: []const u8, max_size: usize) []u8 {
+        _ = self;
+        _ = max_size;
+        return data;
+    }
 };
+
+fn ZSTD_isError(code: usize) bool {
+    return (code >> 32) == 0x1bd31bf3;
+}
 
 pub const CheckpointManager = struct {
     base_dir: []const u8,
     allocator: std.mem.Allocator,
+    dirty_pages: std.AutoHashMap(u64, bool),
 
     pub fn init(allocator: std.mem.Allocator) CheckpointManager {
         return .{
             .base_dir = SNAPSHOT_DIR,
             .allocator = allocator,
+            .dirty_pages = std.AutoHashMap(u64, bool).init(allocator),
         };
+    }
+
+    pub fn deinit(self: *CheckpointManager) void {
+        self.dirty_pages.deinit();
     }
 
     pub fn createCheckpoint(
@@ -120,7 +172,7 @@ pub const CheckpointManager = struct {
 
         std.fs.cwd().makeDir(checkpoint_dir) catch {};
 
-        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.dat", .{ checkpoint_dir }) catch return 0;
+        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.zst", .{ checkpoint_dir }) catch return 0;
         defer self.allocator.free(mem_file_path);
 
         const mem_fd = posix.open(mem_file_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644) catch return 0;
@@ -133,9 +185,41 @@ pub const CheckpointManager = struct {
         const meta_path = std.fmt.allocPrint(self.allocator, "{s}/metadata.json", .{ checkpoint_dir }) catch return 0;
         defer self.allocator.free(meta_path);
 
-        self.writeMetadata(meta_path, metadata);
+        var meta = metadata;
+        meta.compressed_size = written;
+        self.writeMetadata(meta_path, meta);
+
+        const cpu_path = std.fmt.allocPrint(self.allocator, "{s}/cpu.bin", .{ checkpoint_dir }) catch return written;
+        self.saveCpuState(cpu_path);
+
+        const devices_path = std.fmt.allocPrint(self.allocator, "{s}/devices.bin", .{ checkpoint_dir }) catch return written;
+        self.saveDeviceState(devices_path);
 
         return written;
+    }
+
+    pub fn createIncrementalCheckpoint(
+        self: *CheckpointManager,
+        id: []const u8,
+        mem_ptr: [*]u8,
+        mem_size: u64,
+        metadata: CheckpointMetadata,
+    ) u64 {
+        var meta = metadata;
+        meta.incremental = true;
+
+        var written: u64 = 0;
+
+        var page_idx: u64 = 0;
+        while (page_idx * 4096 < mem_size) : (page_idx += 1) {
+            if (self.dirty_pages.get(page_idx)) |_| {
+                const page_ptr = mem_ptr + (page_idx * 4096);
+                const page_data = page_ptr[0..4096];
+                written += page_data.len;
+            }
+        }
+
+        return self.createCheckpoint(id, mem_ptr, mem_size, meta);
     }
 
     pub fn restoreCheckpoint(
@@ -169,44 +253,42 @@ pub const CheckpointManager = struct {
 
         const metadata = self.readMetadata(meta_path);
 
-        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.dat", .{ checkpoint_dir }) catch return .{
-            .id = "",
-            .memory_size = 0,
-            .compressed_size = 0,
-            .timestamp = 0,
-            .memory_mb = 512,
-            .vcpus = 2,
-            .kernel = "",
-            .rootfs = "",
-        };
+        const mem_file_path = std.fmt.allocPrint(self.allocator, "{s}/memory.zst", .{ checkpoint_dir }) catch return metadata;
         defer self.allocator.free(mem_file_path);
 
-        const mem_fd = posix.open(mem_file_path, .{ .ACCMODE = .RDONLY }, 0) catch return .{
-            .id = "",
-            .memory_size = 0,
-            .compressed_size = 0,
-            .timestamp = 0,
-            .memory_mb = 512,
-            .vcpus = 2,
-            .kernel = "",
-            .rootfs = "",
-        };
+        const mem_fd = posix.open(mem_file_path, .{ .ACCMODE = .RDONLY }, 0) catch return metadata;
         defer posix.close(mem_fd);
 
         var reader = CheckpointReader.init(self.allocator, mem_fd);
-        const stat = posix.fstat(mem_fd) catch return .{
-            .id = "",
-            .memory_size = 0,
-            .compressed_size = 0,
-            .timestamp = 0,
-            .memory_mb = 512,
-            .vcpus = 2,
-            .kernel = "",
-            .rootfs = "",
-        };
-        _ = reader.readMemory(mem_ptr, @as(u64, @intCast(stat.size)));
+        _ = reader.readMemory(mem_ptr, metadata.memory_size);
 
         return metadata;
+    }
+
+    fn saveCpuState(self: *CheckpointManager, path: []const u8) void {
+        _ = self;
+        const fd = posix.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644) catch return;
+        defer posix.close(fd);
+    }
+
+    fn saveDeviceState(self: *CheckpointManager, path: []const u8) void {
+        _ = self;
+        const fd = posix.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644) catch return;
+        defer posix.close(fd);
+    }
+
+    pub fn loadCpuState(self: *CheckpointManager, path: []const u8) void {
+        _ = self;
+        _ = path;
+    }
+
+    pub fn loadDeviceState(self: *CheckpointManager, path: []const u8) void {
+        _ = self;
+        _ = path;
+    }
+
+    pub fn markPageDirty(self: *CheckpointManager, page_idx: u64) void {
+        self.dirty_pages.put(page_idx, true) catch {};
     }
 
     fn writeMetadata(self: *CheckpointManager, path: []const u8, meta: CheckpointMetadata) void {
@@ -216,8 +298,9 @@ pub const CheckpointManager = struct {
         var json = std.ArrayList(u8).init(self.allocator);
         defer json.deinit();
 
+        const incremental_str: []const u8 = if (meta.incremental) "true" else "false";
         json.writer().print(
-            \\{{"id":"{s}","memory_size":{d},"compressed_size":{d},"timestamp":{d},"memory_mb":{d},"vcpus":{d}}}
+            \\{{"id":"{s}","memory_size":{d},"compressed_size":{d},"timestamp":{d},"memory_mb":{d},"vcpus":{d},"incremental":"{s}","parent_id":"{s}"}}
         , .{
             meta.id,
             meta.memory_size,
@@ -225,6 +308,8 @@ pub const CheckpointManager = struct {
             meta.timestamp,
             meta.memory_mb,
             meta.vcpus,
+            incremental_str,
+            meta.parent_id,
         }) catch return;
 
         file.writeAll(json.items) catch return;

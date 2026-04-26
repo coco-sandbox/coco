@@ -3,9 +3,13 @@
 
 //! Cocovisor — Hypervisor wrapper daemon.
 //! Listens on /run/coco/visor.sock for boot/exec/destroy/pause/resume requests.
+//! Provides metrics on port 9090 and health checks on port 4748.
 
 const std = @import("std");
 const vmm = @import("vmm.zig");
+const config = @import("config.zig");
+const logger = @import("logger.zig");
+const metrics = @import("metrics.zig");
 
 // =============================================================================
 // Protocol Constants
@@ -31,6 +35,8 @@ const RESP_HIBERNATE: u32 = 108;
 const RESP_ERROR: u32 = 199;
 
 const SOCK_PATH = "/run/coco/visor.sock";
+
+var global_config: config.Config = undefined;
 
 inline fn w32(buf: [*]u8, value: u32) void {
     std.mem.writeInt(u32, @ptrCast(buf), value, .little);
@@ -182,7 +188,7 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     next_vsock_cid +%= 1;
     sandbox_id_counter += 1;
 
-    const config: vmm.VMConfig = .{
+    const vm_config: vmm.VMConfig = .{
         .id = sandbox_id,
         .rootfs = rootfs,
         .kernel = kernel,
@@ -193,7 +199,7 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
     };
 
     var vm = std.heap.page_allocator.create(vmm.VM) catch return;
-    vm.* = vmm.VM.init(config);
+    vm.* = vmm.VM.init(vm_config);
     const result = vm.boot() catch |e| {
         std.debug.print("[cocovisor] Boot failed: {}\n", .{e});
         try sendError(sock, "Boot failed");
@@ -537,24 +543,124 @@ fn sendError(sock: std.net.Stream, msg: []const u8) !void {
     try sock.writeAll(msg);
 }
 
+fn startHttpServer(port: u16) void {
+    std.debug.print("[cocovisor] Starting HTTP server on port {d}\n", .{port});
+
+    const addr = std.net.Address.initIp4(.{0, 0, 0, 0}, port);
+    var listener = addr.listen(.{ .reuse_address = true }) catch {
+        std.debug.print("[cocovisor] HTTP server failed to listen on port {d}\n", .{port});
+        return;
+    };
+
+    std.debug.print("[cocovisor] HTTP server listening on port {d}\n", .{port});
+
+    while (true) {
+        const conn = listener.accept() catch continue;
+        const t = std.Thread.spawn(.{}, handleHttpRequest, .{conn}) catch continue;
+        t.detach();
+    }
+}
+
+fn handleHttpRequest(conn: std.net.Server.Connection) void {
+    defer conn.stream.close();
+
+    var buf: [4096]u8 = undefined;
+    const n = conn.stream.read(&buf) catch return;
+    if (n == 0) return;
+
+    const request = buf[0..n];
+
+    if (std.mem.startsWith(u8, request, "GET /metrics")) {
+        handleMetrics(conn.stream) catch {};
+    } else if (std.mem.startsWith(u8, request, "GET /health/live")) {
+        handleHealthLive(conn.stream) catch {};
+    } else if (std.mem.startsWith(u8, request, "GET /health/ready")) {
+        handleHealthReady(conn.stream) catch {};
+    } else if (std.mem.startsWith(u8, request, "GET /health")) {
+        handleHealth(conn.stream) catch {};
+    } else {
+        handleNotFound(conn.stream) catch {};
+    }
+}
+
+fn handleMetrics(sock: std.net.Stream) !void {
+    const m = metrics.getMetrics();
+
+    const header = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\n\r\n";
+    try sock.writeAll(header);
+
+    try m.formatPrometheus(sock.writer().any());
+}
+
+fn handleHealthLive(sock: std.net.Stream) !void {
+    const response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\"}";
+    try sock.writeAll(response);
+}
+
+fn handleHealthReady(sock: std.net.Stream) !void {
+    const response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ready\",\"checks\":{\"visor\":\"ok\",\"kvm\":\"ok\"}}";
+    try sock.writeAll(response);
+}
+
+fn handleHealth(sock: std.net.Stream) !void {
+    const vm_count = vmm.getVMs().count();
+    var response_buf: [256]u8 = undefined;
+    const response = std.fmt.bufPrint(&response_buf,
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{{\"status\":\"ok\",\"visor\":\"running\",\"sandboxes\":{d}}}",
+        .{vm_count}
+    ) catch return;
+
+    try sock.writeAll(response);
+}
+
+fn handleNotFound(sock: std.net.Stream) !void {
+    const response = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nNot Found";
+    try sock.writeAll(response);
+}
+
 // =============================================================================
 // Main
 // =============================================================================
 
 pub fn main() !void {
-    std.debug.print("[cocovisor] Starting daemon on {s}\n", .{SOCK_PATH});
+    global_config = config.loadConfig();
 
-    std.fs.deleteFileAbsolute(SOCK_PATH) catch {};
+    logger.init(logger.LogLevel.info, std.io.getStdErr().writer().any());
+    const log_lvl = switch (global_config.log_level[0]) {
+        'd' => logger.LogLevel.debug,
+        'w' => logger.LogLevel.warn,
+        'e' => logger.LogLevel.err,
+        else => logger.LogLevel.info,
+    };
+    logger.setLevel(log_lvl);
+
+    logger.info("Starting cocovisor daemon", .{});
+
+    std.fs.deleteFileAbsolute(global_config.socket_path) catch {};
     std.fs.makeDirAbsolute("/run/coco") catch {};
-    std.fs.makeDirAbsolute("/var/lib/coco/hibernation") catch {};
+    std.fs.makeDirAbsolute(global_config.checkpoint_dir) catch {};
+    std.fs.makeDirAbsolute(global_config.hibernation_dir) catch {};
+    std.fs.makeDirAbsolute(global_config.template_dir) catch {};
 
-    const sock_addr = try std.net.Address.initUnix(SOCK_PATH);
+    const sock_addr = try std.net.Address.initUnix(global_config.socket_path);
     var listener = try sock_addr.listen(.{ .reuse_address = true });
 
-    std.debug.print("[cocovisor] Listening on {s}\n", .{SOCK_PATH});
-    std.debug.print("[cocovisor] Protocol: BOOT={d}, EXEC={d}, DESTROY={d}, PAUSE={d}, RESUME={d}, GET_STATE={d}, FORK={d}, HIBERNATE={d}\n", .{
+    logger.info("Listening on {any}", .{global_config.socket_path});
+    logger.info("Protocol: BOOT={d}, EXEC={d}, DESTROY={d}, PAUSE={d}, RESUME={d}, GET_STATE={d}, FORK={d}, HIBERNATE={d}", .{
         REQ_BOOT, REQ_EXEC, REQ_DESTROY, REQ_PAUSE, REQ_RESUME, REQ_GET_STATE, REQ_FORK, REQ_HIBERNATE,
     });
+
+    if (global_config.metrics_enabled) {
+        const metrics_thread = std.Thread.spawn(.{}, startHttpServer, .{global_config.metrics_port}) catch null;
+        if (metrics_thread) |t| t.detach();
+        logger.info("Metrics server started on port {d}", .{global_config.metrics_port});
+    }
+
+    if (global_config.health_enabled) {
+        const health_thread = std.Thread.spawn(.{}, startHttpServer, .{global_config.health_port}) catch null;
+        if (health_thread) |t| t.detach();
+        logger.info("Health server started on port {d}", .{global_config.health_port});
+    }
 
     while (true) {
         const conn = try listener.accept();

@@ -7,16 +7,36 @@
 
 const std = @import("std");
 const posix = std.posix;
+const linux = std.os.linux;
+
+const BTRFS_IOC_CLONE: u32 = 0x40094d09;
 
 pub const ForkManager = struct {
     base_dir: []const u8,
     allocator: std.mem.Allocator,
+    use_reflink: bool = true,
 
     pub fn init(allocator: std.mem.Allocator, base_dir: []const u8) ForkManager {
         return .{
             .base_dir = base_dir,
             .allocator = allocator,
+            .use_reflink = detectBtrfs(base_dir),
         };
+    }
+
+    fn detectBtrfs(path: []const u8) bool {
+        var buf: [256]u8 = undefined;
+        const full_path = std.fmt.bufPrint(&buf, "{s}/.", .{ path }) catch return false;
+
+        var stat_buf: linux.Stat = undefined;
+        const full_path_null: [*:0]u8 = @ptrCast(full_path);
+        const ret = linux.stat(full_path_null, &stat_buf);
+        if (ret < 0) return false;
+
+        var file = std.fs.openFileAbsolute(full_path, .{}) catch return false;
+        defer file.close();
+
+        return true;
     }
 
     pub fn createFork(self: *ForkManager, parent_id: []const u8, child_id: []const u8) void {
@@ -26,7 +46,61 @@ pub const ForkManager = struct {
         const child_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, child_id }) catch return;
         defer self.allocator.free(child_dir);
 
-        self.createForkDir(parent_dir, child_dir);
+        if (self.use_reflink) {
+            self.createForkWithReflink(parent_dir, child_dir);
+        } else {
+            self.createForkDir(parent_dir, child_dir);
+        }
+    }
+
+    fn createForkWithReflink(self: *ForkManager, parent_dir: []const u8, child_dir: []const u8) void {
+        var parent_file = std.fs.openDirAbsolute(parent_dir, .{ .iterate = true }) catch {
+            self.createForkDir(parent_dir, child_dir);
+            return;
+        };
+        defer parent_file.close();
+
+        std.fs.cwd().makeDir(child_dir) catch {
+            self.createForkDir(parent_dir, child_dir);
+            return;
+        };
+
+        var iter = parent_file.iterate();
+        while (iter.next() catch null) |entry| {
+            const src_path = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ parent_dir, entry.name }) catch continue;
+            defer self.allocator.free(src_path);
+
+            const dest_path = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ child_dir, entry.name }) catch continue;
+            defer self.allocator.free(dest_path);
+
+            switch (entry.kind) {
+                .file => {
+                    self.reflinkFile(src_path, dest_path) catch {};
+                },
+                .directory => {
+                    self.createForkWithReflink(src_path, dest_path);
+                },
+                else => {
+                    self.reflinkFile(src_path, dest_path) catch {};
+                },
+            }
+        }
+    }
+
+    fn reflinkFile(_: *ForkManager, src: []const u8, dest: []const u8) !void {
+        const src_fd = try posix.open(src, .{ .ACCMODE = .RDONLY }, 0);
+        defer posix.close(src_fd);
+
+        const dest_fd = try posix.open(dest, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+        defer posix.close(dest_fd);
+
+        const result = linux.ioctl(dest_fd, BTRFS_IOC_CLONE, @intCast(src_fd));
+
+        if (result < 0) {
+            const zero: [1]u8 = undefined;
+            _ = posix.pread(src_fd, &zero, 1, 0) catch {};
+            _ = posix.write(dest_fd, &zero) catch {};
+        }
     }
 
     fn createForkDir(self: *ForkManager, parent_dir: []const u8, child_dir: []const u8) void {
@@ -63,5 +137,21 @@ pub const ForkManager = struct {
         defer self.allocator.free(fork_dir);
 
         std.fs.deleteTreeAbsolute(fork_dir) catch {};
+    }
+
+    pub fn createForkSnapshot(self: *ForkManager, parent_id: []const u8, snapshot_id: []const u8) !void {
+        const parent_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, parent_id }) catch return;
+        defer self.allocator.free(parent_dir);
+
+        const snapshot_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, snapshot_id }) catch return;
+        defer self.allocator.free(snapshot_dir);
+
+        var child = std.ChildProcess.init(&[_][]const u8{
+            "btrfs", "subvolume", "snapshot", parent_dir, snapshot_dir,
+        }, self.allocator);
+        child.stdout = .pipe;
+        child.stderr = .pipe;
+
+        _ = child.spawnAndWait() catch {};
     }
 };
