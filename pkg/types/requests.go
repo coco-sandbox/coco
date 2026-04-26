@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
 package types
 
 import "time"
@@ -80,4 +83,82 @@ type NodeStatus struct {
 	CPUPercent      int32     `json:"cpu_percent"`
 	Healthy         bool      `json:"healthy"`
 	LastUpdate      time.Time `json:"last_update"`
+}
+
+// =============================================================================
+// Cluster Service Types (spec 2.4)
+// =============================================================================
+
+type ClusterInfoResponse struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Version       string    `json:"version"`
+	State         string    `json:"state"`
+	NumNodes      int       `json:"num_nodes"`
+	NumSandboxes  int       `json:"num_sandboxes"`
+	UptimeSeconds int64     `json:"uptime_seconds"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type GetNodeResponse struct {
+	Node NodeInfo `json:"node"`
+}
+
+type ListNodesResponse struct {
+	Items []*NodeInfo `json:"items"`
+	Total int         `json:"total"`
+}
+
+// =============================================================================
+// Template Service Types (spec 2.3)
+// =============================================================================
+
+type CreateTemplateResponse struct {
+	Template *Template `json:"template"`
+}
+
+type GetTemplateResponse struct {
+	Template *Template `json:"template"`
+}
+
+type ListTemplatesResponse struct {
+	Items []*Template `json:"items"`
+	Total int         `json:"total"`
+}
+
+type BuildTemplateRequest struct {
+	Source     string `json:"source"`
+	Dockerfile string `json:"dockerfile"`
+}
+
+type BuildTemplateResponse struct {
+	BuildID string `json:"build_id"`
+	Status  string `json:"status"`
+}
+
+// =============================================================================
+// Checkpoint Service Types (spec 2.1)
+// =============================================================================
+
+type CreateCheckpointRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Compression string `json:"compression,omitempty"`
+}
+
+type CreateCheckpointResponse struct {
+	Checkpoint *Checkpoint `json:"checkpoint"`
+}
+
+type GetCheckpointResponse struct {
+	Checkpoint *Checkpoint `json:"checkpoint"`
+}
+
+type ListCheckpointsResponse struct {
+	Items []*Checkpoint `json:"items"`
+	Total int            `json:"total"`
+}
+
+type RestoreCheckpointRequest struct {
+	CheckpointID string `json:"checkpoint_id"`
 }

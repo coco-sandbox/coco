@@ -174,3 +174,47 @@ func (h *ExecHandler) HandleStreamingExec(w http.ResponseWriter, r *http.Request
 		flusher.Flush()
 	}
 }
+
+// HandleInteractiveExec handles WebSocket-based interactive shell
+// POST /v1/sandboxes/:id/interactive-exec
+func (h *ExecHandler) HandleInteractiveExec(w http.ResponseWriter, r *http.Request, sandboxID string) {
+	// Upgrade to WebSocket for bidirectional streaming
+	if _, err := w.Write([]byte("WebSocket upgrade required for interactive exec")); err != nil {
+		return
+	}
+}
+
+// HandleCreateCheckpoint handles POST /v1/sandboxes/:id/checkpoint
+func (h *ExecHandler) HandleCreateCheckpoint(w http.ResponseWriter, r *http.Request, sandboxID string) {
+	type req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	var reqBody req
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	// TODO: wire to master
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+// HandleRestoreSandbox handles POST /v1/sandboxes/:id/restore
+func (h *ExecHandler) HandleRestoreSandbox(w http.ResponseWriter, r *http.Request, sandboxID string) {
+	type req struct {
+		CheckpointID string `json:"checkpoint_id"`
+	}
+	var reqBody req
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	// TODO: wire to master
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+// HandleListCheckpoints handles GET /v1/sandboxes/:id/checkpoints
+func (h *ExecHandler) HandleListCheckpoints(w http.ResponseWriter, r *http.Request, sandboxID string) {
+	// TODO: wire to master
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}

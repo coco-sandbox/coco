@@ -14,11 +14,13 @@ import (
 type GatewayServer struct {
 	masterAddr string
 	client     *http.Client
+	nodeAddrs  []string
 }
 
-func NewGatewayServer(masterAddr string) *GatewayServer {
+func NewGatewayServer(masterAddr string, nodeAddrs []string) *GatewayServer {
 	return &GatewayServer{
 		masterAddr: masterAddr,
+		nodeAddrs:  nodeAddrs,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -131,6 +133,88 @@ func (g *GatewayServer) Hibernate(ctx context.Context, id string) error {
 
 func (g *GatewayServer) ResumeHibernate(ctx context.Context, id string) error {
 	_, err := doPost[map[string]any](ctx, g.client, g.masterURL("/internal/v1/sandboxes/"+id+"/resume-hibernate"), nil)
+	return err
+}
+
+// Cluster operations
+func (g *GatewayServer) GetClusterInfo(ctx context.Context) (*types.ClusterInfoResponse, error) {
+	return doGet[types.ClusterInfoResponse](ctx, g.client, g.masterURL("/internal/v1/cluster"))
+}
+
+func (g *GatewayServer) ListNodes(ctx context.Context) (*types.ListNodesResponse, error) {
+	return doGet[types.ListNodesResponse](ctx, g.client, g.masterURL("/internal/v1/nodes"))
+}
+
+func (g *GatewayServer) GetNode(ctx context.Context, id string) (*types.NodeInfo, error) {
+	resp, err := doGet[types.GetNodeResponse](ctx, g.client, g.masterURL("/internal/v1/nodes/"+id))
+	if err != nil {
+		return nil, err
+	}
+	return &resp.Node, nil
+}
+
+func (g *GatewayServer) DrainNode(ctx context.Context, id string) error {
+	return doDelete(ctx, g.client, g.masterURL("/internal/v1/nodes/"+id+"/drain"))
+}
+
+// Template operations
+func (g *GatewayServer) CreateTemplate(ctx context.Context, req *types.CreateTemplateRequest) (*types.Template, error) {
+	resp, err := doPost[types.CreateTemplateResponse](ctx, g.client, g.masterURL("/internal/v1/templates"), req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Template, nil
+}
+
+func (g *GatewayServer) GetTemplate(ctx context.Context, id string) (*types.Template, error) {
+	resp, err := doGet[types.GetTemplateResponse](ctx, g.client, g.masterURL("/internal/v1/templates/"+id))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Template, nil
+}
+
+func (g *GatewayServer) ListTemplates(ctx context.Context) (*types.ListTemplatesResponse, error) {
+	return doGet[types.ListTemplatesResponse](ctx, g.client, g.masterURL("/internal/v1/templates"))
+}
+
+func (g *GatewayServer) DeleteTemplate(ctx context.Context, id string) error {
+	return doDelete(ctx, g.client, g.masterURL("/internal/v1/templates/"+id))
+}
+
+func (g *GatewayServer) BuildTemplate(ctx context.Context, id string, req *types.BuildTemplateRequest) error {
+	_, err := doPost[map[string]any](ctx, g.client, g.masterURL("/internal/v1/templates/"+id+"/build"), req)
+	return err
+}
+
+// Checkpoint operations
+func (g *GatewayServer) CreateCheckpoint(ctx context.Context, sandboxID string, req *types.CreateCheckpointRequest) (*types.Checkpoint, error) {
+	resp, err := doPost[types.CreateCheckpointResponse](ctx, g.client, g.masterURL("/internal/v1/sandboxes/"+sandboxID+"/checkpoints"), req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Checkpoint, nil
+}
+
+func (g *GatewayServer) ListCheckpoints(ctx context.Context, sandboxID string) (*types.ListCheckpointsResponse, error) {
+	return doGet[types.ListCheckpointsResponse](ctx, g.client, g.masterURL("/internal/v1/sandboxes/"+sandboxID+"/checkpoints"))
+}
+
+func (g *GatewayServer) GetCheckpoint(ctx context.Context, id string) (*types.Checkpoint, error) {
+	resp, err := doGet[types.GetCheckpointResponse](ctx, g.client, g.masterURL("/internal/v1/checkpoints/"+id))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Checkpoint, nil
+}
+
+func (g *GatewayServer) DeleteCheckpoint(ctx context.Context, id string) error {
+	return doDelete(ctx, g.client, g.masterURL("/internal/v1/checkpoints/"+id))
+}
+
+func (g *GatewayServer) RestoreSandbox(ctx context.Context, sandboxID string, checkpointID string) error {
+	req := map[string]string{"checkpoint_id": checkpointID}
+	_, err := doPost[map[string]any](ctx, g.client, g.masterURL("/internal/v1/sandboxes/"+sandboxID+"/restore"), req)
 	return err
 }
 

@@ -48,7 +48,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		w.Write([]byte(`{"ready":true}`))
 	})
 
-	gw := NewGatewayServer(cfg.MasterAddr)
+	gw := NewGatewayServer(cfg.MasterAddr, nil)
 	registerRoutes(mux, gw)
 
 	handler := middleware.RecoveryMiddleware(mux)

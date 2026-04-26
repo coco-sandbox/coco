@@ -3,6 +3,8 @@
 
 package types
 
+import "time"
+
 type Role string
 
 const (
@@ -19,3 +21,17 @@ type APIKey struct {
 	Roles     []Role    `json:"roles"`
 	Expires   int64     `json:"expires,omitempty"`
 }
+
+type ClusterInfo struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Version       string    `json:"version"`
+	State         string    `json:"state"`
+	NumNodes      int       `json:"num_nodes"`
+	NumSandboxes  int       `json:"num_sandboxes"`
+	UptimeSeconds int64     `json:"uptime_seconds"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// Node is an alias for NodeInfo for backwards compatibility
+type Node = NodeInfo
