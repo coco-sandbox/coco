@@ -30,14 +30,20 @@ Multiple defers execute in **reverse order**:
 Execute only when function returns with an error:
 
 ```zig
-fn initVm() error{InitFailed}!Vm {
+fn initVm() error{Failed}!Vm {
     const vm = try createVm();
     errdefer destroyVm(vm);  // Only runs on error
     return vm;
 }
 ```
 
-**Use case**: Cleanup that should only run on failure (not success).
+### With Error Capture
+
+```zig
+errdefer |err| {
+    std.debug.print("Cleanup after error: {}\n", .{err});
+}
+```
 
 ## Common Patterns
 
@@ -48,20 +54,41 @@ const file = try std.fs.cwd().openFile("data.txt", .{});
 defer file.close();
 ```
 
-### Memory
+### Memory Allocation
 
 ```zig
 const mem = try allocator.alloc(u8, 1024);
 defer allocator.free(mem);
 ```
 
-### Lock
+### Lock/Mutex
 
 ```zig
 mutex.lock();
 defer mutex.unlock();
 // Safe to use, unlocked on block exit
 ```
+
+### Multiple Resources
+
+```zig
+const a = try openResourceA();
+errdefer closeResourceA(a);
+
+const b = try openResourceB();
+errdefer closeResourceB(b);
+
+// If b fails, a is cleaned up via errdefer
+```
+
+## defer vs errdefer
+
+| Feature | defer | errdefer |
+|---------|-------|----------|
+| Runs on success | Yes | No |
+| Runs on error | Yes | Yes |
+| Runs on return | Yes | No |
+| Capture error | No | Yes |
 
 ## Best Practice
 

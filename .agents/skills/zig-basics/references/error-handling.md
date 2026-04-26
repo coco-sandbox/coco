@@ -10,11 +10,6 @@ const FileError = error{
     OutOfMemory,
     FileNotFound,
 };
-
-const IoError = error{
-    WriteFailed,
-    ReadFailed,
-};
 ```
 
 ## Error Unions
@@ -23,7 +18,7 @@ Combine error set with value type:
 
 ```zig
 // May return error or u32
-const result: FileError!u32 = tryOpenFile();
+const result: FileError!u32 = mayFail();
 ```
 
 ## Creating Error Values
@@ -42,7 +37,7 @@ Propagate error up the call stack:
 fn openConfig() error{NotFound}!Config {
     const file = try std.fs.cwd().openFile("config.toml", .{});
     defer file.close();
-    // ...
+    // file is now available
 }
 ```
 
@@ -54,7 +49,7 @@ Provide fallback value:
 const value = maybeError catch 0;  // fallback to 0
 ```
 
-### catch with payload
+### catch with Payload
 
 ```zig
 maybeError catch |err| {
@@ -63,15 +58,33 @@ maybeError catch |err| {
 };
 ```
 
+### if Expression
+
+```zig
+if (maybeError) |value| {
+    // success
+} else |err| {
+    // failure
+}
+```
+
 ## errdefer
 
-Cleanup on error only:
+Execute only when function returns with an error:
 
 ```zig
 fn initVm() error{Failed}!Vm {
     const vm = try createVm();
-    errdefer destroyVm(vm);  // runs on error
+    errdefer destroyVm(vm);  // runs on error only
     return vm;
+}
+```
+
+### errdefer with Capture
+
+```zig
+errdefer |err| {
+    std.debug.print("Failed: {}\n", .{err});
 }
 ```
 
@@ -86,6 +99,24 @@ const LargeError = error{NotFound, OutOfMemory};
 const err: LargeError = SmallError.NotFound;  // OK
 ```
 
+## Merging Error Sets
+
+```zig
+const A = error{ One };
+const B = error{ Two };
+const C = A || B;  // error{One, Two}
+```
+
+## Inferred Error Sets
+
+```zig
+pub fn add(a: i32, b: i32) !i32 {
+    const ov = @addWithOverflow(a, b);
+    if (ov[1] != 0) return error.Overflow;
+    return ov[0];
+}
+```
+
 ## anyerror
 
 Global error set (use sparingly):
@@ -96,9 +127,24 @@ fn risky() anyerror!void {
 }
 ```
 
+## Error Return Traces
+
+Enabled in Debug builds, shows full error path:
+
+```bash
+$ ./program
+error: PermissionDenied
+at bang1 (file.zig:34)
+at baz (file.zig:22)
+at bar (file.zig:17)
+at foo (file.zig:7)
+at main (file.zig:2)
+```
+
 ## Best Practices
 
-- Use `try` when you can't handle the error locally
+- Use specific error sets for modules
+- Use `try` when you can't handle locally
 - Use `catch` with fallback for recoverable errors
 - Use `errdefer` for cleanup on failure
-- Create specific error sets for your module
+- Handle all errors in switches

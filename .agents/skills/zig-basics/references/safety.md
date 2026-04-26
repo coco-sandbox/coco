@@ -2,12 +2,21 @@
 
 ## Safety Modes
 
-Zig provides safety checks that catch illegal behavior at runtime:
+| Mode | Optimizations | Safety | Use |
+|------|---------------|--------|-----|
+| Debug | Off | Full | Development |
+| ReleaseSafe | On | Full | Production |
+| ReleaseSmall | On | Off | Small binaries |
+| ReleaseFast | On | Off | Performance |
 
-- **Debug/Safe** (default for `zig test`): Full safety checks
-- **ReleaseSafe**: Safety on, optimized
-- **ReleaseSmall**: Safety off, smallest binary
-- **ReleaseFast**: Safety off, fastest
+## Build Examples
+
+```bash
+zig build                    # Debug
+zig build -Doptimize=ReleaseSafe  # Safe release
+zig build -Doptimize=ReleaseFast   # Fast release
+zig build -Doptimize=ReleaseSmall  # Small release
+```
 
 ## Detectable Illegal Behavior
 
@@ -31,19 +40,31 @@ const ptr: *u32 = null;
 const x = ptr.*;  // PANIC
 ```
 
-## Disabling Safety
-
-Use `@setRuntimeSafety(false)`:
+### Integer Overflow (non-wrapping)
 
 ```zig
-test "unsafe access" {
+var byte: u8 = 255;
+byte += 1;  // PANIC in safe modes
+```
+
+## Disabling Safety
+
+### Per Block
+
+```zig
+{
     @setRuntimeSafety(false);
-    const arr = [3]u8{ 1, 2, 3 };
-    const x = arr[5];  // No panic, undefined behavior
+    // unsafe code here
 }
 ```
 
-## Unreachable
+### Wrap with Wrapping Operators
+
+```zig
+const wrapped = @as(u8, 255) +% 1;  // wraps to 0
+```
+
+## unreachable
 
 Assert that code cannot be reached:
 
@@ -57,15 +78,65 @@ fn asciiToUpper(x: u8) u8 {
 }
 ```
 
-**Use case:** Inform compiler that a branch is impossible, enabling optimizations.
+In ReleaseFast/ReleaseSmall: undefined behavior, not panic.
 
-## Best Practices for Coco
+## @setRuntimeSafety
 
-1. **Develop with safety on** - Use `zig test` with default settings
-2. **Test with safety** before releasing
-3. **Use ReleaseSafe** for production
-4. **Use unreachable** only for truly impossible cases
-5. **Profile** after disabling safety to ensure it's necessary
+Toggle safety checks per scope:
+
+```zig
+test "safety toggle" {
+    {
+        @setRuntimeSafety(false);
+        var x: u8 = 255;
+        x += 1;  // no panic here
+    }
+    // safety restored
+}
+```
+
+## Build Mode Detection
+
+```zig
+const builtin = @import("builtin");
+
+fn debugOnly(code: fn() void) void {
+    if (builtin.mode == .Debug) {
+        code();
+    }
+}
+```
+
+## Common Safety Patterns
+
+### Optional Unwrap
+
+```zig
+const value: ?i32 = null;
+const x = value.?;  // PANIC if null
+```
+
+### Error Unwrap
+
+```zig
+const value: anyerror!i32 = error.SomeError;
+const x = value catch unreachable;  // PANIC if error
+```
+
+### Type Cast
+
+```zig
+const x: u16 = 300;
+const y: u8 = @intCast(x);  // PANIC: doesn't fit
+```
+
+## Best Practices
+
+1. Develop with safety on (Debug mode)
+2. Test with safety before releasing
+3. Use ReleaseSafe for production
+4. Use unreachable only for truly impossible cases
+5. Profile after disabling safety to verify necessity
 
 ## Coco Build Modes
 
