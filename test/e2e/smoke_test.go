@@ -1,0 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The Coco Sandbox Authors
+
+package e2e
