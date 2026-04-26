@@ -30,8 +30,7 @@ const STREAM_EXIT: u32 = 3;
 // Global State
 // =============================================================================
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var allocator: std.mem.Allocator = undefined;
+var allocator = std.heap.c_allocator;
 var running = true;
 var child_pid: posix.pid_t = 0;
 
@@ -51,71 +50,102 @@ fn logError(comptime fmt: []const u8, args: anytype) void {
 // Signal Handling (PID 1 responsibilities)
 // =============================================================================
 
-fn handleSigterm(sig_num: i32) callconv(.C) void {
+fn handleSigterm(sig_num: linux.SIG) callconv(.c) void {
     _ = sig_num;
     log("Received SIGTERM, initiating graceful shutdown", .{});
     running = false;
 
-    // Forward SIGTERM to child process if we have one
     if (child_pid > 0) {
         log("Forwarding SIGTERM to child process {d}", .{child_pid});
         posix.kill(child_pid, posix.SIG.TERM) catch {};
     }
 }
 
-fn handleSigchld(sig_num: i32) callconv(.C) void {
+fn handleSigchld(sig_num: linux.SIG) callconv(.c) void {
     _ = sig_num;
-    // Reap child process if it exits
-    if (child_pid > 0) {
-        const result = posix.waitpid(child_pid, posix.W.NOHANG);
-        if (result.pid == child_pid) {
-            log("Child {d} reaped with status {d}", .{ child_pid, result.status });
-            child_pid = 0;
-        }
+    while (true) {
+        var status: i32 = 0;
+        const pid = linux.waitpid(-1, &status, linux.W.NOHANG);
+        if (pid <= 0) break;
+        if (pid == child_pid) child_pid = 0;
     }
 }
 
 fn setupSignalHandlers() void {
-    // SIGTERM: graceful shutdown
+    const empty_set: linux.sigset_t = std.mem.zeroes(linux.sigset_t);
+
     var sa_term: linux.Sigaction = .{
         .handler = .{ .handler = handleSigterm },
-        .mask = posix.empty_sigset,
+        .mask = empty_set,
         .flags = 0,
     };
-    posix.sigaction(posix.SIG.TERM, &sa_term, null);
+    _ = linux.sigaction(posix.SIG.TERM, &sa_term, null);
 
-    // SIGINT: treat as SIGTERM
     var sa_int: linux.Sigaction = .{
         .handler = .{ .handler = handleSigterm },
-        .mask = posix.empty_sigset,
+        .mask = empty_set,
         .flags = 0,
     };
-    posix.sigaction(posix.SIG.INT, &sa_int, null);
+    _ = linux.sigaction(posix.SIG.INT, &sa_int, null);
 
-    // SIGHUP: treat as SIGTERM
     var sa_hup: linux.Sigaction = .{
         .handler = .{ .handler = handleSigterm },
-        .mask = posix.empty_sigset,
+        .mask = empty_set,
         .flags = 0,
     };
-    posix.sigaction(posix.SIG.HUP, &sa_hup, null);
+    _ = linux.sigaction(posix.SIG.HUP, &sa_hup, null);
 
-    // SIGPIPE: ignore (we handle closed sockets explicitly)
     var sa_pipe: linux.Sigaction = .{
         .handler = .{ .handler = posix.SIG.IGN },
-        .mask = posix.empty_sigset,
+        .mask = empty_set,
         .flags = 0,
     };
-    posix.sigaction(posix.SIG.PIPE, &sa_pipe, null);
+    _ = linux.sigaction(posix.SIG.PIPE, &sa_pipe, null);
 
-    // SIGCHLD: reap child processes
     var sa_chld: linux.Sigaction = .{
         .handler = .{ .handler = handleSigchld },
-        .mask = posix.empty_sigset,
+        .mask = empty_set,
         .flags = posix.SA.NOCLDSTOP,
     };
-    posix.sigaction(posix.SIG.CHLD, &sa_chld, null);
+    _ = linux.sigaction(posix.SIG.CHLD, &sa_chld, null);
 }
+
+// =============================================================================
+// Stream Wrapper
+// =============================================================================
+
+pub const Stream = struct {
+    handle: i32,
+
+    pub fn read(self: Stream, buf: []u8) !usize {
+        const rc = linux.read(self.handle, buf.ptr, buf.len);
+        if (rc < 0) return error.ReadFailed;
+        return @intCast(rc);
+    }
+
+    pub fn writeAll(self: Stream, data: []const u8) !void {
+        var written: usize = 0;
+        while (written < data.len) {
+            const rc = linux.write(self.handle, data[written..].ptr, data.len - written);
+            if (rc < 0) return error.WriteFailed;
+            written += @intCast(rc);
+        }
+    }
+
+    pub fn readAtLeast(self: Stream, buf: []u8, min_len: usize) !usize {
+        var total: usize = 0;
+        while (total < min_len) {
+            const n = try self.read(buf[total..]);
+            if (n == 0) return error.EndOfStream;
+            total += n;
+        }
+        return total;
+    }
+
+    pub fn close(self: Stream) void {
+        _ = linux.close(self.handle);
+    }
+};
 
 // =============================================================================
 // VSock Communication (TCP fallback)
@@ -132,31 +162,49 @@ const SockaddrVm = extern struct {
     svm_zero: [3]u8 = .{ 0, 0, 0 },
 };
 
-fn connectVsock(cid: u32, port: u32) !std.net.Stream {
-    const fd = try posix.socket(AF_VSOCK, posix.SOCK.STREAM, 0);
-    errdefer posix.close(fd);
+const sockaddr_in = extern struct {
+    family: u16,
+    port: u16,
+    addr: u32,
+    zero: [8]u8,
+};
+
+fn connectVsock(cid: u32, port: u32) !Stream {
+    const fd_usize = linux.socket(AF_VSOCK, linux.SOCK.STREAM, 0);
+    if (fd_usize == std.math.maxInt(usize)) return error.SocketFailed;
+    const fd: i32 = @intCast(fd_usize);
+    errdefer _ = linux.close(fd);
     const addr = SockaddrVm{ .svm_port = port, .svm_cid = cid };
-    try posix.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
-    return std.net.Stream{ .handle = fd };
+    const rc = linux.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
+    if (rc != 0) return error.ConnectFailed;
+    return Stream{ .handle = fd };
 }
 
-/// connectToHost establishes a connection to the host.
-/// Uses COCO_VSOCK_PORT env var.
-/// First attempts VSock (cid=2 is host), falls back to TCP for development.
-fn connectToHost(port: u16) !std.net.Stream {
+fn connectToHost(port: u16) !Stream {
     log("Trying VSock CID=2 port={d}", .{port});
     if (connectVsock(2, @as(u32, port))) |stream| {
         log("Connected via VSock", .{});
         return stream;
     } else |_| {
         log("VSock failed, trying TCP fallback", .{});
-        const addr = try std.net.Address.parseIp("127.0.0.1", port);
-        return try std.net.tcpConnectToAddress(addr);
+        const fd_usize = linux.socket(linux.AF.INET, linux.SOCK.STREAM, 0);
+        if (fd_usize == std.math.maxInt(usize)) return error.SocketFailed;
+        const fd: i32 = @intCast(fd_usize);
+        errdefer _ = linux.close(fd);
+        const addr = sockaddr_in{
+            .family = linux.AF.INET,
+            .port = std.mem.nativeToBig(u16, port),
+            .addr = 0x0100007f,
+            .zero = .{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        const rc = linux.connect(fd, @ptrCast(&addr), @sizeOf(sockaddr_in));
+        if (rc != 0) return error.ConnectFailed;
+        return Stream{ .handle = fd };
     }
 }
 
 /// sendChunk sends a stream chunk to host with proper framing
-fn sendChunk(sock: std.net.Stream, stream_type: u32, data: []const u8) !void {
+fn sendChunk(sock: Stream, stream_type: u32, data: []const u8) !void {
     // Length-prefixed message: [4-byte stream_type][4-byte payload_len][payload]
     var stream_type_val: u32 = stream_type;
     var payload_len_val: u32 = @as(u32, @intCast(data.len));
@@ -169,7 +217,7 @@ fn sendChunk(sock: std.net.Stream, stream_type: u32, data: []const u8) !void {
 }
 
 /// sendExit sends the exit code to host
-fn sendExit(sock: std.net.Stream, code: u32) !void {
+fn sendExit(sock: Stream, code: u32) !void {
     // Exit message: [stream_type=3][payload_len=4][exit_code]
     var stream_type_val: u32 = STREAM_EXIT;
     var payload_len_val: u32 = 4;
@@ -180,8 +228,66 @@ fn sendExit(sock: std.net.Stream, code: u32) !void {
     try sock.writeAll(std.mem.asBytes(&exit_code_val));
 }
 
+fn executeStructuredCommand(sock: Stream, cmd: []const u8, args_raw: []const u8, env_raw: []const u8, workdir: []const u8) !void {
+    _ = args_raw;
+    _ = env_raw;
+    _ = workdir;
+
+    var arg_buf: [512]u8 = undefined;
+    @memcpy(arg_buf[0..cmd.len], cmd);
+    const args: [1][*:0]const u8 = .{@ptrCast(&arg_buf)};
+
+    var child = std.process.Child.init(&args, allocator);
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+
+    try child.spawn();
+    child_pid = child.id;
+
+    var stdout_buf: [CHUNK_SIZE]u8 = undefined;
+    var stderr_buf: [CHUNK_SIZE]u8 = undefined;
+    var stdout_done = false;
+    var stderr_done = false;
+
+    while (!stdout_done or !stderr_done) {
+        if (!stdout_done) {
+            if (child.stdout) |out| {
+                const n = out.read(&stdout_buf) catch blk: {
+                    stdout_done = true;
+                    break :blk 0;
+                };
+                if (n == 0) stdout_done = true else try sendChunk(sock, STREAM_STDOUT, stdout_buf[0..n]);
+            } else stdout_done = true;
+        }
+        if (!stderr_done) {
+            if (child.stderr) |err_pipe| {
+                const n = err_pipe.read(&stderr_buf) catch blk: {
+                    stderr_done = true;
+                    break :blk 0;
+                };
+                if (n == 0) stderr_done = true else try sendChunk(sock, STREAM_STDERR, stderr_buf[0..n]);
+            } else stderr_done = true;
+        }
+    }
+
+    const term = child.wait() catch {
+        child_pid = 0;
+        try sendExit(sock, 255);
+        return;
+    };
+    child_pid = 0;
+
+    const code: u32 = switch (term) {
+        .Exited => |c| @intCast(c),
+        .Signal => |s| 128 + @as(u32, @intCast(s)),
+        .Stopped => |s| 128 + @as(u32, @intCast(s)),
+        .Unknown => |c| @as(u32, @intCast(c)),
+    };
+    try sendExit(sock, code);
+}
+
 /// recvMessage receives a length-prefixed message from vsock
-fn recvMessage(sock: std.net.Stream, buf: []u8) ![]u8 {
+fn recvMessage(sock: Stream, buf: []u8) ![]u8 {
     // Read 4-byte length header
     var len_buf: [4]u8 = undefined;
     _ = try sock.readAtLeast(&len_buf, 4);
@@ -201,7 +307,7 @@ fn recvMessage(sock: std.net.Stream, buf: []u8) ![]u8 {
 // =============================================================================
 
 /// executeStreamingCommand executes a command and streams stdout/stderr back
-fn executeStreamingCommand(sock: std.net.Stream, cmdline: []const u8) !void {
+fn executeStreamingCommand(sock: Stream, cmdline: []const u8) !void {
     log("Executing: {s}", .{cmdline});
 
     // Parse command line into argv
@@ -322,7 +428,7 @@ fn executeStreamingCommand(sock: std.net.Stream, cmdline: []const u8) !void {
 // =============================================================================
 
 /// runMainLoop listens for commands from host and executes them
-fn runMainLoop(sock: std.net.Stream) !void {
+fn runMainLoop(sock: Stream) !void {
     log("Main loop started", .{});
 
     var recv_buf: [RECV_BUF_SIZE]u8 = undefined;
@@ -375,18 +481,23 @@ fn runMainLoop(sock: std.net.Stream) !void {
 
         switch (msg_type) {
             CMD_EXEC => {
-                // payload is the command line string
-                const cmdline = payload;
-                if (cmdline.len == 0 or cmdline[cmdline.len - 1] == 0) {
-                    // Remove trailing null if present
-                    executeStreamingCommand(sock, cmdline[0 .. cmdline.len - 1]) catch |e| {
-                        logError("Execute failed: {}", .{e});
-                    };
-                } else {
-                    executeStreamingCommand(sock, cmdline) catch |e| {
-                        logError("Execute failed: {}", .{e});
-                    };
+                if (payload.len < 20) {
+                    logError("CMD_EXEC payload too small: {d}", .{payload.len});
+                    continue;
                 }
+                _ = std.mem.readInt(u32, payload[0..4], .little);
+                const cmd_len = std.mem.readInt(u32, payload[4..8], .little);
+                const args_len = std.mem.readInt(u32, payload[8..12], .little);
+                const env_len = std.mem.readInt(u32, payload[12..16], .little);
+                const workdir_len = std.mem.readInt(u32, payload[16..20], .little);
+                const base: usize = 20;
+                const cmd = payload[base..][0..cmd_len];
+                const args_raw = payload[base + cmd_len ..][0..args_len];
+                const env_raw = payload[base + cmd_len + args_len ..][0..env_len];
+                const workdir = payload[base + cmd_len + args_len + env_len ..][0..workdir_len];
+                executeStructuredCommand(sock, cmd, args_raw, env_raw, workdir) catch |e| {
+                    logError("executeStructuredCommand failed: {}", .{e});
+                };
             },
             else => {
                 log("Unknown message type: {d}", .{msg_type});
@@ -401,14 +512,13 @@ fn runMainLoop(sock: std.net.Stream) !void {
 // PID 1 Responsibilities
 // =============================================================================
 
-/// setupPid1 sets up PID 1 specific requirements
 fn setupPid1() void {
-    std.fs.makeDirAbsolute("/proc") catch {};
-    std.fs.makeDirAbsolute("/sys") catch {};
-    std.fs.makeDirAbsolute("/dev") catch {};
-    std.fs.makeDirAbsolute("/tmp") catch {};
-    std.fs.makeDirAbsolute("/var") catch {};
-    std.fs.makeDirAbsolute("/var/log") catch {};
+    _ = linux.mkdir("/proc", 0o755);
+    _ = linux.mkdir("/sys", 0o755);
+    _ = linux.mkdir("/dev", 0o755);
+    _ = linux.mkdir("/tmp", 0o755);
+    _ = linux.mkdir("/var", 0o755);
+    _ = linux.mkdir("/var/log", 0o755);
 
     const MS_NOEXEC: u64 = 8;
     const MS_NOSUID: u64 = 2;
@@ -431,13 +541,7 @@ fn ensureDir(path: []const u8) !void {
 // =============================================================================
 
 pub fn main() !void {
-    allocator = gpa.allocator();
-
-    // Parse environment for vsock port (CID is not used in TCP fallback)
-    var vsock_port_val: u16 = DEFAULT_VSOCK_PORT;
-    if (std.posix.getenv("COCO_VSOCK_PORT")) |port_str| {
-        vsock_port_val = std.fmt.parseInt(u16, std.mem.sliceTo(port_str, 0), 10) catch DEFAULT_VSOCK_PORT;
-    }
+    const vsock_port_val: u16 = DEFAULT_VSOCK_PORT;
 
     log("Guest agent starting (PID 1)", .{});
     log("VSock port: {d} (VSock preferred, TCP fallback)", .{vsock_port_val});

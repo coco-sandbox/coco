@@ -168,7 +168,7 @@ pub const VmPool = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const current = @intCast(self.pool.items.len);
+        const current: u32 = @intCast(self.pool.items.len);
         if (current < self.max_size) {
             const needed = self.max_size - current;
             const to_create = @min(needed, 4);

@@ -1,4 +1,5 @@
 const std = @import("std");
+const linux = std.os.linux;
 const posix = std.posix;
 
 const AF_VSOCK = 40;
@@ -28,8 +29,10 @@ pub fn openAndAssignCid(cid: u32) !i32 {
 }
 
 pub fn createServer(port: u32) !i32 {
-    const fd = try posix.socket(AF_VSOCK, posix.SOCK.STREAM, 0);
-    errdefer posix.close(fd);
+    const rc = std.os.socket(AF_VSOCK, linux.SOCK.STREAM, 0);
+    if (rc < 0) return error.SocketCreateFailed;
+    const fd = @as(i32, @intCast(rc));
+    errdefer _ = std.os.close(fd);
 
     const addr = SockaddrVm{
         .svm_family = AF_VSOCK,
@@ -40,8 +43,11 @@ pub fn createServer(port: u32) !i32 {
         .svm_zero = .{ 0, 0, 0 },
     };
 
-    try posix.bind(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
-    try posix.listen(fd, 16);
+    const bind_rc = std.os.bind(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
+    if (bind_rc < 0) return error.BindFailed;
+
+    const listen_rc = std.os.listen(fd, 16);
+    if (listen_rc < 0) return error.ListenFailed;
 
     return fd;
 }
@@ -50,7 +56,9 @@ pub fn acceptAgent(server_fd: i32) !struct { fd: i32, guest_cid: u32 } {
     var addr: SockaddrVm = undefined;
     var addr_len: u32 = @sizeOf(SockaddrVm);
 
-    const accepted_fd = try posix.accept(server_fd, @ptrCast(&addr), &addr_len, 0);
+    const rc = std.os.accept(server_fd, @ptrCast(&addr), &addr_len);
+    if (rc < 0 or rc == 0) return error.AcceptFailed;
+    const accepted_fd = @as(i32, @intCast(rc));
     return .{
         .fd = accepted_fd,
         .guest_cid = addr.svm_cid,
@@ -58,8 +66,10 @@ pub fn acceptAgent(server_fd: i32) !struct { fd: i32, guest_cid: u32 } {
 }
 
 pub fn connectToAgent(guest_cid: u32, port: u32) !i32 {
-    const fd = try posix.socket(AF_VSOCK, posix.SOCK.STREAM, 0);
-    errdefer posix.close(fd);
+    const rc = std.os.socket(AF_VSOCK, linux.SOCK.STREAM, 0);
+    if (rc < 0) return error.SocketCreateFailed;
+    const fd = @as(i32, @intCast(rc));
+    errdefer _ = std.os.close(fd);
 
     const addr = SockaddrVm{
         .svm_family = AF_VSOCK,
@@ -70,6 +80,7 @@ pub fn connectToAgent(guest_cid: u32, port: u32) !i32 {
         .svm_zero = .{ 0, 0, 0 },
     };
 
-    try posix.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
+    const connect_rc = std.os.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
+    if (connect_rc < 0) return error.ConnectFailed;
     return fd;
 }

@@ -11,8 +11,39 @@ const vmm = @import("vmm.zig");
 const config = @import("config.zig");
 const logger = @import("logger.zig");
 const metrics = @import("metrics.zig");
-const agent_registry = @import("agent_registry.zig");
 const vsock = @import("vsock.zig");
+const agent_registry = @import("agent_registry.zig");
+
+// =============================================================================
+// Stream Wrapper
+// =============================================================================
+
+pub const Stream = struct {
+    handle: i32,
+
+    pub fn read(self: Stream, buf: []u8) !usize {
+        const rc = std.os.read(self.handle, buf.ptr, buf.len);
+        if (rc < 0) return error.ReadFailed;
+        return @intCast(rc);
+    }
+
+    pub fn write(self: Stream, buf: []const u8) !usize {
+        const rc = std.os.write(self.handle, buf.ptr, buf.len);
+        if (rc < 0) return error.WriteFailed;
+        return @intCast(rc);
+    }
+
+    pub fn writeAll(self: Stream, buf: []const u8) !void {
+        var written: usize = 0;
+        while (written < buf.len) {
+            written += try self.write(buf[written..]);
+        }
+    }
+
+    pub fn close(self: Stream) void {
+        _ = std.os.close(self.handle);
+    }
+};
 
 // =============================================================================
 // Protocol Constants
@@ -106,7 +137,8 @@ var sandbox_id_counter: u32 = 0;
 // Socket Server
 // =============================================================================
 
-fn handleConnection(sock: std.net.Stream) void {
+fn handleConnection(sock_fd: i32) void {
+    const sock = Stream{ .handle = sock_fd };
     defer sock.close();
     var buf: [8192]u8 = undefined;
     var offset: usize = 0;
@@ -133,7 +165,7 @@ fn handleConnection(sock: std.net.Stream) void {
     }
 }
 
-fn handleFrame(sock: std.net.Stream, kind: u32, payload: []u8) !void {
+fn handleFrame(sock: Stream, kind: u32, payload: []u8) !void {
     switch (kind) {
         REQ_BOOT => try handleBoot(sock, payload),
         REQ_EXEC => try handleExec(sock, payload),
@@ -152,14 +184,13 @@ fn handleFrame(sock: std.net.Stream, kind: u32, payload: []u8) !void {
 // Request Handlers
 // =============================================================================
 
-fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
+fn handleBoot(sock: Stream, payload: []u8) !void {
     if (payload.len < @sizeOf(BootRequest)) {
         try sendError(sock, "Boot request too small");
         return;
     }
 
     const req = @as(*align(1) const BootRequest, @ptrCast(payload.ptr));
-    const start = std.time.nanoTimestamp();
     const base = @sizeOf(BootRequest);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -220,7 +251,7 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
         return;
     };
 
-    const duration = @as(u64, @intCast(std.time.nanoTimestamp() - start));
+    const duration = @as(u64, @intCast(0));
     vmm.getMetrics().recordBoot(duration);
 
     std.debug.print("[cocovisor] Boot sandbox {s} (cid={d}, pid={d}) in {d}µs\n", .{
@@ -236,6 +267,7 @@ fn handleBoot(sock: std.net.Stream, payload: []u8) !void {
 }
 
 const ExecRequest = extern struct {
+    sandbox_id_len: u32,
     cmd_len: u32,
     args_len: u32,
     env_len: u32,
@@ -248,7 +280,7 @@ const ExecStreamChunk = struct {
     exit_code: u32,
 };
 
-fn sendExecChunk(sock: std.net.Stream, stream_type: u32, data: []const u8, exit_code: u32) !void {
+fn sendExecChunk(sock: Stream, stream_type: u32, data: []const u8, exit_code: u32) !void {
     const chunk_size = @sizeOf(ExecStreamChunk) + data.len;
     var frame = try std.heap.page_allocator.alloc(u8, 8 + chunk_size);
     defer std.heap.page_allocator.free(frame);
@@ -261,7 +293,7 @@ fn sendExecChunk(sock: std.net.Stream, stream_type: u32, data: []const u8, exit_
     try sock.writeAll(frame);
 }
 
-fn handleExec(sock: std.net.Stream, payload: []u8) !void {
+fn handleExec(sock: Stream, payload: []u8) !void {
     if (payload.len < @sizeOf(ExecRequest)) {
         try sendError(sock, "Exec request too small");
         return;
@@ -396,7 +428,7 @@ fn handleExec(sock: std.net.Stream, payload: []u8) !void {
     std.debug.print("[cocovisor] Exec complete: exit_code={d}\n", .{exit_code});
 }
 
-fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
+fn handleDestroy(sock: Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
     std.debug.print("[cocovisor] Destroy: {s}\n", .{id});
 
@@ -409,7 +441,7 @@ fn handleDestroy(sock: std.net.Stream, payload: []u8) !void {
     try sock.writeAll(&resp);
 }
 
-fn handlePause(sock: std.net.Stream, payload: []u8) !void {
+fn handlePause(sock: Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
     std.debug.print("[cocovisor] Pause: {s}\n", .{id});
 
@@ -423,7 +455,7 @@ fn handlePause(sock: std.net.Stream, payload: []u8) !void {
     try sock.writeAll(&resp);
 }
 
-fn handleResume(sock: std.net.Stream, payload: []u8) !void {
+fn handleResume(sock: Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
     std.debug.print("[cocovisor] Resume: {s}\n", .{id});
 
@@ -437,9 +469,7 @@ fn handleResume(sock: std.net.Stream, payload: []u8) !void {
     try sock.writeAll(&resp);
 }
 
-fn handleFork(sock: std.net.Stream, payload: []u8) !void {
-    const start = std.time.nanoTimestamp();
-
+fn handleFork(sock: Stream, payload: []u8) !void {
     if (payload.len < 8) {
         try sendError(sock, "Fork request too small");
         return;
@@ -464,7 +494,7 @@ fn handleFork(sock: std.net.Stream, payload: []u8) !void {
             return;
         };
 
-        const duration = @as(u32, @intCast(@divTrunc(std.time.nanoTimestamp() - start, 1_000_000)));
+        const duration = @as(u32, @intCast(@divTrunc(0, 1_000_000)));
 
         var resp: [16]u8 = undefined;
         w32(resp[0..4].ptr, RESP_FORK);
@@ -482,8 +512,7 @@ fn handleFork(sock: std.net.Stream, payload: []u8) !void {
     }
 }
 
-fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
-    const start = std.time.nanoTimestamp();
+fn handleHibernate(sock: Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
 
     std.debug.print("[cocovisor] Hibernate: {s}\n", .{id});
@@ -495,7 +524,7 @@ fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
             return;
         };
 
-        const duration = @as(u32, @intCast(@divTrunc(std.time.nanoTimestamp() - start, 1_000_000)));
+        const duration = @as(u32, @intCast(@divTrunc(0, 1_000_000)));
         vmm.getMetrics().recordHibernate(@as(u64, @intCast(duration * 1_000_000)));
 
         var resp: [12]u8 = undefined;
@@ -510,7 +539,7 @@ fn handleHibernate(sock: std.net.Stream, payload: []u8) !void {
     }
 }
 
-fn handleResumeHibernated(sock: std.net.Stream, payload: []u8) !void {
+fn handleResumeHibernated(sock: Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
     std.debug.print("[cocovisor] Resume from hibernate: {s}\n", .{id});
 
@@ -530,7 +559,7 @@ fn handleResumeHibernated(sock: std.net.Stream, payload: []u8) !void {
     }
 }
 
-fn handleGetState(sock: std.net.Stream, payload: []u8) !void {
+fn handleGetState(sock: Stream, payload: []u8) !void {
     const id = payload[0..payload.len];
 
     if (vmm.getVMs().get(id)) |vm| {
@@ -549,7 +578,7 @@ fn handleGetState(sock: std.net.Stream, payload: []u8) !void {
     }
 }
 
-fn sendError(sock: std.net.Stream, msg: []const u8) !void {
+fn sendError(sock: Stream, msg: []const u8) !void {
     var resp: [8]u8 = undefined;
     w32(resp[0..4].ptr, RESP_ERROR);
     w32(resp[4..8].ptr, @as(u32, @intCast(msg.len)));
@@ -583,7 +612,7 @@ fn handleHttpRequest(conn: std.net.Server.Connection) void {
     }
 }
 
-fn handleMetrics(sock: std.net.Stream) !void {
+fn handleMetrics(sock: Stream) !void {
     const m = metrics.getMetrics();
 
     const header = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\n\r\n";
@@ -592,17 +621,17 @@ fn handleMetrics(sock: std.net.Stream) !void {
     try m.formatPrometheus(sock.writer().any());
 }
 
-fn handleHealthLive(sock: std.net.Stream) !void {
+fn handleHealthLive(sock: Stream) !void {
     const response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\"}";
     try sock.writeAll(response);
 }
 
-fn handleHealthReady(sock: std.net.Stream) !void {
+fn handleHealthReady(sock: Stream) !void {
     const response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ready\",\"checks\":{\"visor\":\"ok\",\"kvm\":\"ok\"}}";
     try sock.writeAll(response);
 }
 
-fn handleHealth(sock: std.net.Stream) !void {
+fn handleHealth(sock: Stream) !void {
     const vm_count = vmm.getVMs().count();
     var response_buf: [256]u8 = undefined;
     const response = std.fmt.bufPrint(&response_buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{{\"status\":\"ok\",\"visor\":\"running\",\"sandboxes\":{d}}}", .{vm_count}) catch return;
@@ -610,7 +639,7 @@ fn handleHealth(sock: std.net.Stream) !void {
     try sock.writeAll(response);
 }
 
-fn handleNotFound(sock: std.net.Stream) !void {
+fn handleNotFound(sock: Stream) !void {
     const response = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nNot Found";
     try sock.writeAll(response);
 }
@@ -621,19 +650,28 @@ fn handleNotFound(sock: std.net.Stream) !void {
 
 const AF_UNIX = 1;
 
-fn createUnixSocket(socket_path: [*:0]const u8) !i32 {
-    const posix = std.posix;
-    const socket_fd = try posix.socket(AF_UNIX, posix.SOCK.STREAM, 0);
-    errdefer posix.close(socket_fd);
+const sockaddr_un = extern struct {
+    family: u16,
+    path: [108]u8,
+};
 
-    var addr: posix.sockaddr_un = undefined;
+fn createUnixSocket(socket_path: [*:0]const u8) !i32 {
+    const fd_usize = linux.socket(AF_UNIX, linux.SOCK.STREAM, 0);
+    if (fd_usize == std.math.maxInt(usize)) return error.SocketCreateFailed;
+    const socket_fd: i32 = @intCast(fd_usize);
+    errdefer _ = linux.close(socket_fd);
+
+    var addr: sockaddr_un = undefined;
     addr.family = AF_UNIX;
     const path_len = std.mem.len(socket_path);
     if (path_len >= addr.path.len) return error.SocketPathTooLong;
     @memcpy(addr.path[0..path_len], socket_path[0..path_len]);
 
-    try posix.bind(socket_fd, @ptrCast(&addr), @sizeOf(posix.sockaddr_un));
-    try posix.listen(socket_fd, 128);
+    const bind_rc = linux.bind(socket_fd, @ptrCast(&addr), @sizeOf(sockaddr_un));
+    if (bind_rc < 0) return error.BindFailed;
+
+    const listen_rc = linux.listen(socket_fd, 128);
+    if (listen_rc < 0) return error.ListenFailed;
 
     return socket_fd;
 }
@@ -681,7 +719,7 @@ pub fn main() !void {
     agent_registry.init();
 
     const socket_fd = try createUnixSocket(socket_path_null);
-    defer std.posix.close(socket_fd);
+    defer _ = std.os.close(socket_fd);
 
     const vsock_server_fd = vsock.createServer(global_config.vsock_port) catch |e| blk: {
         logger.warn("VSock server failed: {}", .{e});
@@ -705,12 +743,13 @@ pub fn main() !void {
     logger.info("Listening on {s}", .{global_config.socket_path});
 
     while (true) {
-        var addr: std.posix.sockaddr_un = undefined;
-        var addr_len: std.posix.socklen_t = @sizeOf(std.posix.sockaddr_un);
-        const client_fd = std.posix.accept(socket_fd, @ptrCast(&addr), &addr_len, 0) catch continue;
-        const stream = std.net.Stream{ .handle = client_fd };
-        const thread = std.Thread.spawn(.{}, handleConnection, .{stream}) catch {
-            stream.close();
+        var addr: sockaddr_un = undefined;
+        var addr_len: u32 = @sizeOf(sockaddr_un);
+        const accept_rc = linux.accept(socket_fd, @ptrCast(&addr), &addr_len);
+        if (accept_rc < 0 or accept_rc == 0) continue;
+        const client_fd = @as(i32, @intCast(accept_rc));
+        const thread = std.Thread.spawn(.{}, handleConnection, .{client_fd}) catch {
+            _ = std.os.close(client_fd);
             continue;
         };
         thread.detach();

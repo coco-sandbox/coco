@@ -15,7 +15,7 @@ metadata:
 
 # Zig Basics for Coco
 
-Zig is a general-purpose programming language designed for maintaining robust, optimal, and reusable software. This skill covers Zig 0.14+ fundamentals with emphasis on low-level systems programming for Coco's data plane components.
+Zig is a general-purpose programming language designed for maintaining robust, optimal, and reusable software. This skill covers Zig 0.16 fundamentals with emphasis on low-level systems programming for Coco's data plane components.
 
 ## Core Philosophy
 
