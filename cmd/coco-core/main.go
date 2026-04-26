@@ -22,6 +22,7 @@ import (
 	"github.com/coco-sandbox/coco/internal/types"
 	"github.com/coco-sandbox/coco/pkg/api/handlers"
 	"github.com/coco-sandbox/coco/pkg/cluster"
+	prommetrics "github.com/coco-sandbox/coco/pkg/metrics"
 	"github.com/coco-sandbox/coco/pkg/middleware"
 	"github.com/coco-sandbox/coco/pkg/store"
 	"github.com/coco-sandbox/coco/pkg/visor"
@@ -103,6 +104,16 @@ func (s *server) init() error {
 
 func (s *server) start() error {
 	log.Printf("coco-core starting on %s", s.config.ListenAddr)
+
+	// Start Prometheus metrics server on port 9090
+	go func() {
+		prommetrics.Register()
+		http.Handle("/metrics", prommetrics.Handler())
+		log.Printf("Metrics server listening on :9090")
+		if err := http.ListenAndServe(":9090", nil); err != nil {
+			log.Printf("Metrics server error: %v", err)
+		}
+	}()
 
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
