@@ -640,7 +640,7 @@ const file_proto_coco_v1_cluster_proto_rawDesc = "" +
 	"\n" +
 	"NODE_ADDED\x10\x00\x12\x10\n" +
 	"\fNODE_UPDATED\x10\x01\x12\x10\n" +
-	"\fNODE_REMOVED\x10\x02B\x1eZ\x1ccoco/proto/generated/coco/v1b\x06proto3"
+	"\fNODE_REMOVED\x10\x02B\x19Z\x17coco/proto/generated/v1b\x06proto3"
 
 var (
 	file_proto_coco_v1_cluster_proto_rawDescOnce sync.Once

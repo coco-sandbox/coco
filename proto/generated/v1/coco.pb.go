@@ -3979,7 +3979,7 @@ const file_proto_coco_v1_coco_proto_rawDesc = "" +
 	"\x0eGetClusterInfo\x12\x1e.coco.v1.GetClusterInfoRequest\x1a\x1f.coco.v1.GetClusterInfoResponse\x12B\n" +
 	"\tListNodes\x12\x19.coco.v1.ListNodesRequest\x1a\x1a.coco.v1.ListNodesResponse\x12<\n" +
 	"\aGetNode\x12\x17.coco.v1.GetNodeRequest\x1a\x18.coco.v1.GetNodeResponse\x12B\n" +
-	"\tDrainNode\x12\x19.coco.v1.DrainNodeRequest\x1a\x1a.coco.v1.DrainNodeResponseB\x1eZ\x1ccoco/proto/generated/coco/v1b\x06proto3"
+	"\tDrainNode\x12\x19.coco.v1.DrainNodeRequest\x1a\x1a.coco.v1.DrainNodeResponseB\x19Z\x17coco/proto/generated/v1b\x06proto3"
 
 var (
 	file_proto_coco_v1_coco_proto_rawDescOnce sync.Once

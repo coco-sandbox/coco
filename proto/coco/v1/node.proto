@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package coco.v1;
 
-option go_package = "coco/proto/generated/coco/v1";
+option go_package = "coco/proto/generated/v1";
 
 import "google/protobuf/timestamp.proto";
 import "proto/coco/v1/coco.proto"; // For ExecChunk, SandboxState

@@ -1155,7 +1155,7 @@ const file_proto_coco_v1_master_proto_rawDesc = "" +
 	"\x0eUntrackSandbox\x12\x1e.coco.v1.UntrackSandboxRequest\x1a\x1f.coco.v1.UntrackSandboxResponse\x12]\n" +
 	"\x12UpdateSandboxState\x12\".coco.v1.UpdateSandboxStateRequest\x1a#.coco.v1.UpdateSandboxStateResponse\x12W\n" +
 	"\x10InitiateFailover\x12 .coco.v1.InitiateFailoverRequest\x1a!.coco.v1.InitiateFailoverResponse\x12Z\n" +
-	"\x11GetFailoverStatus\x12!.coco.v1.GetFailoverStatusRequest\x1a\".coco.v1.GetFailoverStatusResponseB\x1eZ\x1ccoco/proto/generated/coco/v1b\x06proto3"
+	"\x11GetFailoverStatus\x12!.coco.v1.GetFailoverStatusRequest\x1a\".coco.v1.GetFailoverStatusResponseB\x19Z\x17coco/proto/generated/v1b\x06proto3"
 
 var (
 	file_proto_coco_v1_master_proto_rawDescOnce sync.Once

@@ -5,7 +5,7 @@
 package v1connect
 
 import (
-	v1 "coco/proto/generated/coco/v1"
+	v1 "coco/proto/generated/v1"
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"

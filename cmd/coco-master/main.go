@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"coco/pkg/api/v1/v1connect"
+	"coco/proto/generated/v1/v1connect"
 	"coco/pkg/checkpoint"
 	"coco/pkg/cluster"
 	"coco/pkg/config"

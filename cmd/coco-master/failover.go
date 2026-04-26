@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	v1 "coco/pkg/api/v1"
+	v1 "coco/proto/generated/v1"
 	"coco/pkg/scheduler"
 )
 

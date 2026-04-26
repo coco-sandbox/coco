@@ -1691,7 +1691,7 @@ const file_proto_coco_v1_node_proto_rawDesc = "" +
 	"\tHeartbeat\x12\x19.coco.v1.HeartbeatRequest\x1a\x1a.coco.v1.HeartbeatResponse\x12N\n" +
 	"\rReportMetrics\x12\x1d.coco.v1.ReportMetricsRequest\x1a\x1e.coco.v1.ReportMetricsResponse\x12C\n" +
 	"\rGetPoolStatus\x12\x1d.coco.v1.GetPoolStatusRequest\x1a\x13.coco.v1.PoolStatus\x12H\n" +
-	"\vPrewarmPool\x12\x1b.coco.v1.PrewarmPoolRequest\x1a\x1c.coco.v1.PrewarmPoolResponseB\x1eZ\x1ccoco/proto/generated/coco/v1b\x06proto3"
+	"\vPrewarmPool\x12\x1b.coco.v1.PrewarmPoolRequest\x1a\x1c.coco.v1.PrewarmPoolResponseB\x19Z\x17coco/proto/generated/v1b\x06proto3"
 
 var (
 	file_proto_coco_v1_node_proto_rawDescOnce sync.Once

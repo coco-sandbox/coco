@@ -15,8 +15,8 @@ import (
 	"time"
 
 	connect "connectrpc.com/connect"
-	v1 "coco/pkg/api/v1"
-	"coco/pkg/api/v1/v1connect"
+	v1 "coco/proto/generated/v1"
+	"coco/proto/generated/v1/v1connect"
 	"coco/pkg/checkpoint"
 	"coco/pkg/types"
 	"golang.org/x/net/http2"
