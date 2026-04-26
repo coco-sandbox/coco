@@ -18,12 +18,14 @@ make clean         # Remove bin/ and zig-out/
 go build -o bin/coco-gateway ./cmd/coco-gateway
 go build -o bin/coco-master ./cmd/coco-master
 go build -o bin/coco-node ./cmd/coco-node
+go build -o bin/cococtl ./cmd/cococtl
 ```
 
 **Individual Zig components:**
 ```bash
 cd daemon/coco-visor && zig build -Doptimize=ReleaseSafe
 cd daemon/coco-agent && zig build -Doptimize=ReleaseSafe
+cd daemon/coco-fork && zig build -Doptimize=ReleaseSafe
 ```
 
 **Individual test (Go):** `go test ./pkg/api/...` or `go test -run TestName ./pkg/...`
@@ -52,11 +54,14 @@ cd daemon/coco-visor && zig fmt --check  # Zig format check
 ## Directory Structure
 
 - `cmd/` - Go entry points (coco-gateway, coco-master, coco-node, cococtl)
-- `daemon/` - Zig services (coco-visor, coco-agent, coco-fork, coco-net)
+- `daemon/` - Zig services (coco-visor, coco-agent, coco-fork); Go (coco-net, coco-checkpoint)
 - `pkg/` - Shared Go packages
 - `proto/` - Protocol buffer definitions
 - `ebpf/` - C/eBPF network programs
 - `spec/` - Architecture specs (source of truth)
+- `test/` - Cross-component tests (unit, integration, e2e, benchmark)
+- `configs/` - Configuration templates
+- `deploy/` - Kubernetes and deployment manifests
 
 ## eBPF Compilation
 

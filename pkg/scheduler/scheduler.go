@@ -18,6 +18,15 @@ const (
 	StrategyRandom
 )
 
+// LoadReport contains a node's current load information.
+type LoadReport struct {
+	NodeID      string
+	Sandboxes   int
+	MemUsedMB   uint64
+	CPUs        int
+	Timestamp   time.Time
+}
+
 type NodeEntry struct {
 	ID        string
 	Addr      string
@@ -84,6 +93,19 @@ func (s *Scheduler) UpdateLoad(id string, sandboxes int, memUsedMB uint64) {
 		node.Sandboxes = sandboxes
 		node.MemMB = memUsedMB
 		node.UpdatedAt = time.Now()
+	}
+}
+
+// UpdateLoadFromReport updates node load from a LoadReport.
+func (s *Scheduler) UpdateLoadFromReport(report *LoadReport) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if node, ok := s.nodes[report.NodeID]; ok {
+		node.Sandboxes = report.Sandboxes
+		node.MemMB = report.MemUsedMB
+		node.CPUs = report.CPUs
+		node.UpdatedAt = report.Timestamp
 	}
 }
 
