@@ -6,6 +6,8 @@ package ebpf
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
@@ -175,4 +177,44 @@ func (l *Loader) LoadBTF() error {
 
 	l.btfSpec = spec
 	return nil
+}
+
+func (l *Loader) LoadProgramsFromDir(dir string) (int, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".o") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		spec, err := ebpf.LoadCollectionSpec(path)
+		if err != nil {
+			return count, fmt.Errorf("load %s: %w", path, err)
+		}
+
+		coll, err := ebpf.NewCollectionWithOptions(spec, ebpf.CollectionOptions{})
+		if err != nil {
+			return count, fmt.Errorf("install %s: %w", path, err)
+		}
+
+		l.mu.Lock()
+		for name, prog := range coll.Programs {
+			l.programs[name] = prog
+		}
+		for name, mp := range coll.Maps {
+			l.maps[name] = mp
+		}
+		l.mu.Unlock()
+
+		count++
+	}
+
+	return count, nil
 }

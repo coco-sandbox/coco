@@ -22,6 +22,7 @@ type Config struct {
 	Subnet         string
 	MetricsAddr    string
 	EBPFEnabled    bool
+	EBPFDir        string
 	RateLimitRPS   float64
 	RateLimitBurst int
 }
@@ -51,14 +52,22 @@ func main() {
 	var ebpfLoader *ebpf.Loader
 	if cfg.EBPFEnabled {
 		ebpfLoader = ebpf.NewLoader()
-		log.Println("eBPF support enabled")
+		if err := ebpfLoader.LoadBTF(); err != nil {
+			log.Printf("ebpf BTF load: %v", err)
+		}
+		n, err := ebpfLoader.LoadProgramsFromDir(cfg.EBPFDir)
+		if err != nil {
+			log.Printf("ebpf load programs from %s: %v", cfg.EBPFDir, err)
+		}
+		log.Printf("ebpf enabled (collections=%d, dir=%s, programs=%v)",
+			n, cfg.EBPFDir, ebpfLoader.ListPrograms())
 	}
-	_ = ebpfLoader
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ip/allocate", handleIPAllocate(ipam))
 	mux.HandleFunc("/ip/release", handleIPRelease(ipam))
 	mux.HandleFunc("/policy/add", handlePolicyAdd(policyEng))
+	mux.HandleFunc("/ebpf/programs", handleEBPFList(ebpfLoader))
 	mux.HandleFunc("/health", handleHealth)
 
 	sigChan := make(chan os.Signal, 1)
@@ -80,6 +89,7 @@ func parseFlags() *Config {
 	subnet := flag.String("subnet", "10.0.0.0/24", "Network subnet")
 	metricsAddr := flag.String("metrics", ":9091", "Metrics address")
 	ebpfEnabled := flag.Bool("ebpf", false, "Enable eBPF support")
+	ebpfDir := flag.String("ebpf-dir", "/var/lib/coco/ebpf", "Directory containing compiled eBPF .o programs")
 	rateLimitRPS := flag.Float64("rate-limit-rps", 1000, "Rate limit RPS")
 	rateLimitBurst := flag.Int("rate-limit-burst", 2000, "Rate limit burst")
 
@@ -90,6 +100,7 @@ func parseFlags() *Config {
 		Subnet:         *subnet,
 		MetricsAddr:    *metricsAddr,
 		EBPFEnabled:    *ebpfEnabled,
+		EBPFDir:        *ebpfDir,
 		RateLimitRPS:   *rateLimitRPS,
 		RateLimitBurst: *rateLimitBurst,
 	}
@@ -139,6 +150,17 @@ func handlePolicyAdd(policyEng *policy.Engine) http.HandlerFunc {
 		}
 
 		fmt.Fprintf(w, `{"status": "policy added"}`)
+	}
+}
+
+func handleEBPFList(loader *ebpf.Loader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if loader == nil {
+			fmt.Fprintf(w, `{"enabled": false, "programs": []}`)
+			return
+		}
+		progs := loader.ListPrograms()
+		fmt.Fprintf(w, `{"enabled": true, "programs": %q}`, progs)
 	}
 }
 
