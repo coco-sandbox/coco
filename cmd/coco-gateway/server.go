@@ -6,24 +6,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	connect "connectrpc.com/connect"
+	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
+	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
 	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 type GatewayServer struct {
-	masterAddr string
-	client     *http.Client
-	nodeAddrs  []string
+	masterAddr   string
+	client       *http.Client
+	nodeAddrs    []string
+	masterClient v1connect.MasterServiceClient
 }
 
 func NewGatewayServer(masterAddr string, nodeAddrs []string) *GatewayServer {
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+
+	baseURL := masterAddr
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "http://" + baseURL
+	}
+
 	return &GatewayServer{
-		masterAddr: masterAddr,
-		nodeAddrs:  nodeAddrs,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		masterAddr:   masterAddr,
+		nodeAddrs:    nodeAddrs,
+		client:       httpClient,
+		masterClient: v1connect.NewMasterServiceClient(httpClient, baseURL),
 	}
 }
 
@@ -136,25 +147,74 @@ func (g *GatewayServer) ResumeHibernate(ctx context.Context, id string) error {
 	return err
 }
 
-// Cluster operations
+// Cluster operations (gRPC/Connect to master, per spec/00 §2.2 + spec/12 §3)
 func (g *GatewayServer) GetClusterInfo(ctx context.Context) (*types.ClusterInfoResponse, error) {
-	return doGet[types.ClusterInfoResponse](ctx, g.client, g.masterURL("/internal/v1/cluster"))
-}
-
-func (g *GatewayServer) ListNodes(ctx context.Context) (*types.ListNodesResponse, error) {
-	return doGet[types.ListNodesResponse](ctx, g.client, g.masterURL("/internal/v1/nodes"))
-}
-
-func (g *GatewayServer) GetNode(ctx context.Context, id string) (*types.NodeInfo, error) {
-	resp, err := doGet[types.GetNodeResponse](ctx, g.client, g.masterURL("/internal/v1/nodes/"+id))
+	resp, err := g.masterClient.GetClusterInfo(ctx, connect.NewRequest(&v1.GetClusterInfoRequest{}))
 	if err != nil {
 		return nil, err
 	}
-	return &resp.Node, nil
+	ci := resp.Msg.GetCluster()
+	out := &types.ClusterInfoResponse{
+		ID:           ci.GetClusterId(),
+		NumNodes:     int(ci.GetNodeCount()),
+		NumSandboxes: int(ci.GetSandboxCount()),
+	}
+	if ci.GetUpdatedAt() != nil {
+		out.CreatedAt = ci.GetUpdatedAt().AsTime()
+	}
+	return out, nil
+}
+
+func (g *GatewayServer) ListNodes(ctx context.Context) (*types.ListNodesResponse, error) {
+	resp, err := g.masterClient.ListNodes(ctx, connect.NewRequest(&v1.ListNodesRequest{}))
+	if err != nil {
+		return nil, err
+	}
+	nodes := resp.Msg.GetNodes()
+	out := &types.ListNodesResponse{
+		Items: make([]*types.NodeInfo, 0, len(nodes)),
+		Total: len(nodes),
+	}
+	for _, n := range nodes {
+		out.Items = append(out.Items, protoNodeToInfo(n))
+	}
+	return out, nil
+}
+
+func (g *GatewayServer) GetNode(ctx context.Context, id string) (*types.NodeInfo, error) {
+	resp, err := g.masterClient.GetNode(ctx, connect.NewRequest(&v1.GetNodeRequest{Id: id}))
+	if err != nil {
+		return nil, err
+	}
+	return protoNodeToInfo(resp.Msg.GetNode()), nil
 }
 
 func (g *GatewayServer) DrainNode(ctx context.Context, id string) error {
-	return doDelete(ctx, g.client, g.masterURL("/internal/v1/nodes/"+id+"/drain"))
+	_, err := g.masterClient.DrainNode(ctx, connect.NewRequest(&v1.DrainNodeRequest{Id: id}))
+	return err
+}
+
+func protoNodeToInfo(n *v1.Node) *types.NodeInfo {
+	if n == nil {
+		return nil
+	}
+	state := types.NodeStateUnhealthy
+	if n.GetHealthy() {
+		state = types.NodeStateRunning
+	}
+	out := &types.NodeInfo{
+		ID:        n.GetId(),
+		Addr:      n.GetAddr(),
+		State:     state,
+		MemMB:     n.GetMemoryUsedMb(),
+		Sandboxes: int(n.GetActiveSandboxes()),
+		Available: n.GetHealthy(),
+	}
+	if n.GetLastSeen() != nil {
+		out.LastSeen = n.GetLastSeen().AsTime()
+		out.UpdatedAt = out.LastSeen
+	}
+	return out
 }
 
 // Template operations
