@@ -137,7 +137,7 @@ func handleSandbox() {
 }
 
 func createSandbox(name, template string) {
-	body := fmt.Sprintf(`{"name":"%s","template":"%s"}`, name, template)
+	body := fmt.Sprintf(`{"name":"%s","template_id":"%s"}`, name, template)
 	resp, err := http.Post(apiBase+"/v1/sandboxes", "application/json", strings.NewReader(body))
 	if err != nil {
 		fmt.Printf("%s✗ Error:%s %v\n", red, reset, err)
@@ -157,7 +157,7 @@ func createSandbox(name, template string) {
 	fmt.Printf("%s✓ Created sandbox%s %s\n", green, reset, sb["id"])
 	fmt.Printf("  Name:     %s\n", sb["name"])
 	fmt.Printf("  State:    %s\n", sb["state"])
-	fmt.Printf("  Template: %s\n", sb["template"])
+	fmt.Printf("  Template: %s\n", sb["template_id"])
 }
 
 func listSandboxes() {
@@ -205,7 +205,7 @@ func getSandbox(id string) {
 	fmt.Printf("ID:        %s\n", sb["id"])
 	fmt.Printf("Name:      %s\n", sb["name"])
 	fmt.Printf("State:     %s\n", sb["state"])
-	fmt.Printf("Template:  %s\n", sb["template"])
+	fmt.Printf("Template:  %s\n", sb["template_id"])
 	if cid, ok := sb["vsock_cid"]; ok {
 		fmt.Printf("Vsock CID: %v\n", cid)
 	}

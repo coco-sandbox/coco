@@ -23,7 +23,7 @@ func TestCreateSandboxHandler(t *testing.T) {
 
 	reqBody := `{
 		"name": "test-sandbox",
-		"template": "python-3.11",
+		"template_id": "python-3.11",
 		"memory_mb": 512,
 		"vcpus": 2
 	}`

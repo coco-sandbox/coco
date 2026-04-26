@@ -43,7 +43,7 @@ type Sandbox struct {
 	ID            string            `json:"id"`
 	Name          string            `json:"name"`
 	State         SandboxState      `json:"state"`
-	Template      string            `json:"template"`
+	Template      string            `json:"template_id"`
 	CreatedAt     time.Time         `json:"created_at"`
 	UpdatedAt     time.Time         `json:"updated_at"`
 	HostNode      string            `json:"host_node"`
@@ -61,7 +61,7 @@ type Sandbox struct {
 
 type CreateSandboxRequest struct {
 	Name     string            `json:"name"`
-	Template string            `json:"template"`
+	Template string            `json:"template_id"`
 	MemoryMB int               `json:"memory_mb"`
 	VCPUs    int               `json:"vcpus"`
 	Labels   map[string]string `json:"labels,omitempty"`

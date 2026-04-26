@@ -232,7 +232,7 @@ func (s *MasterServer) InitiateFailover(ctx context.Context, req *connect.Reques
 
 	return connect.NewResponse(&v1.InitiateFailoverResponse{
 		Success:            true,
-		SandboxesToMigrate:  toMigrate,
+		SandboxesToMigrate: toMigrate,
 		MigrationCount:     int32(len(toMigrate)),
 	}), nil
 }
@@ -246,9 +246,9 @@ func (s *MasterServer) GetFailoverStatus(ctx context.Context, req *connect.Reque
 	state, migrated, pending := s.fm.GetNodeFailoverStatus(nodeID)
 
 	return connect.NewResponse(&v1.GetFailoverStatusResponse{
-		NodeId:             nodeID,
-		State:              state,
-		SandboxesMigrated:  migrated,
-		SandboxesPending:   pending,
+		NodeId:            nodeID,
+		State:             state,
+		SandboxesMigrated: migrated,
+		SandboxesPending:  pending,
 	}), nil
 }

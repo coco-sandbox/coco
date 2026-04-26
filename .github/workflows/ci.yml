@@ -90,29 +90,23 @@ jobs:
 
   eBPF:
     runs-on: ubuntu-latest
+    container:
+      image: quay.io/sysprog21/docker-bpf-builder:latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up LLVM and eBPF headers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm llvm-config clang libbpf-dev linux-headers-$(uname -r)
 
       - name: Compile eBPF programs
         run: |
           cd ebpf
           for f in xdp/*.bpf.c from_sandbox/*.bpf.c from_host/*.bpf.c from_world/*.bpf.c shaper/*.bpf.c; do
             name=$(basename "$f" .bpf.c)
-            clang -O2 -target bpf -c "$f" -o "${name}.o" -Iheaders
+            clang -O2 -target bpf -D__TARGET_ARCH_x86 -Iheaders -c "$f" -o "${name}.o"
           done
 
       - name: Verify eBPF objects
         run: |
           cd ebpf
           file *.o
-          for f in *.o; do
-            llvm-objdump -d "$f" | grep -c "^[0-9a-f]" || true
-          done
 
       - name: Upload eBPF objects
         if: always()

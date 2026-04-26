@@ -85,7 +85,7 @@ type ExecSandboxRequest struct {
 
 type BootSandboxRequest struct {
 	SandboxID string `json:"sandbox_id"`
-	Template  string `json:"template"`
+	Template  string `json:"template_id"`
 	MemoryMB  int    `json:"memory_mb"`
 	VCPUs     int    `json:"vcpus"`
 }

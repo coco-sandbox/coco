@@ -6,6 +6,8 @@ const memory = @import("memory.zig");
 
 const GDT_CODE32 = 0x08;
 const GDT_DATA32 = 0x10;
+const GDT_CODE64 = 0x08;
+const GDT_DATA64 = 0x10;
 const GDT_ADDR = 0x500;
 const IDT_ADDR = 0x520;
 
@@ -79,6 +81,70 @@ pub const VCpu = struct {
         sregs.cr2 = 0;
         sregs.cr3 = 0;
         sregs.cr4 = 0;
+
+        try kvm.setSregs(self.fd, &sregs);
+
+        var regs = try kvm.getRegs(self.fd);
+        regs.rip = entry_point;
+        regs.rsi = boot_params_addr;
+        regs.rsp = 0x8000;
+        regs.rbp = 0;
+        regs.rflags = 0x2;
+
+        try kvm.setRegs(self.fd, &regs);
+    }
+
+    pub fn setup64(self: *VCpu, entry_point: u64, boot_params_addr: u64, pml4_addr: u64) !void {
+        var sregs = try kvm.getSregs(self.fd);
+
+        const seg_cs_64: kvm.KvmSegment = .{
+            .base = 0,
+            .limit = 0xFFFFFFFF,
+            .selector = GDT_CODE64,
+            .type = 0xA,
+            .present = 1,
+            .dpl = 0,
+            .db = 0,
+            .s = 1,
+            .l = 1,
+            .g = 1,
+            .avl = 0,
+            .unusable = 0,
+            .padding = 0,
+        };
+
+        const seg_ds_64: kvm.KvmSegment = .{
+            .base = 0,
+            .limit = 0xFFFFFFFF,
+            .selector = GDT_DATA64,
+            .type = 0x3,
+            .present = 1,
+            .dpl = 0,
+            .db = 0,
+            .s = 1,
+            .l = 0,
+            .g = 1,
+            .avl = 0,
+            .unusable = 0,
+            .padding = 0,
+        };
+
+        sregs.cs = seg_cs_64;
+        sregs.ds = seg_ds_64;
+        sregs.es = seg_ds_64;
+        sregs.fs = seg_ds_64;
+        sregs.gs = seg_ds_64;
+        sregs.ss = seg_ds_64;
+
+        sregs.gdt_base = GDT_ADDR;
+        sregs.gdt_limit = 23;
+        sregs.idt_base = IDT_ADDR;
+        sregs.idt_limit = 0;
+
+        sregs.cr0 = 0x80050001;
+        sregs.cr3 = pml4_addr;
+        sregs.cr4 = 0x6A0;
+        sregs.efer = 0xD00;
 
         try kvm.setSregs(self.fd, &sregs);
 
