@@ -5,7 +5,8 @@ package coco.v1;
 option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
 
 import "google/protobuf/timestamp.proto";
-import "coco/v1/coco.proto"; // For ClusterInfo, Node, Sandbox, SandboxState, etc.
+import "proto/coco/v1/coco.proto"; // For ClusterInfo, Node, Sandbox, SandboxState, etc.
+import "proto/coco/v1/cluster.proto"; // For ListNodesRequest, GetNodeRequest, etc.
 
 // =============================================================================
 // Master Service (Cluster coordination, leader election, scheduling)

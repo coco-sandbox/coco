@@ -5,7 +5,7 @@ package coco.v1;
 option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
 
 import "google/protobuf/timestamp.proto";
-import "coco/v1/coco.proto"; // For ExecChunk, SandboxState
+import "proto/coco/v1/coco.proto"; // For ExecChunk, SandboxState
 
 // =============================================================================
 // Node Service (Node → Master communication, gRPC)

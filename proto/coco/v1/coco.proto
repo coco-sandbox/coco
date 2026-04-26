@@ -5,6 +5,7 @@ package coco.v1;
 option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
 
 import "google/protobuf/timestamp.proto";
+import "proto/coco/v1/cluster.proto";
 
 // =============================================================================
 // Enums
@@ -349,45 +350,12 @@ message DeleteCheckpointResponse {}
 // Cluster Messages (spec 2.4)
 // =============================================================================
 
-message ClusterInfo {
-  string cluster_id = 1;
-  int32 node_count = 2;
-  int32 sandbox_count = 3;
-  string leader_node = 4;
-  google.protobuf.Timestamp updated_at = 5;
-}
-
-message Node {
-  string id = 1;
-  string addr = 2;
-  bool healthy = 3;
-  int32 active_sandboxes = 4;
-  int32 pool_size = 5;
-  int32 pool_free = 6;
-  uint64 memory_total_mb = 7;
-  uint64 memory_used_mb = 8;
-  int32 cpu_percent = 9;
-  google.protobuf.Timestamp last_seen = 10;
-}
+// Cluster types (ClusterInfo, Node, etc.) are defined in cluster.proto
 
 message GetClusterInfoRequest {}
 
 message GetClusterInfoResponse {
-  ClusterInfo cluster = 1;
-}
-
-message ListNodesRequest {}
-
-message ListNodesResponse {
-  repeated Node nodes = 1;
-}
-
-message GetNodeRequest {
-  string id = 1;
-}
-
-message GetNodeResponse {
-  Node node = 1;
+  coco.v1.ClusterInfo cluster = 1;
 }
 
 message DrainNodeRequest {
