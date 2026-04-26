@@ -1,0 +1,89 @@
+---
+- name: Install Coco Sandbox
+  hosts: all
+  become: true
+  vars:
+    coco_version: latest
+    coco_install_dir: /opt/coco
+    coco_data_dir: /var/lib/coco
+    coco_log_dir: /var/log/coco
+
+  tasks:
+    - name: Create coco user
+      user:
+        name: coco
+        system: yes
+        create_home: no
+        shell: /bin/false
+
+    - name: Create directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: coco
+        group: coco
+        mode: '0755'
+      loop:
+        - "{{ coco_install_dir }}"
+        - "{{ coco_data_dir }}"
+        - "{{ coco_log_dir }}"
+        - /run/coco
+
+    - name: Create config directory
+      file:
+        path: /etc/coco
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install Go
+      apt:
+        name: golang
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Zig
+      apt:
+        name: zig
+        state: present
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install KVM
+      apt:
+        name: qemu-kvm
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install libvirt
+      apt:
+        name: libvirt-daemon
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install btrfs-progs
+      apt:
+        name: btrfs-progs
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Copy service files
+      template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      loop:
+        - { src: "coco-master.service", dest: "/etc/systemd/system/coco-master.service" }
+        - { src: "coco-node.service", dest: "/etc/systemd/system/coco-node.service" }
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable services
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+      loop:
+        - coco-master
+        - coco-node

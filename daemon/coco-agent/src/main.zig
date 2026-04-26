@@ -389,121 +389,31 @@ fn recvMessage(sock: Stream, buf: []u8) ![]u8 {
 // Command Execution with Streaming
 // =============================================================================
 
-/// executeStreamingCommand executes a command and streams stdout/stderr back
+/// executeStreamingCommand parses a flat cmdline and delegates to executeStructuredCommand
 fn executeStreamingCommand(sock: Stream, cmdline: []const u8) !void {
     log("Executing: {s}", .{cmdline});
 
-    // Parse command line into argv
-    var args = std.ArrayList([]const u8).init(allocator);
-    defer args.deinit();
+    var first_space: usize = 0;
+    while (first_space < cmdline.len and cmdline[first_space] != ' ') : (first_space += 1) {}
+    const cmd = cmdline[0..first_space];
 
-    var it = std.mem.splitSequence(u8, cmdline, " ");
-    while (it.next()) |arg| {
-        if (arg.len > 0) {
-            try args.append(try allocator.dupe(u8, arg));
-        }
-    }
-
-    if (args.items.len == 0) {
-        try sendChunk(sock, STREAM_STDERR, "No command provided\n");
-        try sendExit(sock, 1);
-        return;
-    }
-
-    // Build argv slice
-    const argv = try args.toOwnedSlice();
-    defer allocator.free(argv);
-
-    // Create child process
-    var child = std.process.Child.init(argv, allocator);
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
-
-    // Spawn
-    try child.spawn();
-    child_pid = child.id;
-    log("Child process spawned with PID {d}", .{child_pid});
-
-    // Stream stdout/stderr in parallel with reading
-    var stdout_done = false;
-    var stderr_done = false;
-    var exit_code: u32 = 0;
-
-    var stdout_buf: [CHUNK_SIZE]u8 = undefined;
-    var stderr_buf: [CHUNK_SIZE]u8 = undefined;
-
-    while (!stdout_done or !stderr_done) {
-        if (!stdout_done) {
-            if (child.stdout) |stdout| {
-                const n = stdout.read(&stdout_buf) catch |e| {
-                    logError("stdout read error: {}", .{e});
-                    stdout_done = true;
-                    break;
-                };
-                if (n == 0) {
-                    stdout_done = true;
-                } else if (n > 0) {
-                    try sendChunk(sock, STREAM_STDOUT, stdout_buf[0..n]);
-                }
-            } else {
-                stdout_done = true;
+    var args_raw_buf: [4096]u8 = undefined;
+    var ap: usize = 0;
+    if (first_space < cmdline.len) {
+        var i = first_space + 1;
+        while (i < cmdline.len) {
+            var j = i;
+            while (j < cmdline.len and cmdline[j] != ' ') : (j += 1) {}
+            if (j > i and ap + (j - i) + 1 < args_raw_buf.len) {
+                @memcpy(args_raw_buf[ap..][0..(j - i)], cmdline[i..j]);
+                args_raw_buf[ap + (j - i)] = 0;
+                ap += (j - i) + 1;
             }
-        }
-
-        if (!stderr_done) {
-            if (child.stderr) |stderr| {
-                const n = stderr.read(&stderr_buf) catch |e| {
-                    logError("stderr read error: {}", .{e});
-                    stderr_done = true;
-                    break;
-                };
-                if (n == 0) {
-                    stderr_done = true;
-                } else if (n > 0) {
-                    try sendChunk(sock, STREAM_STDERR, stderr_buf[0..n]);
-                }
-            } else {
-                stderr_done = true;
-            }
-        }
-
-        // Small sleep to avoid busy looping when pipes are empty but process is still running
-        if (!stdout_done or !stderr_done) {
-            std.time.sleep(10 * std.time.ns_per_ms);
+            i = j + 1;
         }
     }
 
-    // Wait for process to finish and get exit code
-    const term = child.wait() catch |e| {
-        logError("Failed to wait for child: {}", .{e});
-        exit_code = 255;
-        child_pid = 0;
-        try sendExit(sock, exit_code);
-        return;
-    };
-
-    child_pid = 0;
-
-    switch (term) {
-        .Exited => |code| {
-            exit_code = @as(u32, @intCast(code));
-            log("Child exited with code {d}", .{code});
-        },
-        .Signal => |sig| {
-            exit_code = 128 + @as(u32, @intCast(sig));
-            log("Child killed by signal {d}", .{sig});
-        },
-        .Stopped => |sig| {
-            exit_code = 128 + @as(u32, @intCast(sig));
-            log("Child stopped by signal {d}", .{sig});
-        },
-        .Unknown => |code| {
-            exit_code = 128 + @as(u32, @intCast(code));
-            log("Child exited with unknown status {d}", .{code});
-        },
-    }
-
-    try sendExit(sock, exit_code);
+    try executeStructuredCommand(sock, cmd, args_raw_buf[0..ap], "", "");
 }
 
 // =============================================================================
@@ -652,7 +562,8 @@ pub fn main() !void {
             if (retries % 5 == 0) {
                 log("Waiting for host (attempt {d}/{d}): {}", .{ retries, max_retries, e });
             }
-            std.time.sleep(1 * std.time.ns_per_s);
+            var ts: linux.timespec = .{ .sec = 1, .nsec = 0 };
+            _ = linux.nanosleep(&ts, &ts);
         }
     }
 

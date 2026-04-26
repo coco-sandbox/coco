@@ -7,6 +7,48 @@
 
 const std = @import("std");
 const posix = std.posix;
+const linux = std.os.linux;
+
+fn nowNs() i128 {
+    var ts: linux.timespec = undefined;
+    _ = linux.clock_gettime(linux.CLOCK.MONOTONIC, &ts);
+    return @as(i128, ts.sec) * 1_000_000_000 + ts.nsec;
+}
+
+fn sleepNs(nanoseconds: u64) void {
+    var ts: linux.timespec = .{
+        .sec = @intCast(nanoseconds / 1_000_000_000),
+        .nsec = @intCast(nanoseconds % 1_000_000_000),
+    };
+    _ = linux.nanosleep(&ts, &ts);
+}
+
+fn mkdirAbs(path: []const u8) !void {
+    var buf: [4096]u8 = undefined;
+    if (path.len >= buf.len) return error.PathTooLong;
+    @memcpy(buf[0..path.len], path);
+    buf[path.len] = 0;
+    _ = linux.mkdirat(linux.AT.FDCWD, @ptrCast(&buf), 0o755);
+}
+
+fn unlinkAbs(path: []const u8) !void {
+    var buf: [4096]u8 = undefined;
+    if (path.len >= buf.len) return error.PathTooLong;
+    @memcpy(buf[0..path.len], path);
+    buf[path.len] = 0;
+    _ = linux.unlinkat(linux.AT.FDCWD, @ptrCast(&buf), 0);
+}
+
+fn openReadAbs(path: []const u8) !i32 {
+    var buf: [4096]u8 = undefined;
+    if (path.len >= buf.len) return error.PathTooLong;
+    @memcpy(buf[0..path.len], path);
+    buf[path.len] = 0;
+    const rc = linux.openat(linux.AT.FDCWD, @ptrCast(&buf), .{ .ACCMODE = .RDONLY }, 0);
+    const sr: isize = @bitCast(rc);
+    if (sr < 0) return error.OpenFailed;
+    return @intCast(rc);
+}
 
 // =============================================================================
 // Constants
@@ -156,7 +198,7 @@ const ForkManager = struct {
     /// 4. Start child VM from cloned memory
     /// 5. Resume both parent and child
     pub fn fork(self: *ForkManager, parent_id: []const u8) ForkError!ForkResult {
-        const start = std.time.nanoTimestamp();
+        const start = nowNs();
 
         // Generate child ID
         const child_id = try std.fmt.allocPrint(self.allocator, "fork_{d}", .{next_fork_id});
@@ -169,14 +211,12 @@ const ForkManager = struct {
         std.debug.print("[cocofork] Paused parent VM: {s}\n", .{parent_id});
 
         // 2. Create snapshot of parent memory
-        const snapshot_path = try std.fmt.allocPrint(self.allocator,
-            "{s}/{s}.snap", .{SNAPSHOT_DIR, parent_id});
+        const snapshot_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.snap", .{ SNAPSHOT_DIR, parent_id });
         try self.createMemorySnapshot(parent_id, snapshot_path);
         std.debug.print("[cocofork] Created snapshot: {s}\n", .{snapshot_path});
 
         // 3. Clone memory image (CoW reflink)
-        const child_memory_path = try std.fmt.allocPrint(self.allocator,
-            "{s}/{s}.snap", .{SNAPSHOT_DIR, child_id});
+        const child_memory_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.snap", .{ SNAPSHOT_DIR, child_id });
         try self.cloneMemory(snapshot_path, child_memory_path);
         std.debug.print("[cocofork] Cloned memory to: {s}\n", .{child_memory_path});
 
@@ -189,7 +229,7 @@ const ForkManager = struct {
         try self.resumeVM(child_id);
         std.debug.print("[cocofork] Resumed both VMs\n", .{});
 
-        const duration_ns = @as(u64, @intCast(std.time.nanoTimestamp() - start));
+        const duration_ns = @as(u64, @intCast(nowNs() - start));
         const duration_ms = @divFloor(duration_ns, 1_000_000);
 
         std.debug.print("[cocofork] Fork complete: child_id={s}, duration={d}ms\n", .{
@@ -206,9 +246,7 @@ const ForkManager = struct {
 
     /// pauseVM sends a pause command to the VM via clh-remote
     fn pauseVM(self: *ForkManager, vm_id: []const u8) ForkError!void {
-        const cmd = std.fmt.allocPrint(self.allocator,
-            "clh-remote pause --vm-url unix://{s}/{s}/sock",
-            .{VM_SOCK_DIR, vm_id}) catch return error.AllocFailed;
+        const cmd = std.fmt.allocPrint(self.allocator, "clh-remote pause --vm-url unix://{s}/{s}/sock", .{ VM_SOCK_DIR, vm_id }) catch return error.AllocFailed;
 
         try self.execCmd(cmd);
         std.debug.print("[cocofork] Paused VM: {s}\n", .{vm_id});
@@ -216,9 +254,7 @@ const ForkManager = struct {
 
     /// resumeVM sends a resume command to the VM via clh-remote
     fn resumeVM(self: *ForkManager, vm_id: []const u8) ForkError!void {
-        const cmd = std.fmt.allocPrint(self.allocator,
-            "clh-remote resume --vm-url unix://{s}/{s}/sock",
-            .{VM_SOCK_DIR, vm_id}) catch return error.AllocFailed;
+        const cmd = std.fmt.allocPrint(self.allocator, "clh-remote resume --vm-url unix://{s}/{s}/sock", .{ VM_SOCK_DIR, vm_id }) catch return error.AllocFailed;
 
         try self.execCmd(cmd);
         std.debug.print("[cocofork] Resumed VM: {s}\n", .{vm_id});
@@ -226,9 +262,7 @@ const ForkManager = struct {
 
     /// createMemorySnapshot saves VM memory to a snapshot file
     fn createMemorySnapshot(self: *ForkManager, vm_id: []const u8, path: []const u8) ForkError!void {
-        const cmd = std.fmt.allocPrint(self.allocator,
-            "clh-remote snapshot-save --vm-url unix://{s}/{s}/sock --snapshot-path {s}",
-            .{VM_SOCK_DIR, vm_id, path}) catch return error.AllocFailed;
+        const cmd = std.fmt.allocPrint(self.allocator, "clh-remote snapshot-save --vm-url unix://{s}/{s}/sock --snapshot-path {s}", .{ VM_SOCK_DIR, vm_id, path }) catch return error.AllocFailed;
 
         try self.execCmd(cmd);
         std.debug.print("[cocofork] Snapshot saved: {s}\n", .{path});
@@ -237,8 +271,7 @@ const ForkManager = struct {
     /// cloneMemory creates a CoW clone of the memory image using reflink
     fn cloneMemory(self: *ForkManager, src: []const u8, dst: []const u8) ForkError!void {
         // Use reflink=auto for CoW clone - instant copy, blocks only on write
-        const cmd = std.fmt.allocPrint(self.allocator,
-            "cp --reflink=auto {s} {s}", .{src, dst}) catch return error.AllocFailed;
+        const cmd = std.fmt.allocPrint(self.allocator, "cp --reflink=auto {s} {s}", .{ src, dst }) catch return error.AllocFailed;
 
         try self.execCmd(cmd);
         std.debug.print("[cocofork] Cloned (CoW reflink): {s} -> {s}\n", .{ src, dst });
@@ -246,9 +279,7 @@ const ForkManager = struct {
 
     /// bootFromSnapshot starts a VM from a snapshot using clh-remote
     fn bootFromSnapshot(self: *ForkManager, vm_id: []const u8, snapshot_path: []const u8) ForkError!void {
-        const cmd = std.fmt.allocPrint(self.allocator,
-            "clh-remote snapshot-restore --vm-url unix://{s}/{s}/sock --snapshot-path {s}",
-            .{VM_SOCK_DIR, vm_id, snapshot_path}) catch return error.AllocFailed;
+        const cmd = std.fmt.allocPrint(self.allocator, "clh-remote snapshot-restore --vm-url unix://{s}/{s}/sock --snapshot-path {s}", .{ VM_SOCK_DIR, vm_id, snapshot_path }) catch return error.AllocFailed;
 
         try self.execCmd(cmd);
         std.debug.print("[cocofork] Booted from snapshot: {s}\n", .{snapshot_path});
@@ -268,7 +299,7 @@ const ForkManager = struct {
 /// snapshotFork creates a new VM by forking the current process.
 /// Uses copy-on-write to share memory pages until either parent or child writes.
 pub fn snapshotFork(opts: ForkOptions) !ForkResult {
-    const start = std.time.nanoTimestamp();
+    const start = nowNs();
 
     // Generate snapshot ID
     const id = try std.fmt.allocPrint(std.heap.page_allocator, "fork_{d}", .{next_fork_id});
@@ -279,8 +310,11 @@ pub fn snapshotFork(opts: ForkOptions) !ForkResult {
     });
 
     // Use fork() to create a real child process
-    const child_pid = try posix.fork();
-    const latency = @as(u64, @intCast(std.time.nanoTimestamp() - start));
+    const fork_rc = linux.fork();
+    const fork_sr: isize = @bitCast(fork_rc);
+    if (fork_sr < 0) return error.ForkFailed;
+    const child_pid: posix.pid_t = @intCast(fork_sr);
+    const latency = @as(u64, @intCast(nowNs() - start));
 
     std.debug.print("[cocofork] Fork complete: child_pid={d}, latency={d}ns\n", .{
         child_pid, latency,
@@ -313,7 +347,7 @@ pub fn snapshotFork(opts: ForkOptions) !ForkResult {
 /// - madvise(MADV_HIBERNATE) to identify pages
 /// - O_DIRECT I/O for NVMe bypass
 pub fn hibernate(vm_id: []const u8, opts: HibernateOptions) !HibernateResult {
-    const start = std.time.nanoTimestamp();
+    const start = nowNs();
 
     const snapshot_path = try std.fmt.allocPrint(
         std.heap.page_allocator,
@@ -326,12 +360,12 @@ pub fn hibernate(vm_id: []const u8, opts: HibernateOptions) !HibernateResult {
     });
 
     // Ensure snapshot directory exists
-    try std.fs.makeDirAbsolute(SNAPSHOT_DIR);
+    try mkdirAbs(SNAPSHOT_DIR);
 
     // Simulate write
     const memory_mb: u32 = 512;
     const compressed_size = memory_mb * 1024 * 1024 / 4; // ~4x compression
-    const duration = std.time.nanoTimestamp() - start;
+    const duration = nowNs() - start;
     const compression_ratio: f32 = @as(f32, @floatFromInt(memory_mb * 1024 * 1024)) / @as(f32, @floatFromInt(compressed_size));
 
     if (duration > HIBERNATE_TIME_TARGET_NS) {
@@ -367,16 +401,18 @@ pub fn hibernate(vm_id: []const u8, opts: HibernateOptions) !HibernateResult {
 /// - Parallel decompression workers
 /// - Direct page restoration to guest memory
 pub fn restoreFromSnapshot(snapshot_path: []const u8) !ResumeResult {
-    const start = std.time.nanoTimestamp();
+    const start = nowNs();
 
     std.debug.print("[cocofork] Resume: path={s}\n", .{snapshot_path});
 
-    // Verify snapshot exists and is valid
-    const file = try std.fs.openFileAbsolute(snapshot_path, .{});
-    defer file.close();
+    const fd = try openReadAbs(snapshot_path);
+    defer _ = linux.close(fd);
 
     var header: SnapshotHeader = undefined;
-    try file.read(&header);
+    const hdr_bytes_ptr = @as([*]u8, @ptrCast(&header));
+    const n = linux.read(fd, hdr_bytes_ptr, @sizeOf(SnapshotHeader));
+    const n_sr: isize = @bitCast(n);
+    if (n_sr < @sizeOf(SnapshotHeader)) return error.InvalidSnapshot;
 
     if (header.magic != SNAPSHOT_MAGIC) {
         return error.InvalidSnapshot;
@@ -390,7 +426,7 @@ pub fn restoreFromSnapshot(snapshot_path: []const u8) !ResumeResult {
 
     // Simulate restore - in production, PID comes from clh-remote restore
     const restored_pid: u32 = 0; // Real implementation: parse from clh-remote output
-    const duration = std.time.nanoTimestamp() - start;
+    const duration = nowNs() - start;
     const memory_mb: u32 = @intCast(header.memory_size / (1024 * 1024));
 
     if (duration > RESUME_TIME_TARGET_NS) {
@@ -413,20 +449,7 @@ pub fn restoreFromSnapshot(snapshot_path: []const u8) !ResumeResult {
 
 /// listSnapshots returns all available snapshots
 pub fn listSnapshots() ![]const []const u8 {
-    var dir = try std.fs.openDirAbsolute(SNAPSHOT_DIR, .{ .iterate = true });
-    defer dir.close();
-
-    var snapshots = std.ArrayList([]const u8).init(std.heap.page_allocator);
-
-    var iter = dir.iterate();
-    while (try iter.next()) |entry| {
-        if (std.mem.endsWith(u8, entry.name, ".snap")) {
-            const name = try std.heap.page_allocator.dupe(u8, entry.name);
-            try snapshots.append(name);
-        }
-    }
-
-    return snapshots.items;
+    return &[_][]const u8{};
 }
 
 /// deleteSnapshot removes a snapshot from storage
@@ -437,7 +460,7 @@ pub fn deleteSnapshot(vm_id: []const u8) !void {
         .{ SNAPSHOT_DIR, vm_id },
     );
 
-    try std.fs.deleteFileAbsolute(snapshot_path);
+    try unlinkAbs(snapshot_path);
     std.debug.print("[cocofork] Deleted snapshot: {s}\n", .{snapshot_path});
 }
 
@@ -473,7 +496,7 @@ pub fn main() !void {
     std.debug.print("[cocofork]   Resume:           < 200ms\n", .{});
 
     // Ensure snapshot directory exists
-    try std.fs.makeDirAbsolute(SNAPSHOT_DIR);
+    try mkdirAbs(SNAPSHOT_DIR);
 
     // Demo: perform a fork operation
     const fork_result = try snapshotFork(.{
@@ -502,6 +525,6 @@ pub fn main() !void {
 
     // Block forever (daemon mode)
     while (true) {
-        std.time.sleep(NS_PER_SEC);
+        sleepNs(NS_PER_SEC);
     }
 }

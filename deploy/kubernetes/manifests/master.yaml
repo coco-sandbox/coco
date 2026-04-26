@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: coco-master
+  namespace: coco-system
+spec:
+  selector:
+    app: coco-master
+  ports:
+    - name: grpc
+      port: 4746
+      targetPort: 4746
+    - name: http
+      port: 4747
+      targetPort: 4747
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: coco-master
+  namespace: coco-system
+spec:
+  serviceName: coco-master
+  replicas: 3
+  selector:
+    matchLabels:
+      app: coco-master
+  template:
+    metadata:
+      labels:
+        app: coco-master
+    spec:
+      containers:
+        - name: master
+          image: coco-master:latest
+          ports:
+            - containerPort: 4746
+              name: grpc
+            - containerPort: 4747
+              name: http
+          env:
+            - name: COCO_ETCD_ENDPOINTS
+              value: "etcd:2379"
+            - name: COCO_CLUSTER_ENABLED
+              value: "true"
+            - name: COCO_LOG_LEVEL
+              value: "info"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4747
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4747
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: coco-data
+              mountPath: /var/lib/coco
+      volumes:
+        - name: coco-data
+          emptyDir: {}

@@ -1,0 +1,40 @@
+listen_addr: ":4747"
+grpc_addr: ":4748"
+shutdown_timeout: 30s
+
+data_dir: "/var/lib/coco"
+images_dir: "./testdata/images"
+store_dir: "./testdata/store"
+checkpoints: "./testdata/checkpoints"
+hibernation: "./testdata/hibernation"
+replays: "./testdata/replays"
+templates: "./testdata/templates"
+snapshot_dir: "./testdata/snapshots"
+runtime_dir: "/tmp/coco-runtime"
+
+visor_socket: "/tmp/coco-runtime/visor.sock"
+net_socket: "/tmp/coco-runtime/net.sock"
+
+cluster:
+  enabled: false
+  port: 4748
+  peers: []
+  election_timeout: 5s
+  heartbeat_interval: 1s
+
+ratelimit:
+  enabled: false
+  rps: 1000
+  burst: 2000
+
+auth:
+  enabled: false
+
+tls:
+  enabled: false
+  cert_file: ""
+  key_file: ""
+
+metrics:
+  enabled: true
+  port: 9090

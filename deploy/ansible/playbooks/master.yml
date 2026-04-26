@@ -1,0 +1,73 @@
+---
+- name: Configure Coco Master
+  hosts: coco_master
+  become: true
+  vars:
+    etcd_version: v3.5.9
+    etcd_data_dir: /var/lib/etcd
+
+  tasks:
+    - name: Create etcd user
+      user:
+        name: etcd
+        system: yes
+        create_home: no
+        shell: /bin/false
+
+    - name: Create etcd directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: etcd
+        group: etcd
+        mode: '0700'
+      loop:
+        - /etc/etcd
+        - /var/lib/etcd
+
+    - name: Install etcd
+      apt:
+        name: etcd
+        state: present
+      ignore_errors: yes
+
+    - name: Create etcd config
+      template:
+        src: etcd.conf.j2
+        dest: /etc/etcd/etcd.conf.yml
+        mode: '0644'
+
+    - name: Start etcd service
+      systemd:
+        name: etcd
+        state: started
+        enabled: yes
+
+    - name: Create master config directory
+      file:
+        path: /etc/coco
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install master config
+      template:
+        src: master-config.yaml.j2
+        dest: /etc/coco/master.yaml
+        mode: '0644'
+
+    - name: Start coco-master service
+      systemd:
+        name: coco-master
+        state: started
+        enabled: yes
+
+    - name: Wait for master to be ready
+      uri:
+        url: "http://localhost:4747/health"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 30
+      delay: 2

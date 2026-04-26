@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coco-operator
+  namespace: coco-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coco-operator
+  template:
+    metadata:
+      labels:
+        app: coco-operator
+    spec:
+      serviceAccountName: coco-operator
+      containers:
+        - name: operator
+          image: coco-operator:latest
+          env:
+            - name: COCO_MASTER_ADDR
+              value: "coco-master:4746"
+            - name: COCO_LOG_LEVEL
+              value: "info"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"

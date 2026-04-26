@@ -1,0 +1,56 @@
+replicaCount: 1
+
+image:
+  gateway: coco-gateway:latest
+  master: coco-master:latest
+  node: coco-node:latest
+  pullPolicy: IfNotPresent
+
+etcd:
+  enabled: true
+  fullnameOverride: etcd
+  image:
+    repository: quay.io/coreos/etcd
+    tag: v3.5.9
+
+gateway:
+  service:
+    type: ClusterIP
+    ports:
+      http: 8080
+      grpc: 4747
+  resources:
+    limits:
+      memory: 256Mi
+      cpu: 500m
+    requests:
+      memory: 128Mi
+      cpu: 100m
+
+master:
+  replicaCount: 1
+  resources:
+    limits:
+      memory: 512Mi
+      cpu: 1000m
+    requests:
+      memory: 256Mi
+      cpu: 250m
+  etcdEndpoints: []
+
+node:
+  poolSize: 10
+  resources:
+    limits:
+      memory: 2Gi
+      cpu: "4"
+    requests:
+      memory: 512Mi
+      cpu: 500m
+
+metrics:
+  enabled: true
+  port: 9090
+
+logging:
+  level: info

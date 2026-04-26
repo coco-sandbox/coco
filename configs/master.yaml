@@ -1,0 +1,39 @@
+listen_addr: ":4747"
+grpc_addr: ":4746"
+shutdown_timeout: 30s
+
+data_dir: "/var/lib/coco"
+store_dir: "/var/lib/coco/store"
+runtime_dir: "/run/coco"
+
+cluster:
+  enabled: true
+  port: 4746
+  etcd_endpoints:
+    - "localhost:2379"
+  election_timeout: 5s
+  heartbeat_interval: 1s
+
+scheduler:
+  strategy: "least-loaded"
+  filters:
+    - "capacity"
+    - "affinity"
+    - "label"
+
+ratelimit:
+  enabled: true
+  rps: 1000
+  burst: 2000
+
+auth:
+  enabled: true
+
+tls:
+  enabled: true
+  cert_file: "/etc/coco/tls/master.crt"
+  key_file: "/etc/coco/tls/master.key"
+
+metrics:
+  enabled: true
+  port: 9090

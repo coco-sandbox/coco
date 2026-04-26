@@ -1,0 +1,59 @@
+---
+- name: Configure Coco Node
+  hosts: coco_nodes
+  become: true
+  vars:
+    coco_node_id: "{{ inventory_hostname }}"
+    coco_pool_size: 10
+    coco_master_addr: "{{ groups['coco_master'][0] }}:4746"
+
+  tasks:
+    - name: Create node runtime directory
+      file:
+        path: /run/coco
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create node data directory
+      file:
+        path: /var/lib/coco
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create log directory
+      file:
+        path: /var/log/coco
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Setup KVM device permissions
+      file:
+        path: /dev/kvm
+        mode: '0666'
+
+    - name: Install node config
+      template:
+        src: node-config.yaml.j2
+        dest: /etc/coco/node.yaml
+        mode: '0644'
+
+    - name: Start coco-node service
+      systemd:
+        name: coco-node
+        state: started
+        enabled: yes
+
+    - name: Wait for node to be ready
+      uri:
+        url: "http://localhost:4747/health"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 30
+      delay: 2

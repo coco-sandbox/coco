@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: coco-node
+  namespace: coco-system
+spec:
+  selector:
+    app: coco-node
+  ports:
+    - name: grpc
+      port: 4748
+      targetPort: 4748
+    - name: http
+      port: 4747
+      targetPort: 4747
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: coco-node
+  namespace: coco-system
+spec:
+  selector:
+    matchLabels:
+      app: coco-node
+  template:
+    metadata:
+      labels:
+        app: coco-node
+    spec:
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: node
+          image: coco-node:latest
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 4748
+              hostPort: 4748
+              name: grpc
+            - containerPort: 4747
+              hostPort: 4747
+              name: http
+          env:
+            - name: COCO_MASTER_ADDR
+              value: "coco-master:4746"
+            - name: COCO_ETCD_ENDPOINTS
+              value: "etcd:2379"
+            - name: COCO_CLUSTER_ENABLED
+              value: "true"
+            - name: COCO_POOL_SIZE
+              value: "10"
+            - name: COCO_LOG_LEVEL
+              value: "info"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "4000m"
+          volumeMounts:
+            - name: coco-data
+              mountPath: /var/lib/coco
+            - name: coco-run
+              mountPath: /run/coco
+            - name: dev-kvm
+              mountPath: /dev/kvm
+            - name: dev-net
+              mountPath: /dev/net
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4747
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4747
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: coco-data
+          emptyDir: {}
+        - name: coco-run
+          emptyDir: {}
+        - name: dev-kvm
+          hostPath:
+            path: /dev/kvm
+        - name: dev-net
+          hostPath:
+            path: /dev/net
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists

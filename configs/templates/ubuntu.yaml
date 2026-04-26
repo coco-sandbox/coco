@@ -1,0 +1,28 @@
+name: "ubuntu"
+description: "Ubuntu 22.04 base template"
+kernel: "/var/lib/coco/images/vmlinuz"
+initrd: "/var/lib/coco/images/ubuntu/initrd.img"
+rootfs: "/var/lib/coco/images/ubuntu/rootfs.ext4"
+
+default:
+  memory_mb: 512
+  vcpus: 1
+  disk_size_mb: 2048
+
+resources:
+  memory:
+    min: 256
+    max: 16384
+  cpu:
+    min: 1
+    max: 8
+
+network:
+  vsock_cid: 0
+  enable_tcp: true
+
+packages:
+  - "curl"
+  - "wget"
+  - "git"
+  - "vim"

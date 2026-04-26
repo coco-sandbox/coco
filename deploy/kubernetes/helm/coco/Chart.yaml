@@ -1,0 +1,14 @@
+apiVersion: v2
+name: coco
+description: Coco Sandbox - High-performance sandbox runtime
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - sandbox
+  - isolation
+  - security
+  - virtualization
+maintainers:
+  - name: Coco Authors
+    email: coco@example.com

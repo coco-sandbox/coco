@@ -1,0 +1,37 @@
+{{- $root := . -}}
+{{- range $name, $values := .Values.components }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app: {{ $name }}
+    {{- include "coco.labels" $root | nindent 4 }}
+spec:
+  replicas: {{ $values.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: {{ $values.image }}
+          ports:
+            {{- range $port := $values.ports }}
+            - containerPort: {{ $port.port }}
+              name: {{ $port.name }}
+            {{- end }}
+          env:
+            {{- range $env := $values.env }}
+            - name: {{ $env.name }}
+              value: {{ $env.value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml $values.resources | nindent 12 }}
+---
+{{- end }}

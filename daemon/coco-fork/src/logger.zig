@@ -121,7 +121,15 @@ pub fn getLogger() *Logger {
     return &global_logger;
 }
 
-pub fn debug(msg: []const u8) void { global_logger.log(.debug, msg, null, null); }
-pub fn info(msg: []const u8) void { global_logger.log(.info, msg, null, null); }
-pub fn warn(msg: []const u8) void { global_logger.log(.warn, msg, null, null); }
-pub fn err(msg: []const u8) void { global_logger.log(.err, msg, null, null); }
+pub fn debug(msg: []const u8) void {
+    global_logger.log(.debug, msg, null, null);
+}
+pub fn info(msg: []const u8) void {
+    global_logger.log(.info, msg, null, null);
+}
+pub fn warn(msg: []const u8) void {
+    global_logger.log(.warn, msg, null, null);
+}
+pub fn err(msg: []const u8) void {
+    global_logger.log(.err, msg, null, null);
+}

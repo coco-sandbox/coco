@@ -3,65 +3,54 @@
 ## Build Commands
 
 ```bash
-# Build all
-make all
-
-# Build Go binaries only (gateway, master, node, cococtl)
-make build-go
-
-# Build Zig binaries only (visor, agent, fork, net)
-make build-zig
-
-# Generate protobuf code
-make proto
-
-# Run all tests
-make test
-
-# Run Go tests only
-make test-go
-
-# Run Zig tests only
-make test-zig
-
-# Clean build artifacts
-make clean
+make all           # Build everything (Go + Zig)
+make build-go      # Go: gateway, master, node, cococtl
+make build-zig     # Zig: visor, agent, fork (net excluded)
+make proto         # Generate Go from proto/coco/v1/*.proto
+make test          # Run all tests
+make clean         # Remove bin/ and zig-out/
 ```
 
-## Key Commands
+**After modifying proto files, run `make proto` before building.**
 
-- `go build -trimpath -o bin/coco-gateway ./cmd/coco-gateway` - Build gateway
-- `cd daemon/coco-visor && zig build -Doptimize=ReleaseSafe` - Build Zig components
-- `protoc --go_out=. --go-grpc_out=. proto/coco/v1/*.proto` - Generate proto
+## Linting
+
+```bash
+go fmt ./... && go vet ./...           # Go lint
+cd daemon/coco-visor && zig fmt --check  # Zig format check
+```
 
 ## Architecture
 
-Control plane (Go): Gateway (REST) → Master (gRPC) → Node (gRPC)
-Data plane (Zig): Visor (Unix socket) → Agent (VSock)
-Network: Go + C/eBPF (XDP filters)
-
-Binaries output to `bin/` for Go, `daemon/*/zig-out/bin/` for Zig.
+- Control plane (Go): Gateway (REST) → Master (gRPC) → Node (gRPC)
+- Data plane (Zig): Visor (Unix socket) → Agent (VSock)
+- Network: Go + C/eBPF (XDP filters)
+- Go binaries: `bin/`, Zig binaries: `daemon/*/zig-out/bin/`
 
 ## Requirements
 
-- Go 1.23
-- Zig 0.14
-- protoc compiler
-- KVM-enabled host (for running tests/integration)
-- btrfs (for reflink/fork operations)
+- Go 1.23, Zig 0.14, protoc
+- KVM-enabled host (tests/integration)
+- btrfs (reflink/fork operations)
 
 ## Directory Structure
 
-- `cmd/` - Go entry points (gateway, master, node, cococtl)
+- `cmd/` - Go entry points (coco-gateway, coco-master, coco-node, cococtl)
 - `daemon/` - Zig services (coco-visor, coco-agent, coco-fork, coco-net)
 - `pkg/` - Shared Go packages
 - `proto/` - Protocol buffer definitions
 - `ebpf/` - C/eBPF network programs
 - `spec/` - Architecture specs (source of truth)
 
+## eBPF Compilation
+
+```bash
+cd ebpf && clang -O2 -target bpf -c <file>.bpf.c -o <file>.o
+```
+
 ## Testing
 
-Integration tests require docker-compose. Health endpoint at `http://localhost:4747/health`.
+Integration tests require docker-compose. Health endpoint: `http://localhost:4747/health`
 
 ## Style Rules
 

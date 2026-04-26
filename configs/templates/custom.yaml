@@ -1,0 +1,28 @@
+name: "custom"
+description: "Custom user-defined template"
+kernel: ""
+initrd: ""
+rootfs: ""
+
+default:
+  memory_mb: 512
+  vcpus: 1
+  disk_size_mb: 2048
+
+resources:
+  memory:
+    min: 128
+    max: 32768
+  cpu:
+    min: 1
+    max: 16
+
+network:
+  vsock_cid: 0
+  enable_tcp: true
+
+packages: []
+
+entrypoint: []
+cmd: []
+env: {}

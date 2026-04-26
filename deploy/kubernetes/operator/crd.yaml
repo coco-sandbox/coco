@@ -1,0 +1,42 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: sandboxes.coco.io
+spec:
+  group: coco.io
+  names:
+    kind: Sandbox
+    listKind: SandboxList
+    plural: sandboxes
+    singular: sandbox
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                template:
+                  type: string
+                memory:
+                  type: integer
+                vcpus:
+                  type: integer
+                labels:
+                  type: object
+                  additionalProperties:
+                    type: string
+            status:
+              type: object
+              properties:
+                state:
+                  type: string
+                sandboxId:
+                  type: string
+                node:
+                  type: string
