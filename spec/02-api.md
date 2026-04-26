@@ -1,46 +1,44 @@
-# Coco Sandbox - API Specification
+# Coco Sandbox – API specification
 
-**Spec ID:** 04
-**Status:** Authoritative
+**Scope:** Public HTTP API shape, resources, and error model for Gateway clients.  
+**Status:** Authoritative.  
+**Index:** [Specification index](index.md)
 
-## 1. API Overview
+---
+
+## 1. API overview
 
 ### 1.1 Protocol
 
 | Type | Usage | Description |
 |------|-------|-------------|
-| REST | Public-facing | HTTP/1.1 with JSON (for agents/SDKs) |
-| gRPC | Internal | For node-to-master, node-to-visor communication |
+| REST | Public-facing | HTTP/1.1 with JSON (agents/SDKs) |
+| gRPC | Internal | node–master, node–visor and related internal RPC |
 | Streaming | Both | Server-side streaming via HTTP chunked or gRPC |
 
 ### 1.2 Base URL
 
-```
-Production: https://<your-coco-host>/v1
-Development: http://localhost:8080/v1
-```
+The public API is rooted at a path such as **/v1** under a host. Scheme, host, and port are **deployment-defined** (not fixed by this spec). A reference development layout is *https or http, plus host, plus `/v1`*; operators choose bind addresses per `10-self-hosting-and-operations.md`.
 
-The production URL is user-configurable based on deployment.
-
-### 1.3 Communication Pattern
+### 1.3 Communication pattern
 
 | Communication | Protocol | Purpose |
 |--------------|----------|---------|
 | Client → Gateway | REST | Public API (agents/SDKs) |
 | Gateway → Master | gRPC | Internal scheduling |
 | Master → Node | gRPC | Task distribution |
-| Node → Visor | Unix Socket | VM operations |
-| Visor ↔ Agent | VSock | Guest communication |
+| Node → Visor | Unix domain socket | VM operations |
+| Visor ↔ Agent | VSock (TCP fallback in dev) | Guest communication |
 
-## 2. Core Services
+## 2. Core services (RPC names)
 
-### 2.1 Sandbox Service
+### 2.1 Sandbox service
 
-| Method | Description | Streaming |
-|--------|-------------|-----------|
+| Method | Description | Streaming response |
+|--------|-------------|-------------------|
 | CreateSandbox | Create new sandbox | No |
 | GetSandbox | Get sandbox by ID | No |
-| ListSandboxes | List all sandboxes | No |
+| ListSandboxes | List sandboxes (filters as implemented) | No |
 | DeleteSandbox | Delete sandbox | No |
 | PauseSandbox | Pause running sandbox | No |
 | ResumeSandbox | Resume paused sandbox | No |
@@ -49,254 +47,175 @@ The production URL is user-configurable based on deployment.
 | ForkSandbox | Fork existing sandbox | No |
 | CreateCheckpoint | Create checkpoint | No |
 
-### 2.2 Execution Service
+### 2.2 Execution service
 
-| Method | Description | Streaming |
-|--------|-------------|-----------|
-| Exec | Execute command (sync) | No |
-| StreamingExec | Execute with output stream | Yes |
-| InteractiveExec | Interactive shell | Yes (bidirectional) |
+| Method | Description | Streaming response |
+|--------|-------------|-------------------|
+| Exec | Run command; complete result when the process exits | No |
+| StreamingExec | Run command; stream output as produced | Yes |
+| InteractiveExec | Interactive shell or session | Yes, bidirectional |
 
-### 2.3 Template Service
+### 2.3 Template service
 
 | Method | Description |
 |--------|-------------|
 | CreateTemplate | Create template |
 | GetTemplate | Get template by ID |
-| ListTemplates | List all templates |
+| ListTemplates | List templates |
 | DeleteTemplate | Delete template |
 | BuildTemplate | Build from image |
 
-### 2.4 Cluster Service
+### 2.4 Cluster service
 
 | Method | Description |
 |--------|-------------|
-| GetClusterInfo | Get cluster info |
-| ListNodes | List cluster nodes |
+| GetClusterInfo | Cluster info |
+| ListNodes | List nodes |
 | GetNode | Get node by ID |
-| DrainNode | Drain node for maintenance |
+| DrainNode | Drain node (maintenance) |
 
-## 3. Resources
+## 3. Resources and fields
 
-### 3.1 Sandbox
+### 3.1 Sandbox resource
 
 | Field | Type | Description |
 |-------|------|-------------|
 | id | string | Unique identifier |
 | name | string | Display name |
-| state | enum | Current state |
-| template_id | string | Template used |
-| memory_mb | int32 | Memory in MB |
+| state | enum | See Sandbox state |
+| template_id | string | Template used for creation |
+| memory_mb | int32 | Memory (MiB) |
 | vcpus | int32 | Virtual CPUs |
 | vsock_cid | uint32 | VSock context ID |
-| pid | int64 | Host PID |
-| parent_id | string | Parent sandbox (if forked) |
-| fork_depth | int32 | Fork depth |
-| labels | map | User labels |
-| created_at | timestamp | Creation time |
+| pid | int64 | Host-side process identifier (when applicable) |
+| parent_id | string | Parent sandbox if forked (empty if none) |
+| fork_depth | int32 | Fork depth from root |
+| labels | string map | Arbitrary labels |
+| created_at | timestamp | Creation time (RFC 3339) |
 
-### 3.2 Sandbox State
+### 3.2 Sandbox state
 
 | State | Description |
 |-------|-------------|
-| CREATING | Sandbox is being created |
-| RUNNING | Sandbox is running |
-| PAUSED | Sandbox is paused |
-| STOPPING | Sandbox is stopping |
-| STOPPED | Sandbox has stopped |
-| HIBERNATED | Sandbox is hibernated |
-| ERROR | Sandbox has error |
+| CREATING | Provisioning |
+| RUNNING | Running |
+| PAUSED | Paused |
+| STOPPING | Tearing down |
+| STOPPED | Stopped |
+| HIBERNATED | Persisted to disk (hibernate) |
+| ERROR | Error state |
 
-### 3.3 Template
+### 3.3 Template resource
 
 | Field | Type | Description |
 |-------|------|-------------|
 | id | string | Unique identifier |
 | name | string | Display name |
 | description | string | Description |
-| rootfs | string | Root filesystem path |
+| rootfs | string | Root filesystem path or reference |
 | kernel | string | Kernel path |
-| initrd | string | Initrd path |
-| default_memory_mb | int32 | Default memory |
+| initrd | string | initrd path |
+| default_memory_mb | int32 | Default memory (MiB) |
 | default_vcpus | int32 | Default vCPUs |
-| size_bytes | int64 | Template size |
-| state | enum | Build state |
+| size_bytes | int64 | On-disk or logical size |
+| state | enum | Build state of template |
 
-### 3.4 Checkpoint
+### 3.4 Checkpoint resource
 
 | Field | Type | Description |
 |-------|------|-------------|
 | id | string | Unique identifier |
-| sandbox_id | string | Parent sandbox |
-| name | string | Checkpoint name |
-| path | string | Storage path |
-| size_bytes | int64 | Checkpoint size |
-| is_compressed | bool | Compression enabled |
+| sandbox_id | string | Source sandbox |
+| name | string | Human-readable name |
+| path | string | Storage path (opaque to client in many deployments) |
+| size_bytes | int64 | Size of checkpoint data |
+| is_compressed | bool | Whether payload is compressed |
 | created_at | timestamp | Creation time |
 
-## 4. Request/Response Examples
+## 4. Request and response bodies (normative fields, not example payloads)
 
-### 4.1 Create Sandbox
+Use these tables when implementing or validating clients. Bodies are JSON unless otherwise specified.
 
-**Request:**
-```json
-POST /v1/sandboxes
-{
-  "name": "my-sandbox",
-  "template_id": "ubuntu-base",
-  "memory_mb": 512,
-  "vcpus": 1,
-  "labels": {"env": "dev"}
-}
-```
+### 4.1 Create sandbox
 
-**Response:**
-```json
-{
-  "id": "sb_abc123",
-  "name": "my-sandbox",
-  "state": "RUNNING",
-  "template_id": "ubuntu-base",
-  "memory_mb": 512,
-  "vcpus": 1,
-  "vsock_cid": 3,
-  "created_at": "2024-01-01T00:00:00Z"
-}
-```
+- **Method / path (HTTP):** POST, collection path for sandboxes (see §7.1).
+- **Request body fields**
 
-### 4.2 Fork Sandbox
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| name | string | as policy | Display name |
+| template_id | string | yes | Template to instantiate |
+| memory_mb | int32 | no | Override template default |
+| vcpus | int32 | no | Override template default |
+| labels | object | no | String keys and string values |
 
-**Request:**
-```json
-POST /v1/sandboxes/sb_abc123/fork
-{
-  "name": "forked-sandbox"
-}
-```
+- **Response body:** `Sandbox` resource (§3.1) including assigned `id`, `state`, and `vsock_cid` when available.
 
-**Response:**
-```json
-{
-  "sandbox": {
-    "id": "sb_def456",
-    "name": "forked-sandbox",
-    "parent_id": "sb_abc123",
-    "fork_depth": 1
-  },
-  "duration_ms": 8
-}
-```
+### 4.2 Fork sandbox
 
-### 4.3 Execute Command
+- **Path parameter:** `id` of source sandbox. **Request body field:** `name` (string, display name of child). **Response:** object containing nested `Sandbox` (child) and optional `duration_ms` (int64) if the server reports timing.
 
-**Request:**
-```json
-POST /v1/sandboxes/sb_abc123/exec
-{
-  "command": "python",
-  "args": ["-c", "print(1+1)"],
-  "timeout_ms": 30000
-}
-```
+### 4.3 Execute (streaming) command
 
-**Response (streaming):**
-```
-data: {"type": "STDOUT", "data": "2\n"}
-data: {"type": "EXIT", "exit_code": 0}
-```
+- **Path parameter:** `id` of sandbox. **Request body fields:** `command` (string, argv0), `args` (string array, optional), `timeout_ms` (int64, optional), plus any options defined in implementation for env or cwd. **Response:** stream of events: event type (stdout, stderr, exit) and associated payload; exact event names and JSON field names are defined by the implementation and must be documented in generated API docs or OpenAPI, not duplicated here as literal JSON.
 
-## 5. Error Handling
+## 5. Error handling
 
-### 5.1 Error Codes
+### 5.1 Error codes (logical)
 
 | Code | Description |
 |------|-------------|
 | NOT_FOUND | Resource not found |
 | ALREADY_EXISTS | Resource already exists |
 | INVALID_ARGUMENT | Invalid request |
-| PERMISSION_DENIED | Unauthorized |
-| RESOURCE_EXHAUSTED | No resources available |
+| PERMISSION_DENIED | Not authorized |
+| RESOURCE_EXHAUSTED | Capacity or quota exceeded |
 | INTERNAL | Internal error |
-| UNAVAILABLE | Service unavailable |
+| UNAVAILABLE | Dependency unavailable |
 | TIMEOUT | Operation timeout |
 
-### 5.2 Error Response
+### 5.2 Error response envelope
 
-```json
-{
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "Sandbox sb_notfound not found",
-    "details": "..."
-  }
-}
-```
+All error responses use a single top-level key **error** whose value is an object with at least **code** (string, one of the logical codes above) and **message** (string, human-readable). An optional **details** field (string or structured object) carries implementation-specific diagnostics.
 
-## 6. Authentication
+## 6. Authentication and rate limit signaling
 
-### 6.1 Headers
+### 6.1 Request headers (common)
 
-```
-Authorization: Bearer <api_key>
-X-Coco-Project: <project_id>
-```
+| Header | Semantics |
+|--------|-----------|
+| Authorization | `Bearer` plus API key or token, when auth is enabled |
+| X-Coco-Project | Optional project or tenant scoping, when used |
 
-### 6.2 Rate Limiting Headers
+### 6.2 Rate limit response headers
 
-```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 95
-X-RateLimit-Reset: 1609459200
-```
+When rate limiting is enabled, responses may include rate-limit headers. Header names and semantics follow common HTTP practice (e.g. limit, remaining, reset). **Numeric values are deployment-defined**; see `10-self-hosting-and-operations.md`.
 
-## 7. REST Compatibility
+## 7. HTTP mapping (REST)
 
-### 7.1 HTTP Mapping
+| Operation | Method | Path pattern |
+|----------|--------|--------------|
+| CreateSandbox | POST | `/v1/sandboxes` |
+| GetSandbox | GET | `/v1/sandboxes/{id}` |
+| ListSandboxes | GET | `/v1/sandboxes` |
+| DeleteSandbox | DELETE | `/v1/sandboxes/{id}` |
+| ForkSandbox | POST | `/v1/sandboxes/{id}/fork` |
+| PauseSandbox | POST | `/v1/sandboxes/{id}/pause` |
+| ResumeSandbox | POST | `/v1/sandboxes/{id}/resume` |
+| StreamingExec | POST | `/v1/sandboxes/{id}/exec` |
 
-| gRPC | HTTP |
-|------|------|
-| CreateSandbox | POST /v1/sandboxes |
-| GetSandbox | GET /v1/sandboxes/{id} |
-| ListSandboxes | GET /v1/sandboxes |
-| DeleteSandbox | DELETE /v1/sandboxes/{id} |
-| ForkSandbox | POST /v1/sandboxes/{id}/fork |
-| PauseSandbox | POST /v1/sandboxes/{id}/pause |
-| ResumeSandbox | POST /v1/sandboxes/{id}/resume |
-| StreamingExec | POST /v1/sandboxes/{id}/exec |
+**Health and metrics** are not part of the versioned public API path above; their paths and ports are described in `08-observability.md` and are **deployment-defined** for bind addresses and ports (see `10-self-hosting-and-operations.md`).
 
-## 8. E2B Compatibility
+## 8. E2B-oriented client compatibility (non-normative target)
 
-### 8.1 Drop-in Replacement
+Coco may aim for migration from clients that use E2B-style resource naming and operations. **Exact API parity** is a release and test concern; this document remains the contract for **Coco** field names and HTTP mapping. Unsupported operations return documented error codes (§5).
 
-Coco provides full E2B compatibility - users can switch by changing the API endpoint:
+| Informal E2B-style area | Support goal |
+|------------------------|-------------|
+| Sandbox lifecycle | Target |
+| Code / command execution | Target |
+| Filesystem and process helpers | As implemented; see release notes |
 
-```python
-# E2B Cloud
-from e2b_code_interpreter import Sandbox
-sandbox = Sandbox.create("api_key", "https://api.e2b.dev")
+---
 
-# Coco (drop-in replacement)
-from e2b_code_interpreter import Sandbox
-sandbox = Sandbox.create("api_key", "http://localhost:8080")
-```
-
-### 8.2 Supported E2B APIs
-
-| E2B API | Coco Support |
-|---------|--------------|
-| Sandbox.create() | ✅ Full |
-| sandbox.run_code() | ✅ Full |
-| sandbox.run_command() | ✅ Full |
-| sandbox.filesystem.* | ✅ Full |
-| sandbox.process.* | ✅ Full |
-
-## 9. Comparison with Cube
-
-| Aspect | CubeSandbox | Coco | Winner |
-|--------|-------------|------|--------|
-| Public API | REST | REST + gRPC | Coco |
-| Streaming | No | Yes | Coco |
-| WebSocket | No | Yes | Coco |
-| E2B Compatible | Yes | Yes | Tie |
-| gRPC API | No | Yes | Coco |
-| Bidirectional | No | Yes | Coco |
+Related: `00-overview.md` (context), `04-security.md` (auth model), `10-self-hosting-and-operations.md` (deployment boundaries).

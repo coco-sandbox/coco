@@ -1,8 +1,10 @@
-# Coco Sandbox - Storage Specification
+# Coco Sandbox – Storage specification
 
-This document defines the storage architecture for Coco, including template storage, checkpoint storage, and runtime state management.
+**Scope:** Template, checkpoint, and runtime storage layout and behavior.  
+**Status:** Authoritative.  
+**Index:** [Specification index](index.md)
 
-## 1. Storage Architecture Overview
+## 1. Storage architecture overview
 
 Coco manages three types of data: template images that define sandbox configurations, checkpoint data that preserves VM state, and runtime metadata that tracks sandbox lifecycle. Each type has different performance requirements and storage characteristics.
 
@@ -14,45 +16,22 @@ Templates define the base configuration for sandboxes. They include the root fil
 
 ### 2.1 Storage Location
 
-Templates are stored in /var/lib/coco/templates/ by default. This location can be configured through the configuration file.
+Templates are stored under a **deployment-defined** root (commonly a path under the node data directory). The exact path is configuration, not fixed by this spec (see `10-self-hosting-and-operations.md`).
 
-```
-/var/lib/coco/templates/
-├── ubuntu-base/
-│   ├── metadata.json
-│   ├── rootfs/
-│   ├── vmlinuz
-│   └── initrd.img
-├── alpine/
-│   └── ...
-└── custom/
-    └── ...
-```
+### 2.2 Template directory layout
 
-### 2.2 Template Directory Structure
+Each template is a directory whose name is the template id or a subdirectory identified in configuration. Required artifacts:
 
-Each template has its own directory containing the necessary files. The metadata.json file stores template configuration and metadata.
+| Path (relative to template root) | Purpose |
+|----------------------------------|--------|
+| metadata | File or embedded record with id, name, description, optional OS metadata, default memory and vCPU, creation time, size |
+| rootfs | Directory, CPIO archive, or compressed archive of the guest root |
+| vmlinuz | Guest kernel image |
+| initrd.img | Initial ramdisk for the guest boot (if used) |
 
-```json
-{
-  "id": "ubuntu-base",
-  "name": "Ubuntu Base",
-  "description": "Ubuntu 22.04 LTS",
-  "os": {
-    "type": "linux",
-    "distribution": "ubuntu",
-    "version": "22.04"
-  },
-  "defaults": {
-    "memory_mb": 512,
-    "vcpus": 1
-  },
-  "created_at": "2024-01-01T00:00:00Z",
-  "size_bytes": 52428800
-}
-```
+The **metadata** document includes at least: **id** (string), **name** (string), **description** (string), optional **os** (type, distribution, version as strings), **defaults** (memory_mb, vcpus as integers), **created_at** (timestamp), **size_bytes** (int64).
 
-### 2.3 Root Filesystem
+### 2.3 Root filesystem
 
 The root filesystem contains the files visible to processes inside the sandbox. It can be a directory, a CPIO archive, or a compressed archive.
 
@@ -80,20 +59,9 @@ Checkpoints preserve complete VM state for later restoration. They enable use ca
 
 ### 3.1 Storage Location
 
-Checkpoints are stored in /var/lib/coco/checkpoints/ by default. This location can be configured through the configuration file.
+Checkpoints are stored under a **deployment-defined** base directory, often organized by sandbox id. Layout on disk is implementation-specific; logically each checkpoint contains the components in §3.2.
 
-```
-/var/lib/coco/checkpoints/
-├── sb_abc123/
-│   ├── metadata.json
-│   ├── memory.gz
-│   ├── cpu.bin
-│   └── devices.bin
-└── sb_def456/
-    └── ...
-```
-
-### 3.2 Checkpoint Components
+### 3.2 Checkpoint components
 
 A complete checkpoint consists of several components.
 

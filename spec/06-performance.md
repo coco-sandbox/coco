@@ -1,10 +1,12 @@
-# Coco Sandbox - Performance Specification
+# Coco Sandbox – Performance specification
 
-This document defines performance targets and optimization strategies for Coco. Every component is optimized for speed while maintaining security and reliability.
+**Scope:** SLO-style targets, optimization techniques, and how benchmarks relate to this document.  
+**Status:** Authoritative for targets; exact CLI names live in the repository.  
+**Index:** [Specification index](index.md)
 
-## 1. Performance Targets
+## 1. Performance targets
 
-Coco is designed to beat existing solutions across all measurable performance dimensions. These targets are not aspirational; they are the minimum acceptable performance.
+These numbers are **implementation SLOs and design targets** for a reference stack (pooling, btrfs reflinks where available, XDP, and so on). They are not guaranteed for every hardware profile, build flag, or load pattern. Validate with the benchmarking tools shipped in the repository (for example `cococtl` subcommands or tests), not by copying invocations from this file.
 
 ### 1.1 Latency Targets
 
@@ -90,51 +92,14 @@ Zig provides excellent control over binary size through its manual memory manage
 
 ## 3. Benchmarking
 
-Performance is validated through systematic benchmarking.
+Performance is validated through **repeatable benchmark scenarios** in the tree. The spec defines **what** to measure and **SLO percentiles**; the repository defines **exact commands**, flags, and test harnesses (they may change between releases without invalidating the SLOs below).
 
-### 3.1 Cold Start Benchmark
-
-The benchmark creates sandboxes as fast as possible and measures the latency of each creation. Results are reported as percentiles.
-
-The target is P50 under 30ms, P95 under 40ms, and P99 under 50ms.
-
-```bash
-# Example benchmark command
-cococtl benchmark cold-start --count 1000 --parallel 10
-```
-
-### 3.2 Fork Benchmark
-
-The benchmark forks an existing sandbox multiple times and measures fork latency. Results are reported as percentiles.
-
-The target is P50 under 10ms, P95 under 15ms, and P99 under 20ms.
-
-```bash
-# Example benchmark command
-cococtl benchmark fork --count 1000 --parallel 10
-```
-
-### 3.3 Memory Benchmark
-
-The benchmark creates multiple sandboxes and measures memory usage. Results show the overhead per sandbox.
-
-The target is under 2MB overhead per sandbox.
-
-```bash
-# Example benchmark command
-cococtl benchmark memory --count 100
-```
-
-### 3.4 Network Benchmark
-
-The benchmark generates network traffic through sandboxes and measures throughput and latency. Results show aggregate bandwidth and per-sandbox latency.
-
-The target is 20Gbps aggregate throughput with sub-millisecond latency.
-
-```bash
-# Example benchmark command
-cococtl benchmark network --duration 60s --size 1500
-```
+| Scenario | SLO (percentile targets) | What is measured |
+|----------|--------------------------|------------------|
+| Cold start | P50 under 30ms, P95 under 40ms, P99 under 50ms (creation to ready) | Per-create latency over many runs |
+| Fork | P50 under 10ms, P95 under 15ms, P99 under 20ms | Per-fork latency |
+| Memory overhead | Control-plane overhead under 2 MiB per sandbox in reference setup | Host RSS / accounting minus guest working set |
+| Network | Aggregate under 20 Gbps and sub-ms RTT in reference setup | Throughput and RTT under load |
 
 ## 4. Scalability
 
@@ -186,14 +151,14 @@ Alerts trigger when performance degrades. An alert fires when P99 creation laten
 
 Alerts also fire when pool utilization drops below 10%, indicating potential capacity issues.
 
-## 6. Performance Comparison
+## 6. Qualitative comparison (informative)
 
-Coco outperforms existing solutions across all metrics.
+Rough qualitative tradeoffs that motivate the architecture (not a benchmark of other products):
 
-| Metric | Container | VM | Coco |
-|--------|-----------|-----|------|
-| Cold Start | 200ms | Seconds | <30ms |
-| Memory Overhead | 1MB | 100MB | <2MB |
-| Fork Speed | N/A | N/A | <10ms |
-| Density | High | Low | Very High |
-| Isolation | Low | High | High |
+| Concern | Typical container | Typical full VM | Coco (as specified) |
+|--------|-------------------|-----------------|----------------------|
+| Shared host kernel | Yes | No | No (guest kernel per sandbox) |
+| Cold path / pool | Varies | Often slower | Targets low latency via pool + COW (see sections 1–2) |
+| Network enforcement | Often later in stack | Varies | Default-deny at XDP with policy (see `03-network.md`) |
+
+For numeric targets, use section 1 and the benchmarking section of this file, not informal comparisons to unnamed deployments.

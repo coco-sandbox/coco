@@ -1,28 +1,28 @@
-# Coco Sandbox - Specification Overview
+# Coco Sandbox – Specification overview
 
-**Status:** Approved Specification
+**Scope:** End-to-end architecture, components, and cross-cutting concerns; points to focused specs for detail.  
+**Status:** Authoritative.  
+**Index:** [Specification index](index.md)
 
----
+## 1. Executive summary
 
-## 1. Executive Summary
+Coco is a sandbox runtime that provides hardware-level isolation with a focus on performance and operability. The control plane is written in Go; the data plane uses Zig for direct KVM and low-level guest control. The design favors clear component boundaries and deployment-tunable policies over fixed product constants.
 
-Coco is a next-generation sandbox runtime that provides hardware-level isolation with extreme performance. Built with Go for control plane and Zig for data plane, Coco is designed to beat CubeSandbox in every dimension while maintaining a cleaner, more maintainable codebase.
-
-The primary goal of Coco is to provide a secure, high-performance sandbox environment for AI agents and code execution workloads. Coco achieves this through careful optimization of every component, from VM startup time to network throughput.
+The primary goal of Coco is to provide a secure, high-performance sandbox environment for AI agents and code execution workloads. Optimization targets are stated in the performance specification; **numeric limits for rate control and quotas are deployment-defined** (see `10-self-hosting-and-operations.md`).
 
 ### 1.1 Core Philosophy
 
-**Performance First**: Every component is optimized for speed. Cold start under 30 milliseconds, fork operations under 10 milliseconds, and memory overhead under 2 megabytes per sandbox.
+**Performance first:** Components are optimized for low latency and high density; **numeric SLOs** are listed only in `06-performance.md`.
 
 **Security by Default**: Multiple layers of isolation ensure maximum security. Network filtering at the kernel level, hardware virtualization through KVM, and optional hardware enclaves through TDX and SGX.
 
-**Developer Experience**: Clean APIs, comprehensive documentation, and native SDKs make integration straightforward. E2B compatibility mode ensures easy migration.
+**Developer experience**: A documented REST surface, optional E2B-oriented client compatibility where implemented, and internal use of gRPC and streaming where appropriate. Integration details and compatibility scope belong in the API spec and project documentation, not in fixed numbers in the overview.
 
-### 1.2 Comparison with CubeSandbox
+### 1.2 Design goals and language split
 
-Coco beats Cube in every measurable dimension. Cold start is twice as fast, fork operations are ten times faster, and memory overhead is sixty percent lower. These improvements come from careful architectural choices rather than incremental optimizations.
+Coco targets strong isolation (KVM and default-deny networking), low overhead on the data plane, and a control plane that is easy to operate and extend. **Comparisons to other products** are not normative; benchmarks and SLOs are defined in `06-performance.md` as targets for the implementation, not as guarantees for every hardware configuration.
 
-The choice of Go and Zig over Rust provides better maintainability. Go offers excellent networking and concurrency primitives for the control plane, while Zig provides direct memory control and minimal binary size for the data plane. Both languages have simpler compilation models than Rust, reducing build times and complexity.
+Go is used for the control plane to leverage its networking, concurrency, and service ecosystem. Zig is used for Visor, Agent, and related data-plane components to keep binaries small and to use direct system interfaces. Build tool versions are listed in `09-dependencies.md` (see also the repository `go.mod` and Zig build files for the exact pins used in tree).
 
 ---
 
@@ -34,7 +34,7 @@ Coco follows a layered architecture that separates concerns cleanly. The control
 
 The system consists of six primary components that work together to provide sandbox isolation. Each component has a clear responsibility and communicates with others through well-defined interfaces.
 
-**Coco Gateway** serves as the entry point for all external requests. It exposes a REST API compatible with the E2B standard, handles authentication and rate limiting, and forwards requests to appropriate internal components. Gateway is written in Go to leverage its excellent HTTP handling and middleware ecosystem.
+**Coco Gateway** serves as the entry point for all external requests. It exposes a REST API (E2B-oriented compatibility is a project goal where documented in `02-api.md`), handles **configurable** authentication and rate limiting, and forwards requests to appropriate internal components. Gateway is written in Go to leverage its HTTP and middleware ecosystem.
 
 **Coco Master** coordinates cluster-wide operations. It maintains cluster state in etcd, performs leader election for high availability, and schedules sandbox creation across nodes. Master ensures the cluster operates smoothly even during node failures.
 
@@ -70,11 +70,11 @@ Gateway is the external-facing API server. It accepts requests from clients, val
 
 **Responsibilities**: HTTP server management, request validation, authentication, rate limiting, metrics collection, request routing.
 
-**External Interface**: REST API over HTTP on port 8080 by default. Supports E2B-compatible endpoints for seamless migration.
+**External Interface**: REST API over HTTP. Listen address and port are **operator-configured**; development examples in the API spec may use `localhost` with a non-normative port. E2B-oriented endpoints are described in `02-api.md`.
 
 **Internal Interface**: Connects to Master for scheduling decisions and to Nodes for sandbox operations.
 
-**Design Decisions**: Gateway maintains no persistent state. All state is stored in etcd or on Nodes. This allows Gateway to be scaled horizontally behind a load balancer. Rate limiting uses a token bucket algorithm per API key. Authentication supports API keys and OAuth2 tokens.
+**Design Decisions**: Gateway maintains no persistent state. All state is stored in etcd or on Nodes. This allows Gateway to be scaled horizontally behind a load balancer. **Rate limiting** uses a token bucket (or equivalent) with policy chosen by the operator (rates, burst, and enablement are not fixed in this overview). **Authentication** supports API keys; OAuth2 or other mechanisms are product-level choices documented in deployment docs.
 
 **Dependencies**: Connect for gRPC compatibility, standard library HTTP server, Prometheus client for metrics.
 
@@ -224,7 +224,7 @@ Coco implements defense in depth with four distinct isolation layers.
 
 **Hardware Enclaves**: Optional support for TDX, SGX, and SEV provides additional protection for sensitive workloads. These technologies encrypt memory and provide hardware-based attestation.
 
-**Syscall Filtering**: Seccomp filtering restricts available system calls to a minimal set. Only necessary syscalls like read, write, and execve are allowed.
+**Syscall filtering:** Seccomp restricts the guest to a minimal syscall set. The **authoritative** description and example allowlist are in `04-security.md` (section 5.2). This overview does not duplicate syscall names, to avoid contradicting the security spec.
 
 ### 5.2 Capability Management
 
@@ -328,51 +328,9 @@ The API provides programmatic access to all Coco functionality. The public API u
 
 ---
 
-## 8. Performance Specifications
+## 8. Performance and resource targets
 
-Performance is a primary design goal. Coco is optimized for minimal latency and maximum throughput.
-
-### 8.1 Latency Targets
-
-**Cold Start**: Under 30 milliseconds from request to sandbox ready. Achieved through VM pool pre-creation.
-
-**Fork**: Under 10 milliseconds from request to child sandbox ready. Achieved through btrfs reflink snapshots.
-
-**Resume from Hibernate**: Under 5 milliseconds. Achieved through pre-loaded snapshots.
-
-**Exec Latency**: Under 1 millisecond from request to command start. Achieved through VSock.
-
-**Network Round Trip**: Under 0.5 milliseconds host-to-guest-to-host. Achieved through VSock and XDP.
-
-### 8.2 Throughput Targets
-
-**Sandbox Creation**: 33 sandboxes per second sustained.
-
-**Fork Operations**: 100 forks per second sustained.
-
-**Network Throughput**: 20 gigabits per second aggregate.
-
-**Maximum Concurrent Sandboxes**: 2000 per node.
-
-### 8.3 Resource Efficiency
-
-**Memory Overhead**: Under 2 megabytes per sandbox beyond the configured VM memory.
-
-**Disk Usage**: Approximately 50 megabytes for base templates.
-
-**CPU Overhead**: Under 0.5 percent of host CPU for management operations.
-
-### 8.4 Optimization Techniques
-
-**VM Pool**: Nodes maintain a pool of pre-created VMs ready for immediate assignment. This eliminates the kernel boot time from the critical path.
-
-**COW Fork**: Btrfs reflink creates instant snapshots without copying data. Memory pages are shared between parent and child until written.
-
-**Zero-Copy Networking**: XDP processes packets at the earliest point in the stack, avoiding expensive skb allocations.
-
-**VSock**: VSock provides near-zero-overhead communication between host and guest, bypassing the TCP/IP stack entirely.
-
-**Memory Deduplication**: KSM merges identical memory pages across VMs, reducing overall memory usage by 10-20 percent.
+Performance is a primary design goal. **All numeric SLOs, throughput targets, efficiency goals, optimization techniques, and benchmark relationships** are specified in `06-performance.md` only. This overview does not duplicate them, to keep a single source of truth. Targets are **SLO-style** and depend on hardware, pool configuration, and load.
 
 ---
 
@@ -414,68 +372,27 @@ Helm charts simplify deployment on existing Kubernetes clusters. The operator wa
 
 ## 10. Observability
 
-Comprehensive observability helps operators understand system behavior and diagnose issues.
-
-### 10.1 Logging
-
-All components produce structured JSON logs with consistent formatting. Each log entry includes timestamp, level, component, message, and contextual fields like sandbox ID and request ID.
-
-Log levels are DEBUG, INFO, WARN, and ERROR. Production typically runs at INFO, with DEBUG available for troubleshooting.
-
-Logs are written to stdout in development and to files or syslog in production.
-
-### 10.2 Metrics
-
-Prometheus metrics are exposed on port 9090 by default. Key metrics include sandbox creation duration, fork duration, active sandbox count, pool availability, and resource usage.
-
-Metrics include histogram_quantiles for latency measurement and gauges for current state. All metrics include appropriate labels for filtering by node, state, and template.
-
-### 10.3 Tracing
-
-OpenTelemetry tracing provides distributed tracing across component boundaries. Each operation generates spans that can be correlated across the request lifecycle.
-
-Tracing is exported via OTLP to compatible backends like Jaeger or Tempo. Sampling rates are configurable to balance overhead and visibility.
-
-### 10.4 Health Checks
-
-Components expose liveness and readiness probes. Liveness indicates the process is running. Readiness indicates the component can serve requests, including any dependencies being available.
-
-Health checks are available at /health/live and /health/ready HTTP endpoints.
+**Logs** (structured fields), **Prometheus metrics**, **OpenTelemetry-style tracing**, and **HTTP liveness and readiness** paths are specified in `08-observability.md`. **Ports and bind addresses** for the metrics scrape endpoint and health checks are **deployment-defined**; see `10-self-hosting-and-operations.md`.
 
 ---
 
-## 11. Repository Structure
+## 11. Repository structure
 
-The repository is organized to clearly separate components while maintaining coherence. Go code lives in cmd and pkg directories. Zig code lives in daemon directories. Shared definitions are in proto.
+The tree on disk is the **implementation** source layout; the normative file-level listing and naming rules are in `01-folder-structure.md`. The following **top-level** map is summary only. If the repository disagrees, the repository wins until the spec is updated.
 
-```
-coco/
-├── cmd/                    # Executable commands
-│   ├── coco-gateway/      # API server
-│   ├── coco-node/         # Node daemon
-│   ├── coco-master/        # Cluster master
-│   └── cococtl/           # CLI client
-├── daemon/                  # Long-running services
-│   ├── coco-visor/        # Hypervisor (Zig)
-│   ├── coco-agent/        # Guest agent (Zig)
-│   ├── coco-fork/         # Fork engine (Zig)
-│   ├── coco-net/          # Network (Go + eBPF)
-│   └── coco-checkpoint/   # Checkpoint (Go + Zig)
-├── pkg/                    # Shared packages
-│   ├── api/               # Generated API code
-│   ├── visor/             # Visor client
-│   ├── scheduler/         # Scheduling logic
-│   ├── pool/              # VM pool management
-│   └── ...                # Other packages
-├── proto/                  # Protocol buffers
-├── ebpf/                   # eBPF programs
-├── test/                   # Tests
-├── configs/                # Configuration files
-├── deploy/                 # Deployment manifests
-└── spec/                  # This specification
-```
+| Path | Role |
+|------|------|
+| cmd/ | Entry points: gateway, node, master, cococtl (Go) |
+| daemon/ | Long-running data-plane services: visor, agent, fork, net, checkpoint, etc. |
+| pkg/ | Shared Go packages (api, visor client, scheduler, pool, …) |
+| proto/ | Protobuf and RPC definitions |
+| ebpf/ | eBPF and XDP C sources |
+| test/ | Cross-component tests |
+| configs/ | Example or template configuration (not necessarily loaded by every binary) |
+| deploy/ | Deployment manifests |
+| spec/ | This specification set |
 
-### 11.1 Go Components
+### 11.1 Go components
 
 Go handles control plane components that benefit from its excellent networking and concurrency features. These include Gateway, Master, Node, and parts of Net.
 
@@ -491,35 +408,7 @@ C handles eBPF programs that run in the kernel. These include XDP filters, flow 
 
 ## 12. Dependencies
 
-### 12.1 Build Dependencies
-
-**Go**: Version 1.21 or later for control plane components.
-
-**Zig**: Version 0.12 or later for data plane components.
-
-**Clang**: For compiling eBPF programs.
-
-**Protocol Buffer Compiler**: For generating API code from proto files.
-
-### 12.2 System Requirements
-
-**Linux Kernel**: Version 5.10 or later with KVM module loaded.
-
-**Filesystem**: btrfs recommended for reflink support. ext4 and xfs also work.
-
-**Memory**: 4GB minimum per node, 8GB recommended.
-
-**Disk**: 50GB minimum for templates and checkpoints.
-
-**CPU**: Virtualization support (VT-x or AMD-V) required.
-
-### 12.3 Runtime Dependencies
-
-**etcd**: For cluster state and leader election.
-
-**btrfs-progs**: For snapshot operations.
-
-**libbpf**: For loading eBPF programs.
+Authoritative build toolchain, kernel, and runtime service requirements are specified in `09-dependencies.md`. The **repository** (`go.mod`, `Makefile`, Zig build files) is the final pin for tool versions in a given checkout. This overview does not duplicate version numbers to avoid drift.
 
 ---
 
@@ -547,8 +436,6 @@ The fourth phase explores advanced capabilities. Live migration allows moving ru
 
 ## 14. Conclusion
 
-Coco represents a new generation of sandbox technology, designed from the ground up for performance, security, and maintainability. By combining Go and Zig, Coco achieves capabilities that exceed existing solutions while maintaining a cleaner, more approachable codebase.
+Coco is specified as a layered, KVM-based sandbox with a Go control plane and a Zig data plane, network enforcement at the kernel edge, and a documented external API. Self-hosting operators own configuration, security policy, and scale; the architecture and interfaces in this tree are the shared contract. For **what is fixed by architecture versus chosen per deployment**, see `10-self-hosting-and-operations.md`.
 
-The comprehensive specifications in this document provide the foundation for development. They define not just what Coco does, but how each component achieves its goals. With these specifications as guidance, developers can implement features with confidence that they align with the overall architecture.
-
-Coco is designed to be extended. The modular architecture allows for new features like additional hardware enclave support, enhanced checkpoint formats, or alternative network implementations. The specifications provide the framework within which such extensions can be evaluated and integrated.
+The modular design allows new features (for example, additional enclave or checkpoint options) to be evaluated against the same spec boundaries. Changes that affect APIs or security guarantees should be reflected here and in the focused spec files before they are considered stable.

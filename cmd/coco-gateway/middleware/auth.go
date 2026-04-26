@@ -15,6 +15,7 @@ var ErrUnauthorized = errors.New("unauthorized")
 type contextKey string
 
 const userContextKey contextKey = "user"
+const projectContextKey contextKey = "project"
 
 func WithUser(ctx context.Context, user string) context.Context {
 	return context.WithValue(ctx, userContextKey, user)
@@ -23,6 +24,15 @@ func WithUser(ctx context.Context, user string) context.Context {
 func UserFromContext(ctx context.Context) (string, bool) {
 	user, ok := ctx.Value(userContextKey).(string)
 	return user, ok
+}
+
+func WithProject(ctx context.Context, project string) context.Context {
+	return context.WithValue(ctx, projectContextKey, project)
+}
+
+func ProjectFromContext(ctx context.Context) (string, bool) {
+	project, ok := ctx.Value(projectContextKey).(string)
+	return project, ok
 }
 
 type Authenticator interface {
@@ -67,11 +77,12 @@ func (t *TokenAuth) Authenticate(r *http.Request) (string, error) {
 	return user, nil
 }
 
-func Auth(auth Authenticator) func(http.Handler) http.Handler {
+// Auth returns a middleware that authenticates requests.
+func Auth(auth Authenticator, audit *AuditLogger) func(http.Handler) http.Handler {
 	skipPaths := map[string]bool{
 		"/health":       true,
-		"/health/live":  true,
-		"/health/ready": true,
+		"/health/live":   true,
+		"/health/ready":  true,
 		"/metrics":      true,
 	}
 	return func(next http.Handler) http.Handler {
@@ -81,14 +92,28 @@ func Auth(auth Authenticator) func(http.Handler) http.Handler {
 				return
 			}
 
+			sourceIP := GetClientIP(r)
 			user, err := auth.Authenticate(r)
 			if err != nil {
+				if audit != nil {
+					audit.LogAuthFailure("", sourceIP, err.Error())
+				}
 				http.Error(w, err.Error(), http.StatusUnauthorized)
 				return
 			}
 
-			r = r.WithContext(WithUser(r.Context(), user))
-			next.ServeHTTP(w, r)
+			if audit != nil {
+				audit.LogAuthSuccess(user, sourceIP)
+			}
+
+			ctx := r.Context()
+			ctx = WithUser(ctx, user)
+
+			if project := r.Header.Get("X-Coco-Project"); project != "" {
+				ctx = WithProject(ctx, project)
+			}
+
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

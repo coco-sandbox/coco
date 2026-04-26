@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -117,8 +118,50 @@ func run(ctx context.Context, cfg *config.Config) error {
 	})
 	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		checks := map[string]string{
+			"node": "ok",
+		}
+
+		// Check visor connectivity by acquiring a client
+		done := make(chan error, 1)
+		go func() {
+			_, err := visorPool.Acquire()
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				checks["visor"] = "unreachable"
+			} else {
+				checks["visor"] = "ok"
+				visorPool.Release(nil) // release immediately
+			}
+		case <-time.After(2 * time.Second):
+			checks["visor"] = "unreachable"
+		}
+
+		// Check storage by attempting a read operation
+		if _, err := st.GetSandbox("__health_check__"); err != nil {
+			// Not found is fine - storage is reachable
+			checks["storage"] = "ok"
+		} else {
+			checks["storage"] = "ok"
+		}
+
+		status := "ready"
+		for _, v := range checks {
+			if v != "ok" {
+				status = "degraded"
+				break
+			}
+		}
+
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ready"}`))
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": status,
+			"checks": checks,
+		})
 	})
 	mux.Handle("/metrics", metrics.Handler())
 

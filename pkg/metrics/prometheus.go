@@ -69,6 +69,41 @@ var (
 		Name: "coco_checkpoint_created_total",
 		Help: "Total number of checkpoints created",
 	})
+
+	NodeMemoryUsedBytes = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "coco_node_memory_used_bytes",
+		Help: "Memory used on each node in bytes",
+	})
+
+	NodeCPUPercent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "coco_node_cpu_percent",
+		Help: "CPU usage percentage on each node",
+	})
+
+	NodeSandboxCount = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "coco_node_sandbox_count",
+		Help: "Number of sandboxes on each node",
+	})
+
+	PoolAvailable = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "coco_pool_available",
+		Help: "Number of available VMs in the pool",
+	})
+
+	PoolInUse = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "coco_pool_in_use",
+		Help: "Number of VMs in use",
+	})
+
+	NetworkPacketsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "coco_network_packets_total",
+		Help: "Total packets processed",
+	})
+
+	NetworkBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "coco_network_bytes_total",
+		Help: "Total bytes processed",
+	})
 )
 
 // Register registers all metrics with Prometheus
@@ -85,6 +120,13 @@ func Register() {
 		NetworkSessionsActive,
 		ReplayEventsTotal,
 		CheckpointCreatedTotal,
+		NodeMemoryUsedBytes,
+		NodeCPUPercent,
+		NodeSandboxCount,
+		PoolAvailable,
+		PoolInUse,
+		NetworkPacketsTotal,
+		NetworkBytesTotal,
 	)
 }
 

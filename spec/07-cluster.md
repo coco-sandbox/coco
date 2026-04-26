@@ -1,8 +1,10 @@
-# Coco Sandbox - Cluster Specification
+# Coco Sandbox – Cluster specification
 
-This document defines the cluster architecture for Coco, including coordination, scheduling, failover, and Kubernetes integration.
+**Scope:** Master–node coordination, scheduling, failover, and Kubernetes integration patterns.  
+**Status:** Authoritative.  
+**Index:** [Specification index](index.md)
 
-## 1. Cluster Architecture Overview
+## 1. Cluster architecture overview
 
 Coco operates as a distributed system across multiple machines. The cluster provides high availability, horizontal scalability, and resource efficiency. Components are organized into masters and nodes, with clear separation of concerns.
 
@@ -104,28 +106,23 @@ The Kubernetes operator manages Sandbox custom resources. When a Sandbox resourc
 
 The operator runs as a Deployment with multiple replicas for high availability. It watches for Sandbox resources and reconciles them with the Coco cluster state.
 
-### 5.2 Custom Resource Definition
+### 5.2 Custom resource (Sandbox)
 
-The Sandbox CRD defines the schema for sandbox resources.
+The **Sandbox** custom resource is versioned under an API group (for example **coco.io/v1** as implemented). Normative **fields**:
 
-```yaml
-apiVersion: coco.io/v1
-kind: Sandbox
-metadata:
-  name: my-sandbox
-spec:
-  template: ubuntu-base
-  memory: 512
-  vcpus: 1
-  labels:
-    app: web
-status:
-  state: Running
-  sandboxId: sb_abc123
-  node: node-1
-```
+| Section | Field | Description |
+|---------|-------|-------------|
+| metadata | name | Kubernetes resource name |
+| spec | template | Template id or reference |
+| spec | memory, vcpus | Integer resource requests (MiB, vCPU count) |
+| spec | labels | String key/value map for scheduling or selection |
+| status | state | Observed lifecycle state in the cluster |
+| status | sandboxId | Coco sandbox id once created |
+| status | node | Assigned node id or name when known |
 
-### 5.3 Helm Chart
+The exact **apiVersion** and **field names** may match the operator implementation; the table above is the logical contract the operator must reconcile with the cluster API in `02-api.md`.
+
+### 5.3 Helm chart
 
 The Helm chart simplifies deployment. It installs the operator, RBAC resources, and required custom resource definitions.
 

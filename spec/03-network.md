@@ -1,8 +1,10 @@
-# Coco Sandbox - Network Specification
+# Coco Sandbox – Network specification
 
-This document defines the network architecture for Coco, including isolation, policies, and performance characteristics.
+**Scope:** Network modes, eBPF data path, policy model, and performance goals for Coco Net.  
+**Status:** Authoritative.  
+**Index:** [Specification index](index.md)
 
-## 1. Network Architecture Overview
+## 1. Network architecture overview
 
 Coco implements network isolation at multiple levels. The host runs a network agent that programs eBPF filters in the kernel. Each sandbox connects to the host through either a virtual ethernet pair or directly through VSock. All traffic passes through the eBPF filters for policy enforcement.
 
@@ -66,25 +68,19 @@ The shaper uses a hierarchical token bucket algorithm that supports multiple pri
 
 Network policies define what traffic is allowed. All policies are explicit; nothing is allowed by default.
 
-### 4.1 Policy Structure
+### 4.1 Policy structure
 
-Each policy specifies a sandbox selector and a set of rules. The selector identifies which sandboxes the policy applies to. Rules define what traffic is allowed.
+Each policy consists of a **selector** and a set of **rules**. The selector determines which sandboxes the policy applies to (for example by sandbox ID pattern or label match). Each rule is a record with at least: **direction** (ingress or egress), **protocol** (for example tcp, udp, icmp as supported), **ports** (set of port numbers or ranges), and **remote** constraint (**cidr** or equivalent). Multiple rules are evaluated such that if no rule allows a packet, the default in §4.2 applies.
 
-```yaml
-selector:
-  sandbox_id: "sb_*"  # Wildcard for all sandboxes
-rules:
-  - direction: egress
-    protocol: tcp
-    ports: [80, 443]
-    cidr: "0.0.0.0/0"
-  - direction: egress
-    protocol: udp
-    ports: [53]
-    cidr: "0.0.0.0/0"
-```
+| Part | Semantics |
+|------|-----------|
+| selector | Binds the policy to one or more sandboxes (ID glob, label query, or explicit list as implemented) |
+| rules[] | Set of allow rules; each rule permits matching traffic |
+| direction | Whether the rule applies to traffic leaving the sandbox (egress) or entering (ingress) |
 
-### 4.2 Default Policy
+A typical pattern for web egress is two rules: one for TCP to destination ports 80 and 443 to a broad CIDR, and one for UDP to port 53 for DNS. Exact encoding is implementation-defined; the spec requires default-deny and explicit allows only.
+
+### 4.2 Default policy
 
 If no policy matches, the default action is DENY. This applies to all traffic that doesn't match any explicit rule.
 
@@ -92,18 +88,17 @@ If no policy matches, the default action is DENY. This applies to all traffic th
 
 DNS traffic on port 53 is commonly needed. A default allow rule typically permits UDP DNS to any destination.
 
-### 4.4 Rate Limiting
+### 4.4 Rate limiting
 
-Rate limits can be applied per sandbox or per policy. The token bucket algorithm supports tokens per second, bytes per second, and burst size.
+Rate limits can be applied per sandbox or per policy. The control plane uses a token-bucket (or equivalent) model: **sustained rate** (packets per second and/or bytes per second), and **burst** capacity. All numeric values are **deployment-defined** (see `10-self-hosting-and-operations.md`).
 
-```yaml
-rate_limit:
-  packets_per_second: 1000
-  bytes_per_second: 10485760  # 10MB/s
-  burst: 100
-```
+| Field (conceptual) | Meaning |
+|--------------------|--------|
+| packets_per_second | Sustained packet rate cap |
+| bytes_per_second | Sustained byte rate cap |
+| burst | Maximum tokens or bytes of burst before drops |
 
-## 5. IP Address Management
+## 5. IP address management
 
 IPAM allocates and manages IP addresses for sandboxes.
 
@@ -111,7 +106,7 @@ IPAM allocates and manages IP addresses for sandboxes.
 
 The address pool is configured with a CIDR block. Addresses are allocated from this block when sandboxes are created. When sandboxes are destroyed, addresses are returned to the pool.
 
-The default pool uses 10.0.0.0/16, giving 65,000 usable addresses per node.
+The CIDR is **operator-configured**. A **non-normative** example is a private /16; capacity depends on the prefix.
 
 ### 5.2 Allocation Strategy
 

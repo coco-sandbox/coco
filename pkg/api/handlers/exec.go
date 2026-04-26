@@ -10,6 +10,7 @@ import (
 
 	"github.com/coco-sandbox/coco/pkg/types"
 	"github.com/coco-sandbox/coco/pkg/visor"
+	"github.com/gorilla/websocket"
 )
 
 // ExecHandler handles code execution requests
@@ -180,13 +181,72 @@ func (h *ExecHandler) HandleStreamingExec(w http.ResponseWriter, r *http.Request
 	}
 }
 
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for now
+	},
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
 // HandleInteractiveExec handles WebSocket-based interactive shell
 // POST /v1/sandboxes/:id/interactive-exec
 func (h *ExecHandler) HandleInteractiveExec(w http.ResponseWriter, r *http.Request, sandboxID string) {
-	// Upgrade to WebSocket for bidirectional streaming
-	if _, err := w.Write([]byte("WebSocket upgrade required for interactive exec")); err != nil {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("websocket upgrade failed: %v", err), http.StatusInternalServerError)
 		return
 	}
+	defer conn.Close()
+
+	// Acquire visor client from pool
+	client, err := h.visorPool.Acquire()
+	if err != nil {
+		conn.WriteJSON(map[string]string{"error": fmt.Sprintf("failed to connect to visor: %v", err)})
+		return
+	}
+	defer h.visorPool.Release(client)
+
+
+	// Handle bidirectional streaming
+	handleInteractiveSession(conn, client)
+}
+
+func handleInteractiveSession(conn *websocket.Conn, client *visor.Client) {
+	// Read initial exec request from client
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		return
+	}
+
+	var req ExecRequest
+	if err := json.Unmarshal(msg, &req); err != nil {
+		conn.WriteJSON(map[string]string{"error": "invalid request"})
+		return
+	}
+
+	envList := make([]string, 0, len(req.Env))
+	for k, v := range req.Env {
+		envList = append(envList, k+"="+v)
+	}
+
+	visorReq := visor.ExecRequest{
+		Cmd:        req.Command,
+		Args:       req.Args,
+		Env:        envList,
+		WorkingDir: req.WorkingDir,
+	}
+
+
+	// Stream output back to client
+	err = client.Exec(visorReq, func(chunk visor.ExecChunk) error {
+		return conn.WriteJSON(map[string]interface{}{
+			"stream_type": chunk.StreamType,
+			"data":        string(chunk.Data),
+			"exit_code":   chunk.ExitCode,
+		})
+	})
+	_ = err
 }
 
 // HandleCreateCheckpoint handles POST /v1/sandboxes/:id/checkpoint

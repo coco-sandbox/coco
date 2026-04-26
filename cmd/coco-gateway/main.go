@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
 	"github.com/coco-sandbox/coco/pkg/config"
 	"github.com/coco-sandbox/coco/pkg/metrics"
+	"github.com/coco-sandbox/coco/pkg/visor"
 )
 
 func main() {
@@ -42,6 +44,13 @@ func run(ctx context.Context, cfg *config.Config) error {
 		auth.AddToken(token, user)
 	}
 
+	auditLogger := middleware.NewAuditLogger()
+
+	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, int64(cfg.RateLimitBurst), time.Second)
+
+	gw := NewGatewayServer(cfg.MasterAddr, nil)
+	vp := visor.NewPool(visor.SocketPath, 10)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -56,18 +65,42 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		checks := map[string]string{
+			"gateway": "ok",
+		}
+		checkCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		_, err := gw.GetClusterInfo(checkCtx)
+		if err != nil {
+			checks["master"] = "unreachable"
+		} else {
+			checks["master"] = "ok"
+		}
+
+		status := "ready"
+		for _, v := range checks {
+			if v != "ok" {
+				status = "degraded"
+				break
+			}
+		}
+
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ready"}`))
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": status,
+			"checks": checks,
+		})
 	})
 
 	mux.Handle("/metrics", metrics.Handler())
 
-	gw := NewGatewayServer(cfg.MasterAddr, nil)
-	registerRoutes(mux, gw, auth)
+	registerRoutes(mux, gw, auth, vp)
 
 	handler := middleware.RecoveryMiddleware()(mux)
 	handler = middleware.CORS(middleware.DefaultCORSConfig())(handler)
-	handler = middleware.Auth(auth)(handler)
+	handler = middleware.RateLimit(rateLimiter)(handler)
+	handler = middleware.Auth(auth, auditLogger)(handler)
 	handler = middleware.Logging(middleware.NewLogger())(handler)
 
 	server := &http.Server{

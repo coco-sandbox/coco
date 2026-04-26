@@ -1,8 +1,10 @@
-# Coco Sandbox - Observability Specification
+# Coco Sandbox – Observability specification
 
-This document defines the observability architecture for Coco, including logging, metrics, tracing, and health checks.
+**Scope:** Logging format, metrics, tracing, health endpoints, and alerting concepts.  
+**Status:** Authoritative.  
+**Index:** [Specification index](index.md)
 
-## 1. Observability Overview
+## 1. Observability overview
 
 Observability provides insight into system behavior and performance. It enables operators to understand what is happening, diagnose problems, and optimize performance.
 
@@ -16,21 +18,19 @@ Logs provide detailed records of system events. They are essential for debugging
 
 All logs use structured JSON format. This allows easy parsing by log aggregation systems.
 
-Each log entry includes timestamp, level, component, message, and contextual fields. Contextual fields include request ID, sandbox ID, and node ID when relevant.
+Each log entry includes at least the following **fields** (all structured, typically as JSON on one line per event):
 
-```json
-{
-  "timestamp": "2024-01-01T00:00:00.000Z",
-  "level": "INFO",
-  "component": "coco-gateway",
-  "message": "Sandbox created",
-  "request_id": "req_abc123",
-  "sandbox_id": "sb_xyz789",
-  "template_id": "ubuntu-base"
-}
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| timestamp | ISO 8601 | Event time (UTC) |
+| level | string | One of DEBUG, INFO, WARN, ERROR |
+| component | string | Logical component name (e.g. coco-gateway) |
+| message | string | Human-readable summary |
+| request_id | string | Correlation id when part of a request (optional) |
+| sandbox_id | string | When the event concerns a sandbox (optional) |
+| node_id or template_id | string | Additional context as needed (optional) |
 
-### 2.2 Log Levels
+### 2.2 Log levels
 
 Four log levels indicate severity.
 
@@ -98,15 +98,11 @@ coco_network_packets_total reports total packets processed.
 
 coco_network_bytes_total reports total bytes processed.
 
-### 3.3 Metrics Endpoint
+### 3.3 Metrics endpoint
 
-Metrics are available at /metrics on port 9090 by default.
+**Path:** HTTP path **/metrics** on the component’s HTTP server. **Port and bind address** are **deployment-defined** (not fixed to 9090; see `10-self-hosting-and-operations.md`).
 
-```
-GET /metrics
-```
-
-The response is Prometheus text format. It can be scraped by Prometheus or compatible systems.
+**Method:** GET. **Response body:** Prometheus text exposition format, scrapeable by Prometheus or compatible systems.
 
 ### 3.4 Dashboards
 
@@ -150,40 +146,13 @@ Export configuration includes endpoint URL, authentication, and protocol. TLS is
 
 Health checks indicate whether components are functioning correctly. They are used by orchestrators and load balancers.
 
-### 5.1 Liveness Probe
+### 5.1 Liveness
 
-The liveness probe indicates whether the process is running. It should return success as long as the process is alive.
+**Path:** **/health/live** (on the process HTTP server). **Method:** GET. Indicates the process is alive. Does not check upstream dependencies. Used by orchestrators to restart unhealthy instances. Response body is a small successful payload (for example JSON **status: ok**); exact shape is implementation-defined but must be stable for the same healthy state.
 
-```
-GET /health/live
-```
+### 5.2 Readiness
 
-The response is a simple success or failure. No dependencies are checked.
-
-This probe is used by Kubernetes to determine whether to restart a failing pod.
-
-### 5.2 Readiness Probe
-
-The readiness probe indicates whether the component can serve requests. It checks dependencies in addition to the process state.
-
-```
-GET /health/ready
-```
-
-The response includes the overall status and individual dependency status.
-
-```json
-{
-  "status": "ready",
-  "checks": {
-    "visor": "ok",
-    "store": "ok",
-    "node": "ok"
-  }
-}
-```
-
-This probe is used by Kubernetes to determine whether to route traffic to a pod.
+**Path:** **/health/ready**. **Method:** GET. Indicates the process can accept work; **may** embed checks for critical dependencies (for example master reachability for Gateway). Response body includes an overall status string and a map of named checks to per-dependency status (e.g. ok, degraded, unreachable). Exact key names follow the implementation; the spec requires that a non-ready result use a non-success HTTP status or an explicit **degraded** or **not ready** outcome as documented for that binary.
 
 ### 5.3 Dependency Health
 
@@ -223,14 +192,6 @@ Alerts have states. Pending indicates the condition is met but the duration thre
 
 Alert history is retained for analysis. This allows understanding of alert patterns and frequencies.
 
-## 7. Comparison
+## 7. Design intent (observability)
 
-Coco provides more comprehensive observability than alternatives.
-
-| Feature | Container | VM | Coco |
-|---------|-----------|-----|------|
-| Logs | Yes | Yes | Structured JSON |
-| Metrics | Basic | Basic | Comprehensive |
-| Tracing | Optional | No | OpenTelemetry |
-| Health Checks | Basic | Basic | Deep |
-| Alerting | External | External | Built-in |
+Coco is specified to use **structured logs**, **Prometheus metrics**, **OpenTelemetry-style tracing** where enabled, and **liveness/readiness** HTTP endpoints suitable for cloud-native operators. **Alerting rules and notification channels** are operator-defined; Prometheus rule thresholds (for example latency or pool depth) are **examples** in §6, not product constants.

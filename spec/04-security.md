@@ -1,8 +1,10 @@
-# Coco Sandbox - Security Specification
+# Coco Sandbox – Security specification
 
-This document defines the security architecture for Coco, including isolation layers, capability management, and hardware security features.
+**Scope:** Isolation model, capabilities, seccomp, authZ concepts, and network security; not deployment-specific policy numbers.  
+**Status:** Authoritative.  
+**Index:** [Specification index](index.md)
 
-## 1. Security Architecture Overview
+## 1. Security architecture overview
 
 Coco implements defense in depth through multiple security layers. No single layer is sufficient; together they provide comprehensive protection. The layers work from outside in, with each layer providing a barrier that must be crossed before reaching inner layers.
 
@@ -210,17 +212,8 @@ Each log entry includes the timestamp, event type, user identity, source IP, out
 
 ### 9.3 Retention
 
-Audit logs are retained according to organizational policy. Default retention is 90 days. Logs are stored in a separate partition from operational data to prevent tampering.
+Audit logs are retained according to **organizational policy**; the default window is **not** fixed by this spec. Logs should be stored in a separate partition or store from operational data to reduce tampering risk.
 
-## 10. Security Comparison
+## 10. Operator and deployment responsibilities
 
-Coco provides stronger security than alternatives through multiple defense layers.
-
-| Feature | Container | VM | Coco |
-|---------|-----------|-----|------|
-| Shared Kernel | Yes | No | No |
-| Network Isolation | Namespace | VF | eBPF |
-| Default Deny | No | No | Yes |
-| Hardware Enclave | No | Optional | Optional |
-| Syscall Filter | Optional | No | Yes |
-| Memory Encryption | No | Optional | Optional |
+The architecture supports strong isolation, but **security in production** also depends on the operator: keeping hosts patched, managing API keys and TLS, defining egress policy, scoping access, and monitoring for abuse. This spec does not rank Coco against other systems; it describes Coco’s own layers. For what is fixed by design versus chosen at deploy time, see `10-self-hosting-and-operations.md`.

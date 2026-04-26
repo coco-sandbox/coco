@@ -13,11 +13,14 @@ import (
 	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
 	"github.com/coco-sandbox/coco/pkg/api/handlers"
 	"github.com/coco-sandbox/coco/pkg/types"
+	"github.com/coco-sandbox/coco/pkg/visor"
 )
 
-func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authenticator) {
+func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authenticator, vp *visor.Pool) {
 	// Sandbox handlers - gateway implements SandboxService interface
 	sbHandler := handlers.NewSandboxHandler(gw)
+	// Exec handler for streaming/interactive exec
+	execHandler := handlers.NewExecHandler(vp, nil)
 
 	// Sandbox CRUD
 	mux.HandleFunc("/v1/sandboxes", func(w http.ResponseWriter, r *http.Request) {
@@ -67,9 +70,9 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 		case "exec":
 			handleExec(w, r, id, gw)
 		case "streaming-exec":
-			http.Error(w, "streaming exec feature coming soon", http.StatusNotImplemented)
+			execHandler.HandleStreamingExec(w, r, id)
 		case "interactive-exec":
-			http.Error(w, "interactive exec feature coming soon", http.StatusNotImplemented)
+			execHandler.HandleInteractiveExec(w, r, id)
 		case "checkpoint":
 			if r.Method == http.MethodPost {
 				handleCreateCheckpoint(w, r, id, gw)
@@ -431,19 +434,21 @@ func (a *templateServiceAdapter) Delete(id string) error {
 func handleBuildTemplate(w http.ResponseWriter, r *http.Request, templateID string, gw *GatewayServer) {
 	defer r.Body.Close()
 
-	var req struct {
-		ImageRef string `json:"image_ref"`
-	}
+	var req types.BuildTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
 
+	if err := gw.BuildTemplate(r.Context(), templateID, &req); err != nil {
+		http.Error(w, fmt.Sprintf("build template failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "building",
-		"job_id":  "job_" + templateID,
-		"message": "Template build started",
+	json.NewEncoder(w).Encode(types.BuildTemplateResponse{
+		BuildID: "build_" + templateID,
+		Status:  "building",
 	})
 }

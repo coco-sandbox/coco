@@ -1,26 +1,24 @@
-# Coco Sandbox - Dependencies Specification
+# Coco Sandbox – Dependencies specification
 
-This document defines the build and runtime dependencies for Coco, including language versions, system requirements, and external services.
+**Scope:** Toolchains, kernel, and optional services required to build and run Coco.  
+**Status:** Authoritative.  
+**Index:** [Specification index](index.md)
 
-## 1. Build Dependencies
+## 1. Build dependencies
 
 These tools are required to build Coco from source.
 
 ### 1.1 Go
 
-Go version 1.21 or later is required to build Go components. Earlier versions may work but are not tested.
+The **Go version** is defined by the `go` directive in the repository `go.mod`. Use that or newer patch releases that remain compatible. This spec does not pin a number to avoid drift from the tree.
 
-Go is used for the control plane components: Gateway, Master, Node, Net, and CLI.
-
-Installation is through the official Go distribution. The Go module system manages dependencies.
+Go is used for the control plane components: Gateway, Master, Node, Net, and CLI. The Go module system manages dependencies.
 
 ### 1.2 Zig
 
-Zig version 0.16 or later is required to build Zig components. Earlier versions have different syntax and standard library organization.
+The **Zig version** must match the one used to develop the checked-in `build.zig` files (see project `README`, `AGENTS.md`, or CI). Zig evolves quickly; do not assume an arbitrary “0.x or later” without building from source.
 
-Zig is used for data plane components: Visor, Agent, and Fork.
-
-Zig is installed from the official distribution. It is a static binary with no external dependencies.
+Zig is used for data plane components: Visor, Agent, and Fork. Install the official Zig toolchain for the required version.
 
 ### 1.3 Clang
 
@@ -130,17 +128,17 @@ libbpf provides the userspace API for loading eBPF programs. It is typically inc
 
 clang compiles eBPF programs. The Makefile invokes clang with the correct flags.
 
-## 5. Version Compatibility
+## 5. Version compatibility
 
-### 5.1 Component Versions
+### 5.1 Component versions
 
-| Component | Minimum Version | Recommended Version |
-|----------|-----------------|---------------------|
-| Go | 1.21 | 1.22 |
-| Zig | 0.12 | 0.13 |
-| Linux Kernel | 5.10 | 6.1+ |
-| etcd | 3.5 | 3.6 |
-| clang | 14 | 17 |
+| Component | Source of truth |
+|-----------|-----------------|
+| Go | `go.mod` at repository root |
+| Zig | Project build docs and `daemon/*/build.zig` |
+| Linux kernel | Minimums below; use a kernel that matches your eBPF and KVM feature set |
+| etcd | Below for cluster mode |
+| clang | Recent enough for your target kernel’s BPF (often 14+, see eBPF build notes) |
 
 ### 5.2 Feature Compatibility
 
