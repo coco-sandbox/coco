@@ -9,14 +9,14 @@ import (
 )
 
 type InMemoryStore struct {
-	mu    sync.RWMutex
-	keys  map[string]*APIKey
+	mu     sync.RWMutex
+	keys   map[string]*APIKey
 	hashes map[string]string
 }
 
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
-		keys:  make(map[string]*APIKey),
+		keys:   make(map[string]*APIKey),
 		hashes: make(map[string]string),
 	}
 }

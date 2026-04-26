@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/coco-sandbox/coco/pkg/api"
+	cocoauth "github.com/coco-sandbox/coco/pkg/middleware/auth"
 )
 
 var ErrUnauthorized = errors.New("unauthorized")
@@ -118,4 +119,31 @@ func Auth(auth Authenticator, audit *AuditLogger) func(http.Handler) http.Handle
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+type KeyStoreAuthenticator struct {
+	store cocoauth.KeyStore
+}
+
+func NewKeyStoreAuth(store cocoauth.KeyStore) *KeyStoreAuthenticator {
+	return &KeyStoreAuthenticator{store: store}
+}
+
+func (k *KeyStoreAuthenticator) Authenticate(r *http.Request) (string, error) {
+	auth := r.Header.Get("Authorization")
+	if auth == "" {
+		return "", ErrUnauthorized
+	}
+
+	parts := strings.SplitN(auth, " ", 2)
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return "", ErrUnauthorized
+	}
+
+	key, err := k.store.ValidateKey(r.Context(), parts[1])
+	if err != nil {
+		return "", ErrUnauthorized
+	}
+
+	return key.Name, nil
 }

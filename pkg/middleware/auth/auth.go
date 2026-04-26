@@ -5,9 +5,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"crypto/rand"
 	"errors"
 	"time"
 
@@ -15,11 +15,11 @@ import (
 )
 
 var (
-	ErrInvalidKey      = errors.New("invalid API key")
-	ErrKeyExpired      = errors.New("API key expired")
-	ErrKeyDisabled     = errors.New("API key disabled")
-	ErrUnauthorized    = errors.New("unauthorized")
-	ErrForbidden       = errors.New("forbidden")
+	ErrInvalidKey   = errors.New("invalid API key")
+	ErrKeyExpired   = errors.New("API key expired")
+	ErrKeyDisabled  = errors.New("API key disabled")
+	ErrUnauthorized = errors.New("unauthorized")
+	ErrForbidden    = errors.New("forbidden")
 )
 
 type Role int32
@@ -29,20 +29,20 @@ const (
 	RoleAdmin       Role = 1
 	RoleOperator    Role = 2
 	RoleDeveloper   Role = 3
-	RoleReadonly   Role = 4
+	RoleReadonly    Role = 4
 )
 
 type Scope int32
 
 const (
-	ScopeUnspecified     Scope = 0
-	ScopeSandboxCreate   Scope = 1
-	ScopeSandboxRead     Scope = 2
-	ScopeSandboxWrite    Scope = 3
-	ScopeSandboxDelete   Scope = 4
-	ScopeTemplateRead    Scope = 5
-	ScopeTemplateWrite   Scope = 6
-	ScopeClusterAdmin   Scope = 7
+	ScopeUnspecified   Scope = 0
+	ScopeSandboxCreate Scope = 1
+	ScopeSandboxRead   Scope = 2
+	ScopeSandboxWrite  Scope = 3
+	ScopeSandboxDelete Scope = 4
+	ScopeTemplateRead  Scope = 5
+	ScopeTemplateWrite Scope = 6
+	ScopeClusterAdmin  Scope = 7
 )
 
 type APIKey struct {

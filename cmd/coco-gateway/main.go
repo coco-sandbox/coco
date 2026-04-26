@@ -17,8 +17,14 @@ import (
 	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
 	"github.com/coco-sandbox/coco/pkg/config"
 	"github.com/coco-sandbox/coco/pkg/metrics"
+	cocoauth "github.com/coco-sandbox/coco/pkg/middleware/auth"
 	"github.com/coco-sandbox/coco/pkg/visor"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func timestampNow() *timestamppb.Timestamp {
+	return timestamppb.Now()
+}
 
 func main() {
 	log.SetFlags(0)
@@ -39,12 +45,27 @@ func main() {
 func run(ctx context.Context, cfg *config.Config) error {
 	metrics.Register()
 
-	auth := middleware.NewTokenAuth()
+	tokenAuth := middleware.NewTokenAuth()
 	for token, user := range cfg.APIKeys {
-		auth.AddToken(token, user)
+		tokenAuth.AddToken(token, user)
 	}
 
 	auditLogger := middleware.NewAuditLogger()
+
+	keyStore := cocoauth.NewInMemoryStore()
+
+	for token, user := range cfg.APIKeys {
+		key := &cocoauth.APIKey{
+			ID:        user,
+			Name:      user,
+			KeyHash:   cocoauth.HashKey(token),
+			Role:      cocoauth.RoleOperator,
+			Scopes:    []cocoauth.Scope{cocoauth.ScopeSandboxCreate, cocoauth.ScopeSandboxRead, cocoauth.ScopeSandboxWrite, cocoauth.ScopeSandboxDelete},
+			CreatedAt: timestampNow(),
+			Enabled:   true,
+		}
+		keyStore.CreateKey(context.Background(), key)
+	}
 
 	gw := NewGatewayServer(cfg.MasterAddr, nil)
 	vp := visor.NewPool(visor.SocketPath, 10)
@@ -93,7 +114,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	mux.Handle("/metrics", metrics.Handler())
 
-	registerRoutes(mux, gw, auth, vp)
+	registerRoutes(mux, gw, tokenAuth, vp, keyStore)
 
 	handler := middleware.RecoveryMiddleware()(mux)
 	handler = middleware.CORS(middleware.DefaultCORSConfig())(handler)
@@ -101,7 +122,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, int64(cfg.RateLimitBurst), time.Second)
 		handler = middleware.RateLimit(rateLimiter)(handler)
 	}
-	handler = middleware.Auth(auth, auditLogger)(handler)
+	handler = middleware.Auth(tokenAuth, auditLogger)(handler)
 	handler = middleware.Tracing(handler)
 	handler = middleware.Logging(middleware.NewLogger())(handler)
 

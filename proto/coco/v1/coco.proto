@@ -37,6 +37,83 @@ enum NetworkMode {
   NETWORK_MODE_ISOLATED = 4;
 }
 
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_ADMIN = 1;
+  ROLE_OPERATOR = 2;
+  ROLE_DEVELOPER = 3;
+  ROLE_READONLY = 4;
+}
+
+enum Scope {
+  SCOPE_UNSPECIFIED = 0;
+  SCOPE_SANDBOX_CREATE = 1;
+  SCOPE_SANDBOX_READ = 2;
+  SCOPE_SANDBOX_WRITE = 3;
+  SCOPE_SANDBOX_DELETE = 4;
+  SCOPE_TEMPLATE_READ = 5;
+  SCOPE_TEMPLATE_WRITE = 6;
+  SCOPE_CLUSTER_ADMIN = 7;
+}
+
+// =============================================================================
+// API Key Messages
+// =============================================================================
+
+message APIKey {
+  string id = 1;
+  string name = 2;
+  Role role = 3;
+  repeated Scope scopes = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  bool enabled = 7;
+}
+
+message CreateAPIKeyRequest {
+  string name = 1;
+  Role role = 2;
+  repeated Scope scopes = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message CreateAPIKeyResponse {
+  APIKey key = 1;
+  string raw_key = 2;
+}
+
+message ListAPIKeysRequest {}
+
+message ListAPIKeysResponse {
+  repeated APIKey keys = 1;
+}
+
+message DeleteAPIKeyRequest {
+  string id = 1;
+}
+
+message DeleteAPIKeyResponse {}
+
+message ValidateAPIKeyRequest {
+  string key = 1;
+}
+
+message ValidateAPIKeyResponse {
+  bool valid = 1;
+  APIKey api_key = 2;
+}
+
+// =============================================================================
+// Auth Service (API Key Management)
+// =============================================================================
+
+service AuthService {
+  rpc CreateAPIKey(CreateAPIKeyRequest) returns (CreateAPIKeyResponse);
+  rpc ListAPIKeys(ListAPIKeysRequest) returns (ListAPIKeysResponse);
+  rpc DeleteAPIKey(DeleteAPIKeyRequest) returns (DeleteAPIKeyResponse);
+  rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse);
+}
+
 // =============================================================================
 // Gateway Service (Public REST/gRPC API)
 // =============================================================================

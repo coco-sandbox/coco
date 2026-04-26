@@ -5,6 +5,7 @@ image:
   master: coco-master:latest
   node: coco-node:latest
   pullPolicy: IfNotPresent
+  imagePullSecrets: []
 
 etcd:
   enabled: true
@@ -27,6 +28,21 @@ gateway:
       memory: 128Mi
       cpu: 100m
 
+  auth:
+    enabled: false
+    apiKeys: []
+    rateLimit:
+      enabled: true
+      rps: 1000
+      burst: 2000
+
+  network:
+    subnet: "10.0.0.0/24"
+    rateLimit:
+      enabled: true
+      defaultRPS: 1000
+      defaultBurst: 2000
+
 master:
   replicaCount: 1
   resources:
@@ -37,6 +53,11 @@ master:
       memory: 256Mi
       cpu: 250m
   etcdEndpoints: []
+  leaderElection:
+    enabled: true
+    ttl: 30s
+  scheduler:
+    strategy: least_loaded
 
 node:
   poolSize: 10
@@ -48,9 +69,47 @@ node:
       memory: 512Mi
       cpu: 500m
 
+  kvm:
+    enabled: true
+    defaultMemoryMB: 512
+    defaultVCPUs: 1
+    maxMemoryMB: 8192
+    maxVCPUs: 8
+
+  storage:
+    type: btrfs
+    basePath: /var/lib/coco
+
+  network:
+    mode: bridge
+    eBPFEnabled: false
+
 metrics:
   enabled: true
   port: 9090
+  path: /metrics
 
 logging:
   level: info
+  format: json
+
+security:
+  seccomp:
+    enabled: true
+  networkPolicy:
+    enabled: false
+    egress:
+      - to:
+        - namespaceSelector: {}
+        ports:
+          - protocol: TCP
+            port: 2379
+          - protocol: TCP
+            port: 2380
+
+rbac:
+  enabled: true
+
+serviceMonitor:
+  enabled: false
+  interval: 30s

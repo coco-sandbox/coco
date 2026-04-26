@@ -18,7 +18,7 @@ var (
 
 type Middleware struct {
 	authenticator *Authenticator
-	skipPaths    map[string]bool
+	skipPaths     map[string]bool
 }
 
 type MiddlewareOption func(*Middleware)

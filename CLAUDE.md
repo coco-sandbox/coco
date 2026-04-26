@@ -13,6 +13,12 @@ Coco is a sandbox runtime that provides hardware-level isolation using KVM. Each
 **Network:** Go + C/eBPF programs (XDP filters at kernel level)  
 **External communication:** REST API (port 8080); internal use gRPC and Unix sockets.
 
+| Component | Language |
+|-----------|----------|
+| Gateway, Master, Node, cococtl, Net | Go |
+| Visor, Agent, Fork | Zig |
+| eBPF | C (compiled with clang, loaded via Go + Cilium ebpf) |
+
 Build output: Go binaries in `bin/`, Zig binaries in `daemon/*/zig-out/bin/`.
 
 ## Quick Start
@@ -92,7 +98,7 @@ Run `go fmt`/`zig fmt` before declaring work done — this is a project conventi
 
 - `cmd/` — Go entry points (coco-gateway, coco-master, coco-node, cococtl)
 - `pkg/` — Shared Go packages (api, checkpoint, cluster, config, net, pool, scheduler, store, etc.)
-- `daemon/` — Zig services (coco-visor, coco-agent, coco-fork, coco-net)
+- `daemon/` — Zig services (coco-visor, coco-agent, coco-fork); Go + C (coco-net, coco-checkpoint)
 - `proto/` — Protocol buffer definitions (regenerate with `make proto`)
 - `ebpf/` — C/eBPF network programs
 - `spec/` — Architecture specifications (source of truth for design decisions)
@@ -107,6 +113,15 @@ Run `go fmt`/`zig fmt` before declaring work done — this is a project conventi
 - **protoc** — for protobuf code generation
 - **KVM-enabled host** — for running sandbox tests and integration tests
 - **btrfs** — for reflink/fork operations (optional, affects fork performance)
+
+## Performance Targets
+
+| Metric | Target |
+|--------|--------|
+| Cold start | <30 ms |
+| Fork | <10 ms |
+| Memory overhead | <2 MiB per sandbox (control plane) |
+| Network aggregate | 20 Gbps (node goal) |
 
 ## Development Practices
 
@@ -127,15 +142,18 @@ Run `go fmt`/`zig fmt` before declaring work done — this is a project conventi
 
 ## Communication Flows
 
-**External clients** → REST API → **Gateway** (Go)  
-**Gateway** → gRPC → **Master** (cluster decisions) and **Node** (local operations)  
-**Node** → Unix socket → **Visor** (Zig, handles KVM)  
-**Visor** → VSock/TCP → **Agent** (Zig, runs inside VM)
+| Path | Protocol |
+|------|----------|
+| Client → Gateway | REST (JSON) |
+| Gateway → Master, Master → Node | gRPC |
+| Node → Visor | Unix domain socket (binary) |
+| Visor ↔ Agent | VSock (TCP fallback in dev) |
 
 Each layer handles its responsibility cleanly. Modifying communication protocols requires updating both sides and potentially regenerating proto code.
 
 ## References
 
+- **Spec index:** `spec/index.md` — quick reference (component languages, communication paths, performance targets) and reading order
 - Architecture specs: `spec/00-overview.md`, `spec/01-folder-structure.md`
 - Build commands and structure: `AGENTS.md`
 - API design: `spec/02-api.md`

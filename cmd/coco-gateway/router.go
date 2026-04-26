@@ -13,11 +13,12 @@ import (
 	"github.com/coco-sandbox/coco/cmd/coco-gateway/middleware"
 	"github.com/coco-sandbox/coco/pkg/api"
 	"github.com/coco-sandbox/coco/pkg/api/handlers"
+	"github.com/coco-sandbox/coco/pkg/middleware/auth"
 	"github.com/coco-sandbox/coco/pkg/types"
 	"github.com/coco-sandbox/coco/pkg/visor"
 )
 
-func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authenticator, vp *visor.Pool) {
+func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authenticator, vp *visor.Pool, keyStore auth.KeyStore) {
 	// Sandbox handlers - gateway implements SandboxService interface
 	sbHandler := handlers.NewSandboxHandler(gw)
 	// Exec handler for streaming/interactive exec
@@ -218,6 +219,42 @@ func registerRoutes(mux *http.ServeMux, gw *GatewayServer, auth middleware.Authe
 			http.NotFound(w, r)
 		}
 	})
+
+	// API Keys (Auth)
+	if keyStore != nil {
+		authHandler := handlers.NewAuthHandler(keyStore)
+		mux.HandleFunc("/v1/api-keys", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost:
+				authHandler.HandleCreate(w, r)
+			case http.MethodGet:
+				authHandler.HandleList(w, r)
+			default:
+				api.WriteMethodNotAllowed(w)
+			}
+		})
+
+		mux.HandleFunc("/v1/api-keys/", func(w http.ResponseWriter, r *http.Request) {
+			path := strings.TrimPrefix(r.URL.Path, "/v1/api-keys/")
+			parts := strings.SplitN(path, "/", 2)
+			id := parts[0]
+			if id == "" {
+				http.NotFound(w, r)
+				return
+			}
+
+			switch r.Method {
+			case http.MethodDelete:
+				authHandler.HandleDelete(w, r)
+			default:
+				api.WriteMethodNotAllowed(w)
+			}
+		})
+
+		mux.HandleFunc("/v1/auth/validate", func(w http.ResponseWriter, r *http.Request) {
+			authHandler.HandleValidate(w, r)
+		})
+	}
 }
 
 // Exec handler - proxies to master via GatewayServer
