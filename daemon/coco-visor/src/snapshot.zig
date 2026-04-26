@@ -4,7 +4,7 @@
 //! Snapshot operations for VM state capture.
 
 const std = @import("std");
-const posix = std.posix;
+const sc = @import("syscall.zig");
 
 pub const SnapshotError = error{
     SnapshotFailed,
