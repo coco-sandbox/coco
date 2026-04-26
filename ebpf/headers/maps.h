@@ -4,6 +4,8 @@
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 
+#define NSEC_PER_SEC 1000000000ULL
+
 struct flow_key {
     __u32 src_ip;
     __u32 dst_ip;
@@ -62,5 +64,19 @@ struct {
     __type(value, __u64);
     __uint(max_entries, 64);
 } coco_stats SEC(".maps");
+
+struct rate_limit_bucket {
+    __u64 tokens;
+    __u64 last_refill_ns;
+    __u64 rate_pps;
+    __u64 burst_packets;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, __u32);
+    __type(value, struct rate_limit_bucket);
+    __uint(max_entries, 256);
+} coco_rate_limits SEC(".maps");
 
 #endif

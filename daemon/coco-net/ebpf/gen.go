@@ -6,6 +6,7 @@
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -tags linux -cflags "-Wno-compare-distinct-pointer-types -I../../../ebpf/headers -I/usr/include/x86_64-linux-gnu" xdp_nat ../../../ebpf/xdp/xdp_nat.bpf.c
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -tags linux -cflags "-Wno-compare-distinct-pointer-types -I../../../ebpf/headers -I/usr/include/x86_64-linux-gnu" xdp_conntrack ../../../ebpf/xdp/xdp_conntrack.bpf.c
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -tags linux -cflags "-Wno-compare-distinct-pointer-types -I../../../ebpf/headers -I/usr/include/x86_64-linux-gnu" xdp_stats ../../../ebpf/xdp/xdp_stats.bpf.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -tags linux -cflags "-Wno-compare-distinct-pointer-types -I../../../ebpf/headers -I/usr/include/x86_64-linux-gnu" tc_shaper ../../../ebpf/shaper/tc_shaper.bpf.c
 
 package ebpf
 
