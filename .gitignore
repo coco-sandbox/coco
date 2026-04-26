@@ -22,4 +22,5 @@ zig-out/
 /coco-agent
 /coco-fork
 test-gateway
-.claude/settings.json
+.claude/
+.claude/settings.local.json
