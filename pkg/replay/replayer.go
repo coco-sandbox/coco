@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 // Replayer replays recorded sessions with step control
 type Replayer struct {
 	sandboxID string
-	events    []ReplayEvent
+	events    []types.ReplayEvent
 	idx       int
 }
 
@@ -24,7 +26,7 @@ func NewReplayer(sandboxID, basePath string) (*Replayer, error) {
 		return nil, err
 	}
 
-	var events []ReplayEvent
+	var events []types.ReplayEvent
 	if err := json.Unmarshal(data, &events); err != nil {
 		return nil, err
 	}
@@ -33,7 +35,7 @@ func NewReplayer(sandboxID, basePath string) (*Replayer, error) {
 }
 
 // Next returns the next event and whether more exist
-func (r *Replayer) Next() (*ReplayEvent, bool) {
+func (r *Replayer) Next() (*types.ReplayEvent, bool) {
 	if r.idx >= len(r.events) {
 		return nil, false
 	}

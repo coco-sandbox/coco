@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 // Recorder captures exec events during sandbox lifecycle
 type Recorder struct {
 	sandboxID string
-	events    []ReplayEvent
+	events    []types.ReplayEvent
 	mu        sync.Mutex
 	path      string
 	state     string
@@ -26,7 +28,7 @@ func NewRecorder(sandboxID, basePath string) *Recorder {
 	os.MkdirAll(path, 0755)
 	return &Recorder{
 		sandboxID: sandboxID,
-		events:    make([]ReplayEvent, 0),
+		events:    make([]types.ReplayEvent, 0),
 		path:      path,
 		state:     "recording",
 	}
@@ -42,7 +44,7 @@ func (r *Recorder) RecordEvent(eventType string, data interface{}) error {
 		return err
 	}
 
-	r.events = append(r.events, ReplayEvent{
+	r.events = append(r.events, types.ReplayEvent{
 		Type:      eventType,
 		Timestamp: time.Now().UnixNano(),
 		Data:      string(jsonData),

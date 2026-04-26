@@ -54,7 +54,7 @@ func (w *HashWriter) Write(data []byte) (int, error) {
 func (w *HashWriter) Sum() Hash256 {
 	var h [32]byte
 	copy(h[:], w.h.Sum(nil))
-	return h
+	return Hash256(h)
 }
 
 // SumHex returns the final hash as hex string

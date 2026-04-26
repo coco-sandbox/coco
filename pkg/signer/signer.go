@@ -28,7 +28,7 @@ func Sign(priv PrivateKey, message []byte) ([]byte, error) {
 	if len(priv) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("invalid private key size")
 	}
-	sig := ed25519.Sign(priv, message)
+	sig := ed25519.Sign(ed25519.PrivateKey(priv), message)
 	return sig, nil
 }
 

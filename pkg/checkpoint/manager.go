@@ -9,94 +9,74 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 // Manager handles checkpoint lifecycle
 type Manager struct {
 	basePath    string
 	mu          sync.RWMutex
-	checkpoints map[string]*Checkpoint // key: sandboxID/name
+	checkpoints map[string]*types.Checkpoint
 }
 
 // NewManager creates a new checkpoint manager
 func NewManager(basePath string) *Manager {
 	return &Manager{
 		basePath:    basePath,
-		checkpoints: make(map[string]*Checkpoint),
+		checkpoints: make(map[string]*types.Checkpoint),
 	}
 }
 
 // Create creates a new checkpoint
-func (m *Manager) Create(sandboxID, name, description string) (*Checkpoint, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	id := fmt.Sprintf("cp_%s_%d", name, time.Now().UnixNano())
-	cp := &Checkpoint{
+func (m *Manager) Create(sandboxID, name, description string) (*types.Checkpoint, error) {
+	id := fmt.Sprintf("%s-%d", sandboxID, time.Now().UnixNano())
+	cp := &types.Checkpoint{
 		ID:          id,
 		SandboxID:   sandboxID,
 		Name:        name,
 		Description: description,
 		Path:        filepath.Join(m.basePath, sandboxID, id),
 		CreatedAt:   time.Now(),
+		Compression: "zstd",
 	}
 
 	if err := os.MkdirAll(cp.Path, 0755); err != nil {
-		return nil, err
-	}
-
-	// Create memory and state files
-	f1, err := os.Create(filepath.Join(cp.Path, "memory.img"))
-	if err != nil {
-		return nil, err
-	}
-	f1.Close()
-
-	f2, err := os.Create(filepath.Join(cp.Path, "vmstate.bin"))
-	if err != nil {
-		return nil, err
-	}
-	f2.Close()
-
-	// Use clh-remote save-migration for actual VM snapshot
-	// clh-remote save-migration --vm-url unix:///run/coco/vm/{sandboxID}/sock --snapshot-path {cp.Path}
-
-	if info, err := os.Stat(cp.Path); err == nil {
-		cp.SizeBytes = info.Size()
+		return nil, fmt.Errorf("create checkpoint dir: %w", err)
 	}
 
 	key := fmt.Sprintf("%s/%s", sandboxID, name)
+	m.mu.Lock()
 	m.checkpoints[key] = cp
+	m.mu.Unlock()
+
 	return cp, nil
 }
 
-// Restore restores a checkpoint
-func (m *Manager) Restore(sandboxID, name string) error {
+// Get retrieves a checkpoint by sandbox ID and name
+func (m *Manager) Get(sandboxID, name string) (*types.Checkpoint, error) {
 	key := fmt.Sprintf("%s/%s", sandboxID, name)
-	m.mu.RLock()
-	cp, ok := m.checkpoints[key]
-	m.mu.RUnlock()
-
-	if !ok {
-		return fmt.Errorf("checkpoint not found: %s", name)
-	}
-
-	// clh-remote restore-migration --snapshot-path {cp.Path}
-	return nil
-}
-
-// List returns all checkpoints for a sandbox
-func (m *Manager) List(sandboxID string) []*Checkpoint {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	out := make([]*Checkpoint, 0)
+	if cp, ok := m.checkpoints[key]; ok {
+		return cp, nil
+	}
+	return nil, fmt.Errorf("checkpoint not found")
+}
+
+// List returns all checkpoints for a sandbox
+func (m *Manager) List(sandboxID string) []*types.Checkpoint {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var result []*types.Checkpoint
 	for _, cp := range m.checkpoints {
 		if cp.SandboxID == sandboxID {
-			out = append(out, cp)
+			result = append(result, cp)
 		}
 	}
-	return out
+	return result
 }
 
 // Delete removes a checkpoint

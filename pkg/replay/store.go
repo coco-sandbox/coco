@@ -9,18 +9,20 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 // Store manages replay metadata
 type Store struct {
 	basePath string
 	mu       sync.RWMutex
-	index    map[string]*Replay
+	index    map[string]*types.Checkpoint
 }
 
 // NewStore creates a new replay store
 func NewStore(basePath string) (*Store, error) {
-	s := &Store{basePath: basePath, index: make(map[string]*Replay)}
+	s := &Store{basePath: basePath, index: make(map[string]*types.Checkpoint)}
 	if err := s.loadIndex(); err != nil {
 		return nil, err
 	}
@@ -28,7 +30,7 @@ func NewStore(basePath string) (*Store, error) {
 }
 
 // Put saves a replay
-func (s *Store) Put(r *Replay) error {
+func (s *Store) Put(r *types.Checkpoint) error {
 	s.mu.Lock()
 	s.index[r.ID] = r
 	s.mu.Unlock()
@@ -40,7 +42,7 @@ func (s *Store) Put(r *Replay) error {
 }
 
 // Get retrieves a replay by ID
-func (s *Store) Get(id string) (*Replay, error) {
+func (s *Store) Get(id string) (*types.Checkpoint, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if r, ok := s.index[id]; ok {
@@ -50,10 +52,10 @@ func (s *Store) Get(id string) (*Replay, error) {
 }
 
 // ListBySandbox returns all replays for a sandbox
-func (s *Store) ListBySandbox(sandboxID string) []*Replay {
+func (s *Store) ListBySandbox(sandboxID string) []*types.Checkpoint {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*Replay, 0)
+	out := make([]*types.Checkpoint, 0)
 	for _, r := range s.index {
 		if r.SandboxID == sandboxID {
 			out = append(out, r)
@@ -71,7 +73,7 @@ func (s *Store) loadIndex() error {
 		if e.IsDir() {
 			metaPath := filepath.Join(s.basePath, e.Name(), "meta.json")
 			if data, err := os.ReadFile(metaPath); err == nil {
-				var r Replay
+				var r types.Checkpoint
 				if json.Unmarshal(data, &r) == nil {
 					s.index[r.ID] = &r
 				}
