@@ -16,9 +16,11 @@ func TestIPAMAllocate(t *testing.T) {
 		t.Fatal("IP should not be empty")
 	}
 
-	ip = strings.Split(ip, "/")[0]
+	t.Logf("Got IP: %s", ip)
 
-	if ip[:14] != "169.254.68." {
+	ipNoCidr := strings.Split(ip, "/")[0]
+
+	if !strings.HasPrefix(ipNoCidr, "169.254.68.") {
 		t.Errorf("IP should be in subnet 169.254.68.0/24, got %s", ip)
 	}
 }
