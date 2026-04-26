@@ -355,7 +355,7 @@ pub const VM = struct {
                 .kernel = self.config.kernel,
                 .rootfs = self.config.rootfs,
             };
-            _ = checkpoint.createCheckpoint(self.config.id, mem_ptr, self.memory_size, meta);
+            _ = checkpoint.createCheckpoint(self.config.id, mem_ptr, self.memory_size, meta, 0);
         }
 
         const duration: i128 = sc.nanoTimestamp() - start;
@@ -415,7 +415,7 @@ pub const VM = struct {
                 .kernel = self.config.kernel,
                 .rootfs = self.config.rootfs,
             };
-            const size = checkpoint.createCheckpoint(self.config.id, mem_ptr, self.memory_size, meta) catch |e| {
+            const size = checkpoint.createCheckpoint(self.config.id, mem_ptr, self.memory_size, meta, 0) catch |e| {
                 std.debug.print("[vmm] Snapshot failed: {}\n", .{e});
                 return VMMError.SnapshotFailed;
             };

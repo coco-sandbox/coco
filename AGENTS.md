@@ -24,7 +24,7 @@ go build -o bin/cococtl ./cmd/cococtl
 **Individual Zig components:**
 ```bash
 cd daemon/coco-visor && zig build -Doptimize=ReleaseSafe
-cd daemon/coco-agent && zig build -Doptimize=ReleaseSafe
+cd daemon/coco-agent && zig build -Doptimize=ReleaseSmall
 cd daemon/coco-fork && zig build -Doptimize=ReleaseSafe
 ```
 

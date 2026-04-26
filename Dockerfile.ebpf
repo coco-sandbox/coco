@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The Coco Sandbox Authors
+#
+# Dockerfile for building eBPF programs
+# Usage: docker build -f Dockerfile.ebpf -t coco-ebpf .
+
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y \
+    clang \
+    llvm \
+    linux-libc-dev \
+    libbpf-dev \
+    linux-headers-generic \
+    make \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+COPY ebpf/ ./ebpf/
+
+# Build with system headers
+RUN cd ebpf && \
+    CLANG="clang" && \
+    make xdp from_host from_sandbox from_world
+
+CMD ["ls", "-la", "ebpf-out/"]

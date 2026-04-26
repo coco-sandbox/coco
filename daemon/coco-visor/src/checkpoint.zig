@@ -203,6 +203,7 @@ pub const CheckpointManager = struct {
         mem_ptr: [*]u8,
         mem_size: u64,
         metadata: CheckpointMetadata,
+        vcpu_fd: i32,
     ) u64 {
         const checkpoint_dir = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.base_dir, id }) catch return 0;
         defer self.allocator.free(checkpoint_dir);
@@ -227,7 +228,7 @@ pub const CheckpointManager = struct {
         self.writeMetadata(meta_path, meta);
 
         const cpu_path = std.fmt.allocPrint(self.allocator, "{s}/cpu.bin", .{checkpoint_dir}) catch return written;
-        self.saveCpuState(cpu_path);
+        self.saveCpuStateFor(cpu_path, vcpu_fd);
 
         const devices_path = std.fmt.allocPrint(self.allocator, "{s}/devices.bin", .{checkpoint_dir}) catch return written;
         self.saveDeviceState(devices_path);
@@ -241,6 +242,7 @@ pub const CheckpointManager = struct {
         mem_ptr: [*]u8,
         mem_size: u64,
         metadata: CheckpointMetadata,
+        vcpu_fd: i32,
     ) u64 {
         var meta = metadata;
         meta.incremental = true;
@@ -256,7 +258,7 @@ pub const CheckpointManager = struct {
             }
         }
 
-        return self.createCheckpoint(id, mem_ptr, mem_size, meta);
+        return self.createCheckpoint(id, mem_ptr, mem_size, meta, vcpu_fd);
     }
 
     pub fn restoreCheckpoint(
