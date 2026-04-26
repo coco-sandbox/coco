@@ -20,6 +20,8 @@ pub const KVM_EXIT_MMIO = 6;
 pub const KVM_EXIT_SHUTDOWN = 8;
 pub const KVM_EXIT_INTERNAL_ERROR = 17;
 
+pub const KVM_GET_DIRTY_LOG = 0x4010ae67;
+
 pub const KvmUserspaceMemoryRegion = extern struct {
     slot: u32,
     flags: u32,
@@ -154,4 +156,24 @@ pub fn getSregs(vcpu_fd: i32) !KvmSregs {
 
 pub fn setSregs(vcpu_fd: i32, sregs: *const KvmSregs) !void {
     _ = try ioctl(vcpu_fd, KVM_SET_SREGS, @intFromPtr(sregs));
+}
+
+pub const KvmDirtyLog = extern struct {
+    slot: u32,
+    padding1: u32,
+    dirty_bitmap: [*]u64,
+};
+
+pub fn getDirtyLog(vcpu_fd: i32, slot: u32, num_pages: usize) ![]u64 {
+    const bitmap_size = (num_pages + 63) / 64 * 8;
+    const bitmap = try posix.mmap(null, bitmap_size, posix.PROT{ .READ = true, .WRITE = true }, posix.MAP{ .TYPE = .ANONYMOUS }, -1, 0);
+    defer posix.munmap(@as([*]u8, @ptrCast(bitmap)));
+
+    const dirty_log = @as(*KvmDirtyLog, @ptrCast(@alignCast(bitmap)));
+    dirty_log.slot = slot;
+
+    _ = try ioctl(vcpu_fd, KVM_GET_DIRTY_LOG, @intFromPtr(dirty_log));
+
+    const dirty_pages = @as([*]u64, @ptrCast(bitmap))[0..(num_pages / 64 + 1)];
+    return dirty_pages[0..(num_pages / 64 + 1)];
 }

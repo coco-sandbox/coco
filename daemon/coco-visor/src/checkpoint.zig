@@ -397,6 +397,25 @@ pub const CheckpointManager = struct {
         self.dirty_pages.put(page_idx, true) catch {};
     }
 
+    pub fn markPagesDirtyFromBitmap(self: *CheckpointManager, bitmap: []u64, num_pages: usize) void {
+        var page_idx: usize = 0;
+        while (page_idx < num_pages) : (page_idx += 1) {
+            const word_idx = page_idx / 64;
+            const bit_idx = page_idx % 64;
+            if (word_idx < bitmap.len and (bitmap[word_idx] & (1 << bit_idx)) != 0) {
+                self.markPageDirty(@intCast(page_idx));
+            }
+        }
+    }
+
+    pub fn clearDirtyPages(self: *CheckpointManager) void {
+        self.dirty_pages.clear();
+    }
+
+    pub fn getDirtyPageCount(self: *CheckpointManager) usize {
+        return self.dirty_pages.count();
+    }
+
     fn writeMetadata(self: *CheckpointManager, path: []const u8, meta: CheckpointMetadata) void {
         const fd = sc.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644) catch return;
         defer sc.close(fd);

@@ -64,7 +64,7 @@ fn handleSigterm(sig_num: linux.SIG) callconv(.c) void {
 fn handleSigchld(sig_num: linux.SIG) callconv(.c) void {
     _ = sig_num;
     while (true) {
-        var status: i32 = 0;
+        var status: u32 = 0;
         const pid = linux.waitpid(-1, &status, linux.W.NOHANG);
         if (pid <= 0) break;
         if (pid == child_pid) child_pid = 0;
@@ -356,7 +356,7 @@ fn executeStructuredCommand(sock: Stream, cmd: []const u8, args_raw: []const u8,
     _ = linux.close(stdout_pipe[0]);
     _ = linux.close(stderr_pipe[0]);
 
-    var status: i32 = 0;
+    var status: u32 = 0;
     _ = linux.waitpid(pid, &status, 0);
     child_pid = 0;
 

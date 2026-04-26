@@ -47,7 +47,7 @@ cd daemon/coco-visor && zig fmt --check  # Zig format check
 
 ## Requirements
 
-- Go 1.23, Zig 0.14, protoc
+- Go 1.23, Zig 0.16, protoc
 - KVM-enabled host (tests/integration)
 - btrfs (reflink/fork operations)
 

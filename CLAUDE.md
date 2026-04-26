@@ -103,7 +103,7 @@ Run `go fmt`/`zig fmt` before declaring work done — this is a project conventi
 ## Dependencies
 
 - **Go 1.23** — for control plane
-- **Zig 0.14** — for data plane
+- **Zig 0.16** — for data plane
 - **protoc** — for protobuf code generation
 - **KVM-enabled host** — for running sandbox tests and integration tests
 - **btrfs** — for reflink/fork operations (optional, affects fork performance)

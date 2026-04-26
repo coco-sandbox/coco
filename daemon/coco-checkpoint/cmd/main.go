@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/checkpoint"
+	connect "connectrpc.com/connect"
 	v1 "github.com/coco-sandbox/coco/pkg/api/v1"
 	"github.com/coco-sandbox/coco/pkg/api/v1/v1connect"
+	"github.com/coco-sandbox/coco/pkg/checkpoint"
 	"github.com/coco-sandbox/coco/pkg/types"
-	connect "connectrpc.com/connect"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -147,10 +147,10 @@ func (s *CheckpointServer) Create(ctx context.Context, req *connect.Request[v1.C
 
 	return connect.NewResponse(&v1.CreateResponse{
 		CheckpointId:    cp.ID,
-		SizeBytes:      sizeBytes,
+		SizeBytes:       sizeBytes,
 		MemorySizeBytes: memSizeBytes,
-		DiskSizeBytes:  sizeBytes - memSizeBytes,
-		DurationMs:     0, // CRIU timing would go here
+		DiskSizeBytes:   sizeBytes - memSizeBytes,
+		DurationMs:      0, // CRIU timing would go here
 	}), nil
 }
 
@@ -226,10 +226,10 @@ func (s *CheckpointServer) GetStatus(ctx context.Context, req *connect.Request[v
 
 	return connect.NewResponse(&v1.GetStatusResponse{
 		Checkpoint:      checkpointToDetail(cp),
-		Stage:            v1.CheckpointStage_CHECKPOINT_STAGE_FINALIZING,
-		ProgressPercent:  100,
-		BytesWritten:     cp.SizeBytes,
-		TotalBytes:       cp.SizeBytes,
+		Stage:           v1.CheckpointStage_CHECKPOINT_STAGE_FINALIZING,
+		ProgressPercent: 100,
+		BytesWritten:    cp.SizeBytes,
+		TotalBytes:      cp.SizeBytes,
 	}), nil
 }
 
@@ -254,7 +254,7 @@ func checkpointToDetail(cp *types.Checkpoint) *v1.CheckpointDetail {
 		Compression:        comp,
 		MemorySizeBytes:    int64(cp.MemoryDiffMB) * 1024 * 1024,
 		DiskSizeBytes:      int64(cp.StateSizeKB) * 1024,
-		Incremental:         false,
+		Incremental:        false,
 		ParentCheckpointId: cp.ParentID,
 	}
 }
