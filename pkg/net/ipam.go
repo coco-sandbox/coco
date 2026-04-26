@@ -2,7 +2,6 @@ package net
 
 import (
     "fmt"
-    "net"
     "strconv"
     "sync"
 )
@@ -25,7 +24,7 @@ func NewIPAM() *IPAM {
     if err != nil {
         panic("invalid SubnetStart: " + err.Error())
     }
-    maxHosts := (1 << (24 - SubnetMask)) - 2 // Reserve .0 and .255
+    maxHosts := uint32(1<<8) - 2 // /24 = 256 - 2 reserved
     return &IPAM{
         allocated: make(map[string]bool),
         baseIP:    ip,
@@ -105,12 +104,9 @@ func split(s string, c byte) []string {
 // For /24 subnet design, we only use last octet for host allocation
 // This means all IPs are 169.254.68.x where x is the host number
 func incrementIP(base []byte, offset uint32) []byte {
-    // Only increment within last octet for /24
-    // For simplicity, we treat IP as a 32-bit integer
-    // This works because we only allocate from 169.254.68.1-254
     host := uint32(base[3]) + offset
     if host > 254 {
-        host = 254 // Cap at max hosts
+        host = 254
     }
     return []byte{base[0], base[1], base[2], byte(host)}
 }

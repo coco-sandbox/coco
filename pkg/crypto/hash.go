@@ -26,7 +26,8 @@ func Sum(data []byte) Hash256 {
 
 // SumHex computes SHA-256 hash and returns hex string
 func SumHex(data []byte) string {
-	return hex.EncodeToString(Sum(data)[:])
+	h := Sum(data)
+	return hex.EncodeToString(h[:])
 }
 
 // Verify checks if data matches the expected hash

@@ -9,18 +9,20 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 // Store manages checkpoint metadata
 type Store struct {
 	basePath string
 	mu       sync.RWMutex
-	index    map[string]*Checkpoint
+	index    map[string]*types.Checkpoint
 }
 
 // NewStore creates a new checkpoint store
 func NewStore(basePath string) (*Store, error) {
-	s := &Store{basePath: basePath, index: make(map[string]*Checkpoint)}
+	s := &Store{basePath: basePath, index: make(map[string]*types.Checkpoint)}
 	if err := s.loadIndex(); err != nil {
 		return nil, err
 	}
@@ -28,7 +30,7 @@ func NewStore(basePath string) (*Store, error) {
 }
 
 // Put saves a checkpoint
-func (s *Store) Put(cp *Checkpoint) error {
+func (s *Store) Put(cp *types.Checkpoint) error {
 	s.mu.Lock()
 	s.index[cp.ID] = cp
 	s.mu.Unlock()
@@ -40,7 +42,7 @@ func (s *Store) Put(cp *Checkpoint) error {
 }
 
 // Get retrieves a checkpoint by ID
-func (s *Store) Get(id string) (*Checkpoint, error) {
+func (s *Store) Get(id string) (*types.Checkpoint, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if cp, ok := s.index[id]; ok {
@@ -49,23 +51,23 @@ func (s *Store) Get(id string) (*Checkpoint, error) {
 	return nil, ErrCheckpointNotFound
 }
 
-// ListBySandbox returns all checkpoints for a sandbox
-func (s *Store) ListBySandbox(sandboxID string) []*Checkpoint {
+// List returns all checkpoints
+func (s *Store) List() []*types.Checkpoint {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*Checkpoint, 0)
+
+	var result []*types.Checkpoint
 	for _, cp := range s.index {
-		if cp.SandboxID == sandboxID {
-			out = append(out, cp)
-		}
+		result = append(result, cp)
 	}
-	return out
+	return result
 }
 
 // Delete removes a checkpoint
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if cp, ok := s.index[id]; ok {
 		os.RemoveAll(cp.Path)
 		delete(s.index, id)
@@ -82,7 +84,7 @@ func (s *Store) loadIndex() error {
 		if e.IsDir() {
 			metaPath := filepath.Join(s.basePath, e.Name(), "meta.json")
 			if data, err := os.ReadFile(metaPath); err == nil {
-				var cp Checkpoint
+				var cp types.Checkpoint
 				if json.Unmarshal(data, &cp) == nil {
 					s.index[cp.ID] = &cp
 				}
