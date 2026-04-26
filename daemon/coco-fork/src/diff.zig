@@ -47,11 +47,11 @@ pub fn computeDiff(old_path: []const u8, new_path: []const u8, allocator: std.me
     };
     defer posix.close(new_fd);
 
-    var old_stat = try posix.fstat(old_fd);
-    var new_stat = try posix.fstat(new_fd);
+    const old_stat = try posix.fstat(old_fd);
+    const new_stat = try posix.fstat(new_fd);
 
-    const old_size = @intCast(old_stat.size);
-    const new_size = @intCast(new_stat.size);
+    const old_size: u64 = @intCast(old_stat.size);
+    const new_size: u64 = @intCast(new_stat.size);
 
     var ranges = std.ArrayList(DiffRange).init(allocator);
     defer ranges.deinit();
