@@ -5,8 +5,10 @@ go 1.23
 require (
 	github.com/dgraph-io/badger/v4 v4.4.0
 	github.com/google/uuid v1.6.0
+	github.com/prometheus/client_golang v1.18.0
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.56.3
+	google.golang.org/protobuf v1.33.0
 )
 
 require (

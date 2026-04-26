@@ -168,12 +168,11 @@ func (h *SandboxHandler) HandleHibernate(w http.ResponseWriter, r *http.Request,
 
 // HandleResumeHibernate handles POST /v1/sandboxes/:id/resume-hibernate
 func (h *SandboxHandler) HandleResumeHibernate(w http.ResponseWriter, r *http.Request, id string) {
-	sb, err := h.service.ResumeHibernate(r.Context(), id)
-	if err != nil {
+	if err := h.service.ResumeHibernate(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sb)
+	json.NewEncoder(w).Encode(map[string]string{"state": "running"})
 }

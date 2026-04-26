@@ -80,7 +80,7 @@ func Default() *Config {
 		MTLSEnabled:       false,
 		MetricsEnabled:    true,
 		MetricsPort:       9090,
-		NodeID:            os.Hostname(),
+		NodeID:            func() string { h, _ := os.Hostname(); return h }(),
 		PoolSize:          5,
 		MasterAddr:        ":4746",
 		SchedulerStrategy: "least-loaded",

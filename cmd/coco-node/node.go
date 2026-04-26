@@ -1,9 +1,7 @@
-// SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2026 The Coco Sandbox Authors
-
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -46,8 +44,8 @@ func (s *NodeServer) BootSandbox(ctx context.Context, req *types.BootSandboxRequ
 		MemoryMB:  req.MemoryMB,
 		VCPUs:     req.VCPUs,
 		State:     types.SandboxStateRunning,
-		VsockCID:  vm.VsockCID,
-		PID:       int32(vm.PID),
+		VsockCID:  int(vm.VsockCID),
+		PID:       int(vm.PID),
 		HostNode:  s.nodeID,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -68,11 +66,17 @@ func (s *NodeServer) DestroyVM(ctx context.Context, req *types.DestroyVMRequest)
 		return fmt.Errorf("sandbox not found: %w", err)
 	}
 
-	if err := s.visor.Destroy(ctx, uint32(sb.PID)); err != nil {
-		log.Printf("Warning: failed to destroy VM PID %d: %v", sb.PID, err)
+	client, err := s.visor.Acquire()
+	if err != nil {
+		log.Printf("Warning: failed to acquire visor client: %v", err)
+	} else {
+		if err := client.Destroy(sb.ID); err != nil {
+			log.Printf("Warning: failed to destroy VM %s: %v", sb.ID, err)
+		}
+		s.visor.Release(client)
 	}
 
-	if _, err := s.vmPool.Release(req.SandboxID); err != nil {
+	if err := s.vmPool.Release(req.SandboxID); err != nil {
 		log.Printf("Warning: failed to release VM from pool: %v", err)
 	}
 
@@ -89,7 +93,13 @@ func (s *NodeServer) PauseVM(ctx context.Context, req *types.PauseVMRequest) err
 		return fmt.Errorf("sandbox not found: %w", err)
 	}
 
-	if err := s.visor.Pause(ctx, uint32(sb.PID)); err != nil {
+	client, err := s.visor.Acquire()
+	if err != nil {
+		return fmt.Errorf("failed to acquire visor client: %w", err)
+	}
+	defer s.visor.Release(client)
+
+	if err := client.Pause(sb.ID); err != nil {
 		return fmt.Errorf("failed to pause VM: %w", err)
 	}
 
@@ -108,7 +118,13 @@ func (s *NodeServer) ResumeVM(ctx context.Context, req *types.ResumeVMRequest) e
 		return fmt.Errorf("sandbox not found: %w", err)
 	}
 
-	if err := s.visor.Resume(ctx, uint32(sb.PID)); err != nil {
+	client, err := s.visor.Acquire()
+	if err != nil {
+		return fmt.Errorf("failed to acquire visor client: %w", err)
+	}
+	defer s.visor.Release(client)
+
+	if err := client.Resume(sb.ID); err != nil {
 		return fmt.Errorf("failed to resume VM: %w", err)
 	}
 
@@ -121,31 +137,47 @@ func (s *NodeServer) ResumeVM(ctx context.Context, req *types.ResumeVMRequest) e
 	return nil
 }
 
-func (s *NodeServer) ExecVM(ctx context.Context, req *types.ExecRequest) ([]byte, int32, error) {
+func (s *NodeServer) ExecVM(ctx context.Context, req *types.ExecSandboxRequest) ([]byte, int32, error) {
 	sb, err := s.store.GetSandbox(req.SandboxID)
 	if err != nil {
 		return nil, 1, fmt.Errorf("sandbox not found: %w", err)
 	}
+	_ = sb
 
-	timeout := 30 * time.Second
-	if req.TimeoutMs > 0 {
-		timeout = time.Duration(req.TimeoutMs) * time.Millisecond
+	client, err := s.visor.Acquire()
+	if err != nil {
+		return nil, 1, fmt.Errorf("failed to acquire visor client: %w", err)
+	}
+	defer s.visor.Release(client)
+
+	var stdout bytes.Buffer
+	var exitCode uint32
+
+	execReq := visor.ExecRequest{
+		Cmd:        req.Cmd,
+		Args:       req.Args,
+		Env:        req.Env,
+		WorkingDir: req.WorkingDir,
 	}
 
-	output, exitCode, err := s.visor.Exec(ctx, uint32(sb.PID), req.Cmd, req.Args, req.Env, req.WorkingDir, timeout)
-	if err != nil {
+	if err := client.Exec(execReq, func(chunk visor.ExecChunk) error {
+		if chunk.StreamType == 3 {
+			exitCode = chunk.ExitCode
+		} else {
+			stdout.Write(chunk.Data)
+		}
+		return nil
+	}); err != nil {
 		return nil, 1, fmt.Errorf("exec failed: %w", err)
 	}
 
-	return output, int32(exitCode), nil
+	return stdout.Bytes(), int32(exitCode), nil
 }
 
 func (s *NodeServer) GetNodeStatus(ctx context.Context) (*types.NodeStatus, error) {
-	stats := s.vmPool.Stats()
+	active, free := s.vmPool.Stats()
 
 	var memUsed uint64
-	sandboxCount := 0
-
 	sandboxes, err := s.store.ListSandboxes()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sandboxes: %w", err)
@@ -153,25 +185,24 @@ func (s *NodeServer) GetNodeStatus(ctx context.Context) (*types.NodeStatus, erro
 
 	for _, sb := range sandboxes {
 		if sb.State == types.SandboxStateRunning {
-			sandboxCount++
 			memUsed += uint64(sb.MemoryMB)
 		}
 	}
 
 	return &types.NodeStatus{
-		NodeID:           s.nodeID,
-		ActiveSandboxes:  int32(sandboxCount),
-		PoolFree:         int32(stats.Free),
-		MemoryUsedMB:     memUsed,
-		CPUPercent:       0,
-		Healthy:          true,
-		LastUpdate:       time.Now(),
+		NodeID:          s.nodeID,
+		ActiveSandboxes: int32(active),
+		PoolFree:        int32(free),
+		MemoryUsedMB:    memUsed,
+		CPUPercent:      0,
+		Healthy:         true,
+		LastUpdate:      time.Now(),
 	}, nil
 }
 
 func (s *NodeServer) RegisterNode(ctx context.Context, nodeInfo *types.NodeInfo) error {
-	if nodeInfo.NodeID != s.nodeID {
-		return fmt.Errorf("node ID mismatch: expected %s, got %s", s.nodeID, nodeInfo.NodeID)
+	if nodeInfo.ID != s.nodeID {
+		return fmt.Errorf("node ID mismatch: expected %s, got %s", s.nodeID, nodeInfo.ID)
 	}
 	return nil
 }

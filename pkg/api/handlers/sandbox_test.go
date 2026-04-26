@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/coco-sandbox/coco/internal/types"
+	"github.com/coco-sandbox/coco/pkg/types"
 )
 
 func TestCreateSandboxHandler(t *testing.T) {
@@ -263,8 +263,8 @@ func (m *mockSandboxService) ResumeHibernate(ctx context.Context, id string) err
 	return nil
 }
 
-var errNotFound = errNotFoundImpl
-
 type errNotFoundImpl struct{}
+
+var errNotFound error = errNotFoundImpl{}
 
 func (e errNotFoundImpl) Error() string { return "not found" }

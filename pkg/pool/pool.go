@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coco-sandbox/coco/pkg/types"
 	"github.com/coco-sandbox/coco/pkg/visor"
 )
 
@@ -111,6 +110,19 @@ func (p *Pool) Release(sandboxID string) error {
 	}
 }
 
+func resolveTemplate(template string) (rootfs, kernel, initrd string) {
+	switch template {
+	case "alpine", "default", "":
+		return "/var/lib/coco/images/alpine/rootfs.ext4",
+			"/var/lib/coco/images/vmlinux",
+			""
+	default:
+		return "/var/lib/coco/images/" + template + "/rootfs.ext4",
+			"/var/lib/coco/images/vmlinux",
+			""
+	}
+}
+
 func (p *Pool) bootNew(sandboxID string, template string) (*PooledVM, error) {
 	visorConn, err := p.visor.Acquire()
 	if err != nil {
@@ -118,9 +130,12 @@ func (p *Pool) bootNew(sandboxID string, template string) (*PooledVM, error) {
 	}
 	defer p.visor.Release(visorConn)
 
+	rootfs, kernel, initrd := resolveTemplate(template)
 	bootReq := visor.BootRequest{
 		ID:       sandboxID,
-		Template: template,
+		Rootfs:   rootfs,
+		Kernel:   kernel,
+		Initrd:   initrd,
 		MemoryMB: uint32(p.cfg.DefaultMem),
 		VCPUs:    uint32(p.cfg.DefaultVCPU),
 	}
