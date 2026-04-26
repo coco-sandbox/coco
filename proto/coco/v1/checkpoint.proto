@@ -4,4 +4,97 @@ package coco.v1;
 
 option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
 
-// Checkpoint and replay-related messages (placeholder for future implementation)
+import "google/protobuf/timestamp.proto";
+
+// =============================================================================
+// Checkpoint Service (Checkpoint operations)
+// =============================================================================
+
+service CheckpointService {
+  rpc Create(CreateCheckpointRequest) returns (CreateCheckpointResponse);
+  rpc List(ListCheckpointsRequest) returns (ListCheckpointsResponse);
+  rpc Delete(DeleteCheckpointRequest) returns (DeleteCheckpointResponse);
+  rpc Restore(RestoreCheckpointRequest) returns (RestoreCheckpointResponse);
+  rpc GetStatus(GetCheckpointStatusRequest) returns (GetCheckpointStatusResponse);
+}
+
+enum CheckpointCompression {
+  CHECKPOINT_COMPRESSION_UNSPECIFIED = 0;
+  CHECKPOINT_COMPRESSION_NONE = 1;
+  CHECKPOINT_COMPRESSION_ZSTD = 2;
+  CHECKPOINT_COMPRESSION_LZ4 = 3;
+}
+
+message Checkpoint {
+  string id = 1;
+  string sandbox_id = 2;
+  string name = 3;
+  string path = 4;
+  int64 size_bytes = 5;
+  bool is_compressed = 6;
+  CheckpointCompression compression = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  map<string, string> metadata = 10;
+}
+
+message CreateCheckpointRequest {
+  string sandbox_id = 1;
+  string name = 2;
+  CheckpointCompression compression = 3;
+  bool incremental = 4;
+  int64 memory_pages_limit = 5;
+}
+
+message CreateCheckpointResponse {
+  string checkpoint_id = 1;
+  int64 size_bytes = 2;
+  int64 memory_size_bytes = 3;
+  int64 disk_size_bytes = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message ListCheckpointsRequest {
+  string sandbox_id = 1;
+  bool include_expired = 2;
+}
+
+message ListCheckpointsResponse {
+  repeated Checkpoint checkpoints = 1;
+}
+
+message DeleteCheckpointRequest {
+  string checkpoint_id = 1;
+}
+
+message DeleteCheckpointResponse {}
+
+message RestoreCheckpointRequest {
+  string checkpoint_id = 1;
+  string target_sandbox_id = 2;
+  bool suspended = 3;
+}
+
+message RestoreCheckpointResponse {
+  string sandbox_id = 1;
+  uint32 vsock_cid = 2;
+  int64 duration_ms = 3;
+}
+
+message GetCheckpointStatusRequest {
+  string checkpoint_id = 1;
+}
+
+message GetCheckpointStatusResponse {
+  Checkpoint checkpoint = 1;
+  enum ProgressStage {
+    PROGRESS_STAGE_UNSPECIFIED = 0;
+    PROGRESS_STAGE_MEMORY = 1;
+    PROGRESS_STAGE_DISK = 2;
+    PROGRESS_STAGE_FINALIZING = 3;
+  }
+  ProgressStage stage = 2;
+  int32 progress_percent = 3;
+  int64 bytes_written = 4;
+  int64 total_bytes = 5;
+}

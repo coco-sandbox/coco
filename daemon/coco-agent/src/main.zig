@@ -121,23 +121,37 @@ fn setupSignalHandlers() void {
 // VSock Communication (TCP fallback)
 // =============================================================================
 
+const AF_VSOCK: u32 = 40;
+
+const SockaddrVm = extern struct {
+    svm_family: u16 = 40,
+    svm_reserved1: u16 = 0,
+    svm_port: u32,
+    svm_cid: u32,
+    svm_flags: u8 = 0,
+    svm_zero: [3]u8 = .{ 0, 0, 0 },
+};
+
+fn connectVsock(cid: u32, port: u32) !std.net.Stream {
+    const fd = try posix.socket(AF_VSOCK, posix.SOCK.STREAM, 0);
+    errdefer posix.close(fd);
+    const addr = SockaddrVm{ .svm_port = port, .svm_cid = cid };
+    try posix.connect(fd, @ptrCast(&addr), @sizeOf(SockaddrVm));
+    return std.net.Stream{ .handle = fd };
+}
+
 /// connectToHost establishes a connection to the host.
 /// Uses COCO_VSOCK_PORT env var.
 /// First attempts VSock (cid=2 is host), falls back to TCP for development.
 fn connectToHost(port: u16) !std.net.Stream {
-    // Try VSock first (cid=2 is the host)
-    const vsock_addr = std.net.Address.initVsock(2, port);
-    log("Connecting to vsock://2:{d}", .{port});
-
-    if (std.net.Dial.connect(vsock_addr)) |conn| {
+    log("Trying VSock CID=2 port={d}", .{port});
+    if (connectVsock(2, @as(u32, port))) |stream| {
         log("Connected via VSock", .{});
-        return conn;
+        return stream;
     } else |_| {
-        // VSock not available, fall back to TCP for development
-        log("VSock not available, falling back to TCP", .{});
-        const loopback = try std.net.Address.parseIp("127.0.0.1", port);
-        log("Connecting to 127.0.0.1:{d} (TCP fallback)", .{port});
-        return try std.net.tcpConnectToAddress(loopback);
+        log("VSock failed, trying TCP fallback", .{});
+        const addr = try std.net.Address.parseIp("127.0.0.1", port);
+        return try std.net.tcpConnectToAddress(addr);
     }
 }
 
@@ -388,13 +402,21 @@ fn runMainLoop(sock: std.net.Stream) !void {
 // =============================================================================
 
 /// setupPid1 sets up PID 1 specific requirements
-fn setupPid1() !void {
-    // Create essential directories if they don't exist
-    try ensureDir("/proc");
-    try ensureDir("/sys");
-    try ensureDir("/dev");
-    try ensureDir("/tmp");
-    try ensureDir("/var/log");
+fn setupPid1() void {
+    std.fs.makeDirAbsolute("/proc") catch {};
+    std.fs.makeDirAbsolute("/sys") catch {};
+    std.fs.makeDirAbsolute("/dev") catch {};
+    std.fs.makeDirAbsolute("/tmp") catch {};
+    std.fs.makeDirAbsolute("/var") catch {};
+    std.fs.makeDirAbsolute("/var/log") catch {};
+
+    const MS_NOEXEC: u64 = 8;
+    const MS_NOSUID: u64 = 2;
+    const MS_NODEV: u64 = 4;
+    _ = linux.mount("proc", "/proc", "proc", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0);
+    _ = linux.mount("sysfs", "/sys", "sysfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0);
+    _ = linux.mount("devtmpfs", "/dev", "devtmpfs", 0, 0);
+    _ = linux.mount("tmpfs", "/tmp", "tmpfs", 0, 0);
 }
 
 fn ensureDir(path: []const u8) !void {
@@ -420,10 +442,8 @@ pub fn main() !void {
     log("Guest agent starting (PID 1)", .{});
     log("VSock port: {d} (VSock preferred, TCP fallback)", .{vsock_port_val});
 
-    // Setup PID 1
-    try setupPid1();
+    setupPid1();
 
-    // Setup signal handlers
     setupSignalHandlers();
 
     // Try to connect to host with retries

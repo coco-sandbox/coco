@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package coco.v1;
+
+option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
+
+import "google/protobuf/timestamp.proto";
+
+// =============================================================================
+// Master Service (Cluster coordination, leader election, scheduling)
+// =============================================================================
+
+service MasterService {
+  // Scheduling
+  rpc ScheduleSandbox(ScheduleSandboxRequest) returns (ScheduleSandboxResponse);
+  rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
+
+  // Cluster management
+  rpc GetClusterInfo(GetClusterInfoRequest) returns (GetClusterInfoResponse);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
+
+  // Leader election
+  rpc RegisterLeader(RegisterLeaderRequest) returns (RegisterLeaderResponse);
+  rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse);
+
+  // Sandbox tracking
+  rpc TrackSandbox(TrackSandboxRequest) returns (TrackSandboxResponse);
+  rpc UntrackSandbox(UntrackSandboxRequest) returns (UntrackSandboxResponse);
+  rpc UpdateSandboxState(UpdateSandboxStateRequest) returns (UpdateSandboxStateResponse);
+
+  // Failover
+  rpc InitiateFailover(InitiateFailoverRequest) returns (InitiateFailoverResponse);
+  rpc GetFailoverStatus(GetFailoverStatusRequest) returns (GetFailoverStatusResponse);
+}
+
+message ScheduleSandboxRequest {
+  string name = 1;
+  string template_id = 2;
+  int32 memory_mb = 3;
+  int32 vcpus = 4;
+  map<string, string> labels = 5;
+  string preferred_node_id = 6;
+  string affinity_node_id = 7;
+}
+
+message ScheduleSandboxResponse {
+  string sandbox_id = 1;
+  string assigned_node_id = 2;
+  string assigned_addr = 3;
+}
+
+message GetScheduleRequest {
+  string sandbox_id = 1;
+}
+
+message GetScheduleResponse {
+  string sandbox_id = 1;
+  string assigned_node_id = 2;
+  string state = 3;
+}
+
+message ClusterInfo {
+  string cluster_id = 1;
+  int32 node_count = 2;
+  int32 sandbox_count = 3;
+  int32 active_sandboxes = 4;
+  string leader_id = 5;
+  string leader_addr = 6;
+  bool is_leader = 7;
+  google.protobuf.Timestamp last_update = 8;
+}
+
+message GetClusterInfoRequest {}
+
+message GetClusterInfoResponse {
+  ClusterInfo cluster = 1;
+}
+
+message ListNodesRequest {
+  bool include_unhealthy = 2;
+}
+
+message ListNodesResponse {
+  repeated Node nodes = 1;
+}
+
+message GetNodeRequest {
+  string id = 1;
+}
+
+message GetNodeResponse {
+  Node node = 1;
+}
+
+message DrainNodeRequest {
+  string id = 1;
+  bool force = 2;
+  int32 timeout_seconds = 3;
+}
+
+message DrainNodeResponse {
+  bool success = 1;
+  string message = 2;
+  int32 sandboxes_migrated = 3;
+}
+
+message RegisterLeaderRequest {
+  string node_id = 1;
+  string addr = 2;
+  int64 term = 3;
+  int64 last_log_index = 4;
+}
+
+message RegisterLeaderResponse {
+  bool success = 1;
+  int64 term = 2;
+}
+
+message RequestVoteRequest {
+  string candidate_id = 1;
+  int64 term = 2;
+  int64 last_log_index = 3;
+  int64 last_log_term = 4;
+}
+
+message RequestVoteResponse {
+  bool granted = 1;
+  int64 term = 2;
+}
+
+message TrackSandboxRequest {
+  Sandbox sandbox = 1;
+}
+
+message TrackSandboxResponse {}
+
+message UntrackSandboxRequest {
+  string sandbox_id = 1;
+}
+
+message UntrackSandboxResponse {}
+
+message UpdateSandboxStateRequest {
+  string sandbox_id = 1;
+  SandboxState state = 2;
+  string host_node = 3;
+}
+
+message UpdateSandboxStateResponse {}
+
+message InitiateFailoverRequest {
+  string failed_node_id = 1;
+}
+
+message InitiateFailoverResponse {
+  bool success = 1;
+  repeated string sandboxes_to_migrate = 2;
+  int32 migration_count = 3;
+}
+
+message GetFailoverStatusRequest {
+  string node_id = 1;
+}
+
+message GetFailoverStatusResponse {
+  string node_id = 1;
+  enum FailoverState {
+    FAILOVER_STATE_UNSPECIFIED = 0;
+    FAILOVER_STATE_HEALTHY = 1;
+    FAILOVER_STATE_DEGRADED = 2;
+    FAILOVER_STATE_RECOVERING = 3;
+    FAILOVER_STATE_FAILED = 4;
+  }
+  FailoverState state = 2;
+  int32 sandboxes_migrated = 3;
+  int32 sandboxes_pending = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp completed_at = 6;
+}

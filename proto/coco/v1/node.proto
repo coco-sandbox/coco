@@ -4,49 +4,84 @@ package coco.v1;
 
 option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
 
-import "proto/coco/v1/coco.proto";
 import "google/protobuf/timestamp.proto";
 
+// =============================================================================
+// Node Service (Node → Master communication, gRPC)
+// =============================================================================
+
 service NodeService {
+  // VM lifecycle
   rpc BootSandbox(BootSandboxRequest) returns (BootSandboxResponse);
   rpc DestroyVM(DestroyVMRequest) returns (DestroyVMResponse);
   rpc PauseVM(PauseVMRequest) returns (PauseVMResponse);
   rpc ResumeVM(ResumeVMRequest) returns (ResumeVMResponse);
-  rpc ExecVM(ExecVMRequest) returns (stream ExecChunk);
+  rpc ForkVM(ForkVMRequest) returns (ForkVMResponse);
+
+  // Execution
+  rpc ExecVM(ExecVMRequest) returns (ExecVMResponse);
+  rpc StreamingExecVM(StreamingExecVMRequest) returns (stream ExecChunk);
+
+  // Checkpoint
+  rpc CreateCheckpoint(CreateCheckpointRequest) returns (CreateCheckpointResponse);
+  rpc RestoreCheckpoint(RestoreCheckpointRequest) returns (RestoreCheckpointResponse);
+
+  // Node management
   rpc GetNodeStatus(GetNodeStatusRequest) returns (NodeStatus);
-  rpc RegisterNode(NodeInfo) returns (RegisterNodeResponse);
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc ReportMetrics(ReportMetricsRequest) returns (ReportMetricsResponse);
+
+  // Pool management
+  rpc GetPoolStatus(GetPoolStatusRequest) returns (PoolStatus);
+  rpc PrewarmPool(PrewarmPoolRequest) returns (PrewarmPoolResponse);
 }
 
 message BootSandboxRequest {
   string sandbox_id = 1;
-  string template = 2;
-  int32 memory_mb = 3;
-  int32 vcpus = 4;
+  string template_id = 2;
+  string kernel = 3;
+  string initrd = 4;
+  int32 memory_mb = 5;
+  int32 vcpus = 6;
+  uint32 vsock_cid = 7;
+  string network_mode = 8;
 }
 
 message BootSandboxResponse {
-  Sandbox sandbox = 1;
+  string sandbox_id = 1;
+  int32 pid = 2;
+  uint32 vsock_cid = 3;
+  string tap_device = 4;
 }
 
 message DestroyVMRequest {
   string sandbox_id = 1;
 }
 
-message DestroyVMResponse {
-}
+message DestroyVMResponse {}
 
 message PauseVMRequest {
   string sandbox_id = 1;
 }
 
-message PauseVMResponse {
-}
+message PauseVMResponse {}
 
 message ResumeVMRequest {
   string sandbox_id = 1;
 }
 
-message ResumeVMResponse {
+message ResumeVMResponse {}
+
+message ForkVMRequest {
+  string parent_sandbox_id = 1;
+  string new_sandbox_id = 2;
+}
+
+message ForkVMResponse {
+  string sandbox_id = 1;
+  uint32 vsock_cid = 2;
+  int64 duration_ms = 3;
 }
 
 message ExecVMRequest {
@@ -55,34 +90,94 @@ message ExecVMRequest {
   repeated string args = 3;
   repeated string env = 4;
   string working_dir = 5;
+  int64 timeout_ms = 6;
 }
 
-message GetNodeStatusRequest {
+message ExecVMResponse {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+  int64 duration_ms = 4;
 }
 
-message GetNodeStatusResponse {
-  NodeStatus status = 1;
+message StreamingExecVMRequest {
+  string sandbox_id = 1;
+  string cmd = 2;
+  repeated string args = 3;
+  repeated string env = 4;
+  string working_dir = 5;
+  int64 timeout_ms = 6;
+  bool interactive = 7;
 }
+
+message GetNodeStatusRequest {}
 
 message NodeStatus {
   string node_id = 1;
   int32 active_sandboxes = 2;
-  int32 pool_free = 3;
-  uint64 memory_used_mb = 4;
-  int32 cpu_percent = 5;
-  bool healthy = 6;
-  google.protobuf.Timestamp last_update = 7;
+  int32 pool_size = 3;
+  int32 pool_free = 4;
+  uint64 memory_total_mb = 5;
+  uint64 memory_used_mb = 6;
+  int32 cpu_percent = 7;
+  bool healthy = 8;
+  google.protobuf.Timestamp last_update = 9;
+  map<string, string> capabilities = 10;
 }
 
-message NodeInfo {
+message RegisterNodeRequest {
   string node_id = 1;
   string addr = 2;
   uint64 memory_mb = 3;
   int32 cpus = 4;
   int32 pool_size = 5;
+  map<string, string> capabilities = 6;
 }
 
 message RegisterNodeResponse {
   bool success = 1;
   string message = 2;
+  string assigned_node_id = 3;
+}
+
+message HeartbeatRequest {
+  string node_id = 1;
+  NodeStatus status = 2;
+}
+
+message HeartbeatResponse {
+  bool acknowledged = 1;
+  google.protobuf.Timestamp server_time = 2;
+}
+
+message ReportMetricsRequest {
+  string node_id = 1;
+  repeated Metric metrics = 2;
+}
+
+message Metric {
+  string name = 1;
+  double value = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message ReportMetricsResponse {}
+
+message GetPoolStatusRequest {}
+
+message PoolStatus {
+  int32 total_slots = 1;
+  int32 free_slots = 2;
+  int32 warm_vms = 3;
+  int32 cold_vms = 4;
+  int32 active_vms = 5;
+}
+
+message PrewarmPoolRequest {
+  int32 count = 1;
+  string template_id = 2;
+}
+
+message PrewarmPoolResponse {
+  int32 warmed = 1;
 }

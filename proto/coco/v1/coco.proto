@@ -6,23 +6,99 @@ option go_package = "github.com/coco-sandbox/coco/pkg/api/v1";
 
 import "google/protobuf/timestamp.proto";
 
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum SandboxState {
+  SANDBOX_STATE_UNSPECIFIED = 0;
+  SANDBOX_STATE_CREATING = 1;
+  SANDBOX_STATE_RUNNING = 2;
+  SANDBOX_STATE_PAUSED = 3;
+  SANDBOX_STATE_STOPPING = 4;
+  SANDBOX_STATE_STOPPED = 5;
+  SANDBOX_STATE_HIBERNATED = 6;
+  SANDBOX_STATE_ERROR = 7;
+}
+
+enum TemplateState {
+  TEMPLATE_STATE_UNSPECIFIED = 0;
+  TEMPLATE_STATE_BUILDING = 1;
+  TEMPLATE_STATE_READY = 2;
+  TEMPLATE_STATE_ERROR = 3;
+}
+
+enum NetworkMode {
+  NETWORK_MODE_UNSPECIFIED = 0;
+  NETWORK_MODE_BRIDGE = 1;
+  NETWORK_MODE_TAP = 2;
+  NETWORK_MODE_VSOCK = 3;
+  NETWORK_MODE_ISOLATED = 4;
+}
+
+// =============================================================================
+// Gateway Service (Public REST/gRPC API)
+// =============================================================================
+
 service GatewayService {
+  // Sandbox lifecycle
   rpc CreateSandbox(CreateSandboxRequest) returns (CreateSandboxResponse);
   rpc GetSandbox(GetSandboxRequest) returns (GetSandboxResponse);
   rpc ListSandboxes(ListSandboxesRequest) returns (ListSandboxesResponse);
   rpc DeleteSandbox(DeleteSandboxRequest) returns (DeleteSandboxResponse);
+
+  // Sandbox control
   rpc PauseSandbox(PauseSandboxRequest) returns (PauseSandboxResponse);
   rpc ResumeSandbox(ResumeSandboxRequest) returns (ResumeSandboxResponse);
   rpc ForkSandbox(ForkSandboxRequest) returns (ForkSandboxResponse);
-  rpc ExecSandbox(ExecSandboxRequest) returns (stream ExecChunk);
+  rpc HibernateSandbox(HibernateSandboxRequest) returns (HibernateSandboxResponse);
+  rpc RestoreSandbox(RestoreSandboxRequest) returns (RestoreSandboxResponse);
+
+  // Execution
+  rpc Exec(ExecRequest) returns (ExecResponse);
+  rpc StreamingExec(StreamingExecRequest) returns (stream ExecChunk);
+
+  // Templates
+  rpc CreateTemplate(CreateTemplateRequest) returns (CreateTemplateResponse);
+  rpc GetTemplate(GetTemplateRequest) returns (GetTemplateResponse);
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
+  rpc DeleteTemplate(DeleteTemplateRequest) returns (DeleteTemplateResponse);
+  rpc BuildTemplate(BuildTemplateRequest) returns (BuildTemplateResponse);
+
+  // Cluster
+  rpc GetClusterInfo(GetClusterInfoRequest) returns (GetClusterInfoResponse);
+}
+
+// =============================================================================
+// Sandbox Messages
+// =============================================================================
+
+message Sandbox {
+  string id = 1;
+  string name = 2;
+  SandboxState state = 3;
+  string template_id = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  string host_node = 7;
+  uint32 vsock_cid = 8;
+  int32 pid = 9;
+  int32 memory_mb = 10;
+  int32 vcpus = 11;
+  string parent_id = 12;
+  int32 fork_depth = 13;
+  map<string, string> labels = 14;
+  NetworkMode network_mode = 15;
 }
 
 message CreateSandboxRequest {
   string name = 1;
-  string template = 2;
+  string template_id = 2;
   int32 memory_mb = 3;
   int32 vcpus = 4;
   map<string, string> labels = 5;
+  NetworkMode network_mode = 6;
+  string working_dir = 7;
 }
 
 message CreateSandboxResponse {
@@ -38,32 +114,34 @@ message GetSandboxResponse {
 }
 
 message ListSandboxesRequest {
+  string node_id = 1;
+  SandboxState state_filter = 2;
+  int32 limit = 3;
+  int32 offset = 4;
 }
 
 message ListSandboxesResponse {
   repeated Sandbox sandboxes = 1;
+  int32 total = 2;
 }
 
 message DeleteSandboxRequest {
   string id = 1;
 }
 
-message DeleteSandboxResponse {
-}
+message DeleteSandboxResponse {}
 
 message PauseSandboxRequest {
   string id = 1;
 }
 
-message PauseSandboxResponse {
-}
+message PauseSandboxResponse {}
 
 message ResumeSandboxRequest {
   string id = 1;
 }
 
-message ResumeSandboxResponse {
-}
+message ResumeSandboxResponse {}
 
 message ForkSandboxRequest {
   string parent_id = 1;
@@ -73,9 +151,32 @@ message ForkSandboxRequest {
 
 message ForkSandboxResponse {
   Sandbox sandbox = 1;
+  int64 duration_ms = 2;
 }
 
-message ExecSandboxRequest {
+message HibernateSandboxRequest {
+  string id = 1;
+  string checkpoint_name = 2;
+}
+
+message HibernateSandboxResponse {
+  string checkpoint_id = 1;
+}
+
+message RestoreSandboxRequest {
+  string checkpoint_id = 1;
+  string name = 2;
+}
+
+message RestoreSandboxResponse {
+  Sandbox sandbox = 1;
+}
+
+// =============================================================================
+// Execution Messages
+// =============================================================================
+
+message ExecRequest {
   string sandbox_id = 1;
   string cmd = 2;
   repeated string args = 3;
@@ -84,24 +185,199 @@ message ExecSandboxRequest {
   int64 timeout_ms = 6;
 }
 
+message ExecResponse {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+  int64 duration_ms = 4;
+}
+
+message StreamingExecRequest {
+  string sandbox_id = 1;
+  string cmd = 2;
+  repeated string args = 3;
+  repeated string env = 4;
+  string working_dir = 5;
+  int64 timeout_ms = 6;
+  bool interactive = 7;
+}
+
+enum StreamType {
+  STREAM_TYPE_UNSPECIFIED = 0;
+  STREAM_TYPE_STDOUT = 1;
+  STREAM_TYPE_STDERR = 2;
+  STREAM_TYPE_EXIT = 3;
+  STREAM_TYPE_ERROR = 4;
+}
+
 message ExecChunk {
-  int32 stream_type = 1;
+  StreamType stream_type = 1;
   bytes data = 2;
   int32 exit_code = 3;
 }
 
-message Sandbox {
+// =============================================================================
+// Template Messages
+// =============================================================================
+
+message Template {
   string id = 1;
   string name = 2;
-  int32 state = 3;
-  string template = 4;
-  google.protobuf.Timestamp created_at = 5;
-  google.protobuf.Timestamp updated_at = 6;
-  string host_node = 7;
-  uint32 vsock_cid = 8;
-  int32 pid = 9;
-  int32 memory_mb = 10;
-  int32 vcpus = 11;
-  string parent_id = 12;
-  map<string, string> labels = 13;
+  string description = 3;
+  string rootfs = 4;
+  string kernel = 5;
+  string initrd = 6;
+  int32 default_memory_mb = 7;
+  int32 default_vcpus = 8;
+  int64 size_bytes = 9;
+  TemplateState state = 10;
+  google.protobuf.Timestamp created_at = 11;
+  map<string, string> labels = 12;
 }
+
+message CreateTemplateRequest {
+  string name = 1;
+  string description = 2;
+  string rootfs = 3;
+  string kernel = 4;
+  string initrd = 5;
+  int32 default_memory_mb = 6;
+  int32 default_vcpus = 7;
+  map<string, string> labels = 8;
+}
+
+message CreateTemplateResponse {
+  Template template = 1;
+}
+
+message GetTemplateRequest {
+  string id = 1;
+}
+
+message GetTemplateResponse {
+  Template template = 1;
+}
+
+message ListTemplatesRequest {}
+
+message ListTemplatesResponse {
+  repeated Template templates = 1;
+}
+
+message DeleteTemplateRequest {
+  string id = 1;
+}
+
+message DeleteTemplateResponse {}
+
+message BuildTemplateRequest {
+  string id = 1;
+  string image_ref = 2;
+}
+
+message BuildTemplateResponse {
+  Template template = 1;
+  string job_id = 2;
+}
+
+// =============================================================================
+// Checkpoint Messages (Gateway-level, detailed checkpoint types)
+// =============================================================================
+
+message Checkpoint {
+  string id = 1;
+  string sandbox_id = 2;
+  string name = 3;
+  string path = 4;
+  int64 size_bytes = 5;
+  bool is_compressed = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message CreateCheckpointRequest {
+  string sandbox_id = 1;
+  string name = 2;
+  bool compress = 3;
+}
+
+message CreateCheckpointResponse {
+  string checkpoint_id = 1;
+  int64 size_bytes = 2;
+  int64 duration_ms = 3;
+}
+
+message ListCheckpointsRequest {
+  string sandbox_id = 1;
+}
+
+message ListCheckpointsResponse {
+  repeated Checkpoint checkpoints = 1;
+}
+
+message DeleteCheckpointRequest {
+  string id = 1;
+}
+
+message DeleteCheckpointResponse {}
+
+message RestoreCheckpointRequest {
+  string checkpoint_id = 1;
+  string sandbox_name = 2;
+}
+
+message RestoreCheckpointResponse {
+  Sandbox sandbox = 1;
+  int64 duration_ms = 2;
+}
+
+// =============================================================================
+// Cluster Messages
+// =============================================================================
+
+message ClusterInfo {
+  string cluster_id = 1;
+  int32 node_count = 2;
+  int32 sandbox_count = 3;
+  string leader_node = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message Node {
+  string id = 1;
+  string addr = 2;
+  bool healthy = 3;
+  int32 active_sandboxes = 4;
+  int32 pool_size = 5;
+  int32 pool_free = 6;
+  uint64 memory_total_mb = 7;
+  uint64 memory_used_mb = 8;
+  int32 cpu_percent = 9;
+  google.protobuf.Timestamp last_seen = 10;
+}
+
+message GetClusterInfoRequest {}
+
+message GetClusterInfoResponse {
+  ClusterInfo cluster = 1;
+}
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+  repeated Node nodes = 1;
+}
+
+message GetNodeRequest {
+  string id = 1;
+}
+
+message GetNodeResponse {
+  Node node = 1;
+}
+
+message DrainNodeRequest {
+  string id = 1;
+  bool force = 2;
+}
+
+message DrainNodeResponse {}

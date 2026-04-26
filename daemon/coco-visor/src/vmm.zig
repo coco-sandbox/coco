@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The Coco Sandbox Authors
 
-//! VMM integration with Cloud Hypervisor.
+//! VMM with direct KVM integration.
 //! Handles MicroVM lifecycle: boot, fork, hibernate, pause, resume.
 
 const std = @import("std");
 
 const clh = @import("clh.zig");
-const CLHClient = clh.CLHClient;
-const CLHError = clh.CLHError;
+const vm_mod = @import("vm.zig");
+const vsock = @import("vsock.zig");
 pub const VMConfig = clh.VMConfig;
 
 // =============================================================================
@@ -57,14 +57,16 @@ pub const VM = struct {
     config: VMConfig,
     state: VMState,
     pid: u32,
-    clh_client: ?CLHClient,
+    vm_instance: ?*vm_mod.Vm,
+    agent_fd: i32,
 
     pub fn init(config: VMConfig) VM {
         return .{
             .config = config,
             .state = .created,
             .pid = 0,
-            .clh_client = null,
+            .vm_instance = null,
+            .agent_fd = -1,
         };
     }
 
@@ -75,53 +77,64 @@ pub const VM = struct {
 
         self.state = .booting;
 
-        // Create VM run directory
-        const run_dir = std.fmt.allocPrint(
-            std.heap.page_allocator,
-            "/run/coco/vm/{s}",
-            .{self.config.id},
-        ) catch return VMMError.OutOfMemory;
-        defer std.heap.page_allocator.free(run_dir);
-        std.fs.makeDirAbsolute(run_dir) catch {};
-
-        // Create VM lib directory
-        const lib_dir = std.fmt.allocPrint(
-            std.heap.page_allocator,
-            "/var/lib/coco/vm/{s}",
-            .{self.config.id},
-        ) catch return VMMError.OutOfMemory;
-        defer std.heap.page_allocator.free(lib_dir);
-        std.fs.makeDirAbsolute(lib_dir) catch {};
-
         std.debug.print("[vmm] Booting VM {s} (mem={d}MB, vcpus={d})\n", .{
             self.config.id, self.config.memory_mb, self.config.vcpus,
         });
 
-        // Spawn Cloud Hypervisor process
-        self.clh_client = CLHClient.spawn(self.config.id, &self.config, std.heap.page_allocator) catch |e| {
-            std.debug.print("[vmm] Failed to spawn CLH: {}\n", .{e});
+        var vm = vm_mod.Vm.create(&self.config, std.heap.page_allocator) catch |e| {
+            std.debug.print("[vmm] Failed to create VM: {}\n", .{e});
             self.state = .err_state;
             return VMMError.HypervisorError;
         };
 
-        var clh_client = self.clh_client.?;
-        const result = clh_client.boot(&self.config) catch |e| {
-            std.debug.print("[vmm] CLH boot command failed: {}\n", .{e});
+        _ = vm.start() catch |e| {
+            std.debug.print("[vmm] Failed to start vCPU: {}\n", .{e});
+            vm.destroy();
             self.state = .err_state;
             return VMMError.HypervisorError;
         };
 
-        self.pid = result.pid;
+        self.pid = @intCast(std.os.linux.getpid());
+
+        var retry_count: u32 = 0;
+        const max_retries = 30;
+        var agent_fd: i32 = -1;
+
+        while (retry_count < max_retries) {
+            agent_fd = vsock.connectToAgent(self.config.vsock_cid, 4747) catch {
+                retry_count += 1;
+                if (retry_count >= max_retries) break;
+                std.time.sleep(200 * std.time.ns_per_ms);
+                continue;
+            };
+            break;
+        }
+
+        if (agent_fd < 0) {
+            std.debug.print("[vmm] Failed to connect to agent after {d} retries\n", .{max_retries});
+            vm.destroy();
+            self.state = .err_state;
+            return VMMError.HypervisorError;
+        }
+
+        const vm_ptr = std.heap.page_allocator.create(vm_mod.Vm) catch {
+            std.posix.close(agent_fd);
+            vm.destroy();
+            return VMMError.OutOfMemory;
+        };
+        vm_ptr.* = vm;
+
+        self.vm_instance = vm_ptr;
+        self.agent_fd = agent_fd;
         self.state = .running;
 
         std.debug.print("[vmm] VM {s} booted: pid={d}, cid={d}\n", .{
             self.config.id, self.pid, self.config.vsock_cid,
         });
 
-        // Register in global VM registry
         registerVM(self.config.id, self);
 
-        return .{ .pid = result.pid, .vsock_cid = result.vsock_cid };
+        return .{ .pid = self.pid, .vsock_cid = self.config.vsock_cid };
     }
 
     pub fn pause(self: *VM) VMMError!void {
@@ -129,12 +142,8 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        var clh_client = self.clh_client orelse return VMMError.NotBooted;
-        clh_client.pause(self.config.id) catch |e| {
-            std.debug.print("[vmm] Pause failed: {}\n", .{e});
-            return VMMError.HypervisorError;
-        };
-
+        var vm = self.vm_instance orelse return VMMError.NotBooted;
+        vm.pause();
         self.state = .paused;
         std.debug.print("[vmm] VM {s} paused\n", .{self.config.id});
     }
@@ -144,12 +153,8 @@ pub const VM = struct {
             return VMMError.NotBooted;
         }
 
-        var clh_client = self.clh_client orelse return VMMError.NotBooted;
-        clh_client.resumeVm(self.config.id) catch |e| {
-            std.debug.print("[vmm] Resume failed: {}\n", .{e});
-            return VMMError.HypervisorError;
-        };
-
+        var vm = self.vm_instance orelse return VMMError.NotBooted;
+        vm.resume_();
         self.state = .running;
         std.debug.print("[vmm] VM {s} resumed\n", .{self.config.id});
     }
@@ -162,17 +167,20 @@ pub const VM = struct {
         self.state = .stopping;
         std.debug.print("[vmm] Destroying VM {s}\n", .{self.config.id});
 
-        // Send graceful shutdown via CLH API
-        if (self.clh_client) |*client| {
-            client.shutdown(self.config.id) catch {};
-            client.kill();
+        if (self.agent_fd >= 0) {
+            std.posix.close(self.agent_fd);
+            self.agent_fd = -1;
+        }
+
+        if (self.vm_instance) |vm| {
+            vm.destroy();
+            std.heap.page_allocator.destroy(vm);
+            self.vm_instance = null;
         }
 
         self.state = .stopped;
         self.pid = 0;
-        self.clh_client = null;
 
-        // Unregister from global VM registry
         unregisterVM(self.config.id);
 
         std.debug.print("[vmm] VM {s} destroyed\n", .{self.config.id});
@@ -185,7 +193,8 @@ pub const VM = struct {
 
         std.debug.print("[vmm] Forking VM {s}\n", .{self.config.id});
 
-        // Generate new child ID
+        self.pause() catch {};
+
         const child_id = std.fmt.allocPrint(
             std.heap.page_allocator,
             "{s}-fork-{d}",
@@ -193,10 +202,8 @@ pub const VM = struct {
         ) catch return VMMError.OutOfMemory;
         defer std.heap.page_allocator.free(child_id);
 
-        // Allocate new vsock CID
         const child_cid = allocateVsockCid();
 
-        // Create child config with same settings but new ID and CID
         const child_config = VMConfig{
             .id = child_id,
             .rootfs = self.config.rootfs,
@@ -208,31 +215,66 @@ pub const VM = struct {
             .tap_name = "",
         };
 
-        // Spawn new CLH process for child VM
-        var child_client = CLHClient.spawn(child_id, &child_config, std.heap.page_allocator) catch |e| {
-            std.debug.print("[vmm] Fork spawn failed: {}\n", .{e});
+        var child_vm = vm_mod.Vm.create(&child_config, std.heap.page_allocator) catch |e| {
+            std.debug.print("[vmm] Fork VM create failed: {}\n", .{e});
+            self.resume_() catch {};
             return VMMError.HypervisorError;
         };
 
-        const boot_result = child_client.boot(&child_config) catch |e| {
-            std.debug.print("[vmm] Fork boot failed: {}\n", .{e});
+        _ = child_vm.start() catch |e| {
+            std.debug.print("[vmm] Fork vCPU start failed: {}\n", .{e});
+            child_vm.destroy();
+            self.resume_() catch {};
             return VMMError.HypervisorError;
         };
 
-        // Create and register child VM
-        const child_vm = std.heap.page_allocator.create(VM) catch return VMMError.OutOfMemory;
-        child_vm.* = VM.init(child_config);
-        child_vm.state = .running;
-        child_vm.pid = boot_result.pid;
-        child_vm.clh_client = child_client;
+        var child_agent_fd: i32 = -1;
+        var retry_count: u32 = 0;
+        while (retry_count < 30) {
+            child_agent_fd = vsock.connectToAgent(child_cid, 4747) catch {
+                retry_count += 1;
+                std.time.sleep(200 * std.time.ns_per_ms);
+                continue;
+            };
+            break;
+        }
 
-        registerVM(child_id, child_vm);
+        if (child_agent_fd < 0) {
+            child_vm.destroy();
+            self.resume_() catch {};
+            return VMMError.HypervisorError;
+        }
+
+        const child_vm_ptr = std.heap.page_allocator.create(VM) catch {
+            std.posix.close(child_agent_fd);
+            child_vm.destroy();
+            self.resume_() catch {};
+            return VMMError.OutOfMemory;
+        };
+
+        const child_pid: u32 = @intCast(std.os.linux.getpid());
+        child_vm_ptr.* = VM.init(child_config);
+        child_vm_ptr.state = .running;
+        child_vm_ptr.pid = child_pid;
+        child_vm_ptr.vm_instance = std.heap.page_allocator.create(vm_mod.Vm) catch {
+            std.posix.close(child_agent_fd);
+            child_vm.destroy();
+            std.heap.page_allocator.destroy(child_vm_ptr);
+            self.resume_() catch {};
+            return VMMError.OutOfMemory;
+        };
+        child_vm_ptr.vm_instance.?.* = child_vm;
+        child_vm_ptr.agent_fd = child_agent_fd;
+
+        registerVM(child_id, child_vm_ptr);
+
+        self.resume_() catch {};
 
         std.debug.print("[vmm] Fork complete: child_id={s}, child_pid={d}, child_cid={d}\n", .{
-            child_id, boot_result.pid, child_cid,
+            child_id, child_pid, child_cid,
         });
 
-        return .{ .child_pid = boot_result.pid, .child_vsock_cid = child_cid };
+        return .{ .child_pid = child_pid, .child_vsock_cid = child_cid };
     }
 
     pub fn hibernate(self: *VM) VMMError!void {
@@ -242,21 +284,18 @@ pub const VM = struct {
 
         std.debug.print("[vmm] Hibernate VM {s}\n", .{self.config.id});
 
-        // Ensure hibernation directory exists
-        const snap_base = SNAPSHOT_DIR;
-        std.fs.makeDirAbsolute(snap_base) catch {};
+        std.fs.makeDirAbsolute(SNAPSHOT_DIR) catch {};
 
         const snap_dir = std.fmt.allocPrint(
             std.heap.page_allocator,
             "{s}/{s}",
-            .{ snap_base, self.config.id },
+            .{ SNAPSHOT_DIR, self.config.id },
         ) catch return VMMError.OutOfMemory;
         defer std.heap.page_allocator.free(snap_dir);
         std.fs.makeDirAbsolute(snap_dir) catch {};
 
-        // Pause VM before snapshot
-        if (self.clh_client) |*client| {
-            client.pause(self.config.id) catch {};
+        if (self.vm_instance) |vm| {
+            vm.pause();
         }
         self.state = .hibernated;
 
@@ -270,9 +309,8 @@ pub const VM = struct {
 
         std.debug.print("[vmm] Resuming VM {s} from hibernate\n", .{self.config.id});
 
-        // Resume VM
-        if (self.clh_client) |*client| {
-            client.resumeVm(self.config.id) catch {};
+        if (self.vm_instance) |vm| {
+            vm.resume_();
         }
         self.state = .running;
 
@@ -301,7 +339,6 @@ var global_next_vsock_cid: u32 = 3;
 // =============================================================================
 
 var vms = std.StringHashMap(*VM).init(std.heap.page_allocator);
-var clh_pids = std.StringHashMap(u32).init(std.heap.page_allocator);
 
 pub fn getVMs() *std.StringHashMap(*VM) {
     return &vms;
